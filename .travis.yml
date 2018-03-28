@@ -1,0 +1,54 @@
+language: python
+
+# Run jobs on container-based infrastructure, can be overridden per job
+dist: trusty
+
+matrix:
+  include:
+    # Extra includes for OSX since python language is not available by default on OSX
+    - os: osx
+      language: generic
+      env: PYTHON_VER=3.5
+    - os: osx
+      language: generic
+      env: PYTHON_VER=3.6
+
+    - os: linux
+      python: 3.5
+      env: PYTHON_VER=3.5
+    - os: linux
+      python: 3.6
+      env: PYTHON_VER=3.6
+
+before_install:
+  # Additional info about the build
+  - uname -a
+  - df -h
+  - ulimit -a
+
+  # Install the Python environemt
+  - source devtools/travis-ci/before_install.sh
+  - python -V
+
+install:
+
+    # Create test environment for package
+  - conda create --yes -n test python=$PYTHON_VER pip pytest pytest-cov
+  - source activate test
+
+    # Install pip only modules
+  - pip install codecov
+
+    # Build and install package
+  - conda build --python=$PYTHON_VER devtools/conda-recipe
+  - conda install --yes --use-local fragmenter
+
+
+script:
+  - pytest -v --cov=fragmenter fragmenter/tests/
+
+notifications:
+    email: false
+
+after_success:
+  - codecov
