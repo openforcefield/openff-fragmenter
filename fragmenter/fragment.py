@@ -12,7 +12,7 @@ from pkg_resources import resource_filename
 import copy
 import itertools
 
-from torsionfit.qmscan import utils
+from fragmenter import utils
 from torsionfit.utils import logger
 
 
