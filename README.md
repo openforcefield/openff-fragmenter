@@ -27,7 +27,6 @@ python setup.py install
 * openmoltools - https://github.com/choderalab/openmoltools
 * OpenEye
 
-
 ### Copyright
 
 Copyright (c) 2018, Chaya D. Stern
