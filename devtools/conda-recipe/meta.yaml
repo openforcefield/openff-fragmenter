@@ -18,12 +18,13 @@ requirements:
     - python
     - setuptools
     - openmoltools
+    - openeye-toolkits
 
-#test:
-#  requires:
-#    - pytest
-#  imports:
-#    - fragmenter
+test:
+  requires:
+    - pytest
+  imports:
+    - fragmenter
 
 about:
   home: https://github.com/openforcefield/fragmenter
