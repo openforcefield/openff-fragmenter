@@ -1,9 +1,9 @@
 """ Tests generating files for qm torsion scan """
 
 import unittest
-from torsionfit.tests.utils import get_fn, has_openeye
-import torsionfit.qmscan.torsion_scan as qmscan
-from torsionfit.qmscan import utils
+from fragmenter.tests.utils import get_fn, has_openeye
+import fragmenter.qmscan.torsion_scan as qmscan
+from fragmenter import utils
 from openmoltools import openeye
 import tempfile
 import os

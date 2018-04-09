@@ -2,7 +2,7 @@ import os
 import time
 import numpy as np
 
-from openeye import oechem, oeiupac, oedepict, oeomega
+from openeye import oechem, oeiupac, oedepict
 from torsionfit.utils import logger
 from openmoltools import openeye
 

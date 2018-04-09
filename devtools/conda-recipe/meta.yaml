@@ -12,6 +12,7 @@ requirements:
   build:
     - python
     - setuptools
+    - openmoltools
 
   run:
     - python
@@ -23,5 +24,6 @@ test:
     - fragmenter
 
 about:
-  home: add_url_here
+  home: https://github.com/openforcefield/fragmenter
   license: MIT License
+  summary: A toolkit to fragment molecules for QM torsion scans and find torsions that need driving.
