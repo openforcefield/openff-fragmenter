@@ -19,11 +19,11 @@ requirements:
     - setuptools
     - openmoltools
 
-test:
-  requires:
-    - pytest
-  imports:
-    - fragmenter
+#test:
+#  requires:
+#    - pytest
+#  imports:
+#    - fragmenter
 
 about:
   home: https://github.com/openforcefield/fragmenter
