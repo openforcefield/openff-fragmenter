@@ -22,12 +22,8 @@ matrix:
 
 env:
   global:
-    - ORGNAME="omnia"
     # Location of decrypted OpenEye license file
     - OE_LICENSE="$HOME/oe_license.txt"
-    # The architecture to download for the OpenEye toolkits
-    - OE_ARCH="linux-x64"
-    - OPENEYE_CHANNEL="-i https://pypi.anaconda.org/OpenEye/simple/"
 
 before_install:
   # Additional info about the build
@@ -53,12 +49,12 @@ script:
   - pip install codecov
 
     # Add omnia, ommia-dev and conda-forge channels
-  - conda config --add channels ${ORGNAME}
-  - conda config --add channels https://conda.anaconda.org/omnia/label/dev
+  - conda config --add channels omnia
+  - conda config --add channels omnia/label/dev
   - conda config --add channels conda-forge
 
     # Install OpenEye toolkit
-  - pip install $OPENEYE_CHANNEL openeye-toolkits && python -c "import openeye; print(openeye.__version__)"
+  - conda install --yes -c openeye openeye-toolkits && python -c "import openeye; print(openeye.__version__)"
 
     # Build and install package
   - conda build --python=$PYTHON_VER devtools/conda-recipe
