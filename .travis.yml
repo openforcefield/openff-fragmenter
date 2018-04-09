@@ -52,9 +52,10 @@ script:
   - conda config --add channels omnia
   - conda config --add channels omnia/label/dev
   - conda config --add channels conda-forge
+  - conda config --add channels openeye
 
-    # Install OpenEye toolkit
-  - conda install --yes -c openeye openeye-toolkits && python -c "import openeye; print(openeye.__version__)"
+  # Install OpenEye toolkit
+  #- conda install --yes -c openeye openeye-toolkits && python -c "import openeye; print(openeye.__version__)"
 
     # Build and install package
   - conda build --python=$PYTHON_VER devtools/conda-recipe
