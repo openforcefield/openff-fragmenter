@@ -59,7 +59,7 @@ install:
   - pip install $OPENEYE_CHANNEL openeye-toolkits && python -c "import openeye; print(openeye.__version__)"
 
     # Build and install package
-  - conda build --python=$PYTHON_VER devtools/conda-recipe
+  - conda build devtools/conda-recipe
   - conda install --yes --use-local fragmenter
 
 script:
