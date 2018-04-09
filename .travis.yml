@@ -3,22 +3,30 @@ language: python
 # Run jobs on container-based infrastructure, can be overridden per job
 dist: trusty
 
-matrix:
-  include:
-    # Extra includes for OSX since python language is not available by default on OSX
-    - os: osx
-      language: generic
-      env: PYTHON_VER=3.5
-    - os: osx
-      language: generic
-      env: PYTHON_VER=3.6
+env:
+  matrix:
+    include:
+      # Extra includes for OSX since python language is not available by default on OSX
+      - os: osx
+        language: generic
+        env: PYTHON_VER=3.5
+      - os: osx
+        language: generic
+        env: PYTHON_VER=3.6
 
-    - os: linux
-      python: 3.5
-      env: PYTHON_VER=3.5
-    - os: linux
-      python: 3.6
-      env: PYTHON_VER=3.6
+      - os: linux
+        python: 3.5
+        env: PYTHON_VER=3.5
+      - os: linux
+        python: 3.6
+        env: PYTHON_VER=3.6
+
+  global:
+    - ORGNAME="omnia"
+    # Location of decrypted OpenEye license file
+    - OE_LICENSE="$HOME/oe_license.txt"
+    # The architecture to download for the OpenEye toolkits
+    - OE_ARCH="linux-x64"
 
 before_install:
   # Additional info about the build
@@ -29,6 +37,8 @@ before_install:
   # Install the Python environemt
   - source devtools/travis-ci/before_install.sh
   - python -V
+  - if [ "$TRAVIS_SECURE_ENV_VARS" == true ]; then     openssl aes-256-cbc -K $encrypted_a339f5ce3a53_key -iv $encrypted_a339f5ce3a53_iv -in oe_license.txt.enc -out oe_license.txt -d; fi
+  - if [ "$TRAVIS_SECURE_ENV_VARS" == false ]; then echo "OpenEye license will not be installed in forks."; fi
 
 install:
 
@@ -38,6 +48,14 @@ install:
 
     # Install pip only modules
   - pip install codecov
+
+    # Add omnia, ommia-dev and conda-forge channels
+  - conda config --add channels ${ORGNAME}
+  - conda config --add channels https://conda.anaconda.org/omnia/label/dev
+  - conda config --add channels conda-forge
+
+    # Install OpenEye toolkit
+  - pip install $OPENEYE_CHANNEL openeye-toolkits && python -c "import openeye; print(openeye.__version__)"
 
     # Build and install package
   - conda build --python=$PYTHON_VER devtools/conda-recipe
