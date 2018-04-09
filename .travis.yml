@@ -63,6 +63,7 @@ install:
   - conda install --yes --use-local fragmenter
 
 script:
+  - source activate test
   - pytest -v --cov=fragmenter fragmenter/tests/
 
 notifications:
