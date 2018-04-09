@@ -1,7 +1,8 @@
 import os
 import time
+import numpy as np
 
-from openeye import oechem, oeiupac, oedepict
+from openeye import oechem, oeiupac, oedepict, oeomega
 from torsionfit.utils import logger
 from openmoltools import openeye
 
@@ -305,7 +306,7 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def get_atom_map(tagged_smiles, molecule=None):
+def get_atom_map(tagged_smiles, molecule=None, is_mapped=False):
     """
     Returns a dictionary that maps tag on SMILES to atom index in molecule.
     Parameters
@@ -315,16 +316,41 @@ def get_atom_map(tagged_smiles, molecule=None):
     molecule: OEMol
         molecule to generate map for. If None, a new OEMol will be generated from the tagged SMILES, the map will map to
         this molecule and it will be returned.
+    is_mapped: bool
+        Default: False
+        When an OEMol is generated from SMART string with tags, the tag will be stored in atom.GetMapIdx(). The index-tagged
+        explicit-hydrogen SMILES are tagges SMARTS. Therefore, if a molecule was generated with the tagged SMILES, there is
+        no reason to do a substructure search to get the right order of the atoms. If is_mapped is True, the atom map will be
+        generated from atom.GetMapIdx().
+
 
     Returns
     -------
+    molecule: OEMol
+        The molecule for the atom_map. If a molecule was provided, it's that molecule.
     atom_map: dict
         a dictionary that maps tag to atom index {tag:idx}
-    molecule: OEMol
-        If a molecule was not provided, the generated molecule will be returned.
     """
     if molecule is None:
         molecule = openeye.smiles_to_oemol(tagged_smiles)
+        # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
+        is_mapped = True
+
+    # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
+    # map won't be correct
+    if molecule.GetMaxConfIdx() <= 1:
+        for conf in molecule.GetConfs():
+             values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+                                  range(conf.GetCoords().__len__())])
+        if values.all():
+            # Generate on Omega conformer
+            molecule = openeye.generate_conformers(molecule, max_confs=1)
+
+    if is_mapped:
+        atom_map = {}
+        for atom in molecule.GetAtoms():
+            atom_map[atom.GetMapIdx()] = atom.GetIdx()
+        return molecule, atom_map
 
     ss = oechem.OESubSearch(tagged_smiles)
     oechem.OEPrepareSearch(molecule, ss)
@@ -347,10 +373,8 @@ def get_atom_map(tagged_smiles, molecule=None):
     mol = oechem.OEGraphMol()
     oechem.OESubsetMol(mol, match, True)
     logger().info("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
-    if molecule is None:
-        return molecule, atom_map
 
-    return atom_map
+    return molecule, atom_map
 
 
 def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename=None):
