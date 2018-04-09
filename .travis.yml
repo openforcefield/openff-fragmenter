@@ -27,6 +27,7 @@ env:
     - OE_LICENSE="$HOME/oe_license.txt"
     # The architecture to download for the OpenEye toolkits
     - OE_ARCH="linux-x64"
+    - OPENEYE_CHANNEL="-i https://pypi.anaconda.org/OpenEye/simple/"
 
 before_install:
   # Additional info about the build
@@ -60,7 +61,6 @@ install:
     # Build and install package
   - conda build --python=$PYTHON_VER devtools/conda-recipe
   - conda install --yes --use-local fragmenter
-
 
 script:
   - pytest -v --cov=fragmenter fragmenter/tests/
