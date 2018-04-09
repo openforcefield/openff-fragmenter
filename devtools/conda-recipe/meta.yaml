@@ -16,6 +16,8 @@ requirements:
 
   run:
     - python
+    - setuptools
+    - openmoltools
 
 test:
   requires:
