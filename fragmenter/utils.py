@@ -1,9 +1,10 @@
 import os
 import time
+import logging
+import sys
 import numpy as np
 
 from openeye import oechem, oeiupac, oedepict
-from torsionfit.utils import logger
 from openmoltools import openeye
 
 
@@ -465,3 +466,34 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
 #     j = json.dump(json_data, indent=4, sort_keys=True)
 #
 #     f = open("{}.output.json".format(name))
+
+
+def logger(name='fragmenter', pattern='%(asctime)s %(levelname)s %(name)s: %(message)s',
+           date_format='%H:%M:%S', handler=logging.StreamHandler(sys.stdout)):
+    """
+    Retrieves the logger instance associated to the given name
+    :param name: The name of the logger instance
+    :param pattern: The associated pattern
+    :param date_format: The date format to be used in the pattern
+    :param handler: The logging handler
+    :return: The logger
+    """
+    _logger = logging.getLogger(name)
+    _logger.setLevel(log_level(verbose))
+
+    if not _logger.handlers:
+        formatter = logging.Formatter(pattern, date_format)
+        handler.setFormatter(formatter)
+        handler.setLevel(log_level(verbose))
+        _logger.addHandler(handler)
+        _logger.propagate = False
+    return _logger
+
+verbose = False
+
+
+def log_level(verbose=verbose):
+    if verbose:
+        return logging.DEBUG
+    else:
+        return logging.INFO
