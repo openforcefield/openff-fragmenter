@@ -13,7 +13,6 @@ import copy
 import itertools
 
 from fragmenter import utils
-from torsionfit.utils import logger
 
 
 def generate_fragments(inputf, output_dir, pdf=False, combinatorial=True, MAX_ROTORS=2, strict_stereo=True, remove_map=True):
@@ -43,14 +42,14 @@ def generate_fragments(inputf, output_dir, pdf=False, combinatorial=True, MAX_RO
     if ifs.open(inputf):
         while oechem.OEReadMolecule(ifs, mol):
             openeye.normalize_molecule(mol)
-            logger().info('fragmenting {}...'.format(mol.GetTitle()))
+            utils.logger().info('fragmenting {}...'.format(mol.GetTitle()))
             if remove_map:
                 # Remove tags from smiles. This is done to make it easier to find duplicate fragments
                 for a in mol.GetAtoms():
                     a.SetMapIdx(0)
             frags = _generate_fragments(mol, strict_stereo=strict_stereo)
             if not frags:
-                logger().warn('Skipping {}, SMILES: {}'.format(mol.GetTitle(), oechem.OECreateSmiString(mol)))
+                utils.logger().warn('Skipping {}, SMILES: {}'.format(mol.GetTitle(), oechem.OECreateSmiString(mol)))
                 continue
             charged = frags[0]
             frags = frags[-1]
@@ -98,7 +97,7 @@ def _generate_fragments(mol, strict_stereo=True):
         try:
             bond.GetData('WibergBondOrder')
         except ValueError:
-            logger().warn("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
+            utils.logger().warn("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
             return False
 
     tagged_rings, tagged_fgroups = tag_molecule(charged)

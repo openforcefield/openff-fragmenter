@@ -2,7 +2,7 @@
 
 import unittest
 from fragmenter.tests.utils import get_fn, has_openeye
-import fragmenter.qmscan.torsion_scan as qmscan
+import fragmenter.torsion_scan as qmscan
 from fragmenter import utils
 from openmoltools import openeye
 import tempfile
@@ -71,7 +71,7 @@ class TestQmscan(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        atom_map = utils.get_atom_map(tagged_smiles, mol_1)
+        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_1)
 
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
@@ -88,7 +88,7 @@ class TestQmscan(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        atom_map = utils.get_atom_map(tagged_smiles, mol_1)
+        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_1)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
@@ -102,7 +102,7 @@ class TestQmscan(unittest.TestCase):
         from openeye import oechem
         tagged_smiles = '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]'
         mol_from_tagged_smiles = openeye.smiles_to_oemol(tagged_smiles)
-        atom_map = utils.get_atom_map(tagged_smiles, mol_from_tagged_smiles)
+        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_from_tagged_smiles)
 
         # Compare atom map to tag
         for i in range(1, len(atom_map) +1):
@@ -121,7 +121,7 @@ class TestQmscan(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        atom_map = utils.get_atom_map(tagged_smiles, mol_1)
+        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_1)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)

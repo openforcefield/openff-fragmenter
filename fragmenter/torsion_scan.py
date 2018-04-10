@@ -9,7 +9,7 @@ try:
     import openeye.oechem as oechem
 except ImportError:
     pass
-from torsionfit.utils import logger
+from fragmenter.utils import logger
 from openmoltools.openeye import generate_conformers
 import warnings
 import numpy as np
