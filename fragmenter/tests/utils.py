@@ -54,9 +54,9 @@ def get_fn(filename, written=False):
             full path to file
     """
     if written:
-        fn = resource_filename('torsionfit', os.path.join('tests', 'reference', 'writes', filename))
+        fn = resource_filename('fragmenter', os.path.join('tests', 'reference', 'writes', filename))
     else:
-        fn = resource_filename('torsionfit', os.path.join('tests', 'reference', filename))
+        fn = resource_filename('fragmenter', os.path.join('tests', 'reference', filename))
 
     #if not os.path.exists(fn):
     #    raise ValueError('%s does not exist. If you just added it you will have to re install' % fn)
