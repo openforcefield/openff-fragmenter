@@ -37,14 +37,14 @@ class TestQmscan(unittest.TestCase):
 
         shutil.rmtree(outfile_path)
 
-    def test_generate_input(self):
-        """Test generate psi4 input files"""
-        root = get_fn('torsion_scan/10_7_4_3')
-        qmscan.generate_scan_input(root, 'pdb', 'butane', ['MP2'], ['aug-cc-pvtz'], symmetry='C1')
-
-        contents = open(get_fn('torsion_scan/10_7_4_3/0/butane_10_7_4_3_0.dat')).read()
-        compare_content = open(get_fn('butane_10_7_4_3_0.dat')).read()
-        self.assertEqual(contents, compare_content)
+    # def test_generate_input(self):
+    #     """Test generate psi4 input files"""
+    #     root = get_fn('torsion_scan/10_7_4_3')
+    #     qmscan.generate_scan_input(root, 'pdb', 'butane', ['MP2'], ['aug-cc-pvtz'], symmetry='C1')
+    #
+    #     contents = open(get_fn('torsion_scan/10_7_4_3/0/butane_10_7_4_3_0.dat')).read()
+    #     compare_content = open(get_fn('butane_10_7_4_3_0.dat')).read()
+    #     self.assertEqual(contents, compare_content)
 
     @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_tagged_smiles(self):

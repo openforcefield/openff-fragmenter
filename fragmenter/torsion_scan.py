@@ -3,7 +3,6 @@ __author__ = 'Chaya D. Stern'
 import mdtraj as md
 import os
 from fnmatch import fnmatch
-import sys
 from math import radians
 try:
     import openeye.oechem as oechem
@@ -13,9 +12,6 @@ from fragmenter.utils import logger
 from openmoltools.openeye import generate_conformers
 import warnings
 import numpy as np
-from cclib.parser import Gaussian, Psi
-from cclib.parser.utils import convertor
-import re
 import tarfile
 
 
