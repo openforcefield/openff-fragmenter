@@ -131,7 +131,7 @@ def to_oemol(filename, title=True, verbose=True):
     return mollist
 
 
-def normalize_molecule(molecule, title=None):
+def normalize_molecule(molecule, title=''):
     """Normalize a copy of the molecule by checking aromaticity, adding explicit hydrogens and renaming by IUPAC name
     or given title
 
@@ -140,7 +140,7 @@ def normalize_molecule(molecule, title=None):
     molecule: OEMol
         The molecule to be normalized:
     title: str
-        Name of molecule. If none, will use IUPAC name
+        Name of molecule. If the string is empty, will use IUPAC name
 
     Returns
     -------
