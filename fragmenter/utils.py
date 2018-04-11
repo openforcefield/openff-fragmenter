@@ -119,7 +119,7 @@ def to_oemol(filename, title=True, verbose=True):
         if title:
             title = molecule_copy.GetTitle()
             if verbose:
-                logger().infor("Reading molecule {}".format(title))
+                logger().info("Reading molecule {}".format(title))
 
         mollist.append(normalize_molecule(molecule_copy, title))
 
