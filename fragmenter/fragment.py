@@ -12,7 +12,7 @@ import copy
 import itertools
 import uuid
 
-from fragmenter import utils
+from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase
 import fragmenter
 
 OPENEYE_VERSION = oe.__version__
@@ -44,26 +44,26 @@ def generate_fragments(inputf, generate_visualization=False, combinatorial=True,
         fragments: mapping of SMILES from the parent molecule to the SMILES of the fragments
     """
     options = copy.deepcopy(locals())
-    ifs = oechem.oemolistream()
     fragments = dict()
     fragments['fragments'] = {}
     fragments['provenance'] = {'job_id': uuid.uuid4(), 'package': fragmenter.__package__, 'version': fragmenter.__version__,
                                'routine': generate_fragments.__module__ + '.' + generate_fragments.__name__,
                                'canonicalization': oe.__name__ + ' v' + OPENEYE_VERSION,
                                'user': pwd.getpwuid(os.getuid()).pw_name, 'routine_options': options}
+    ifs = oechem.oemolistream()
     mol = oechem.OEMol()
     if ifs.open(inputf):
         while oechem.OEReadMolecule(ifs, mol):
             title = mol.GetTitle()
-            mol = utils.normalize_molecule(mol, title=title)
-            utils.logger().info('fragmenting {}...'.format(mol.GetTitle()))
+            mol = normalize_molecule(mol, title=title)
+            logger().info('fragmenting {}...'.format(mol.GetTitle()))
             if remove_map:
                 # Remove tags from smiles. This is done to make it easier to find duplicate fragments
                 for a in mol.GetAtoms():
                     a.SetMapIdx(0)
             frags = _generate_fragments(mol, strict_stereo=strict_stereo)
             if not frags:
-                utils.logger().warn('Skipping {}, SMILES: {}'.format(mol.GetTitle(), oechem.OECreateSmiString(mol)))
+                logger().warn('Skipping {}, SMILES: {}'.format(mol.GetTitle(), oechem.OECreateSmiString(mol)))
                 continue
             charged = frags[0]
             frags = frags[-1]
@@ -106,7 +106,7 @@ def _generate_fragments(mol, strict_stereo=True):
         try:
             bond.GetData('WibergBondOrder')
         except ValueError:
-            utils.logger().warn("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
+            logger().warn("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
             return False
 
     tagged_rings, tagged_fgroups = tag_molecule(charged)
@@ -141,8 +141,11 @@ def _tag_fgroups(mol, fgroups_smarts=None):
     """
     if not fgroups_smarts:
         # Load yaml file
-        fn = resource_filename('torsionfit', os.path.join('qmscan', 'fgroup_smarts.yml'))
-        fgroups_smarts = yaml.safe_load(open(fn, 'r'))
+        fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts.yml'))
+        f = open(fn, 'r')
+        fgroups_smarts = yaml.safe_load(f)
+        f.close()
+
     fgroup_tagged = {}
     for f_group in fgroups_smarts:
         qmol = oechem.OEQMol()
@@ -636,8 +639,8 @@ def _sort_by_rotbond(ifs, outdir):
     for nrotor in nrotors_map:
         size = len(nrotors_map[nrotor])
         ofname = os.path.join(outdir, 'nrotor_{}.smi'.format(nrotor))
-        ofs = utils.new_output_stream(ofname)
-        utils.write_oedatabase(moldb, ofs, nrotors_map[nrotor], size)
+        ofs = new_output_stream(ofname)
+        write_oedatabase(moldb, ofs, nrotors_map[nrotor], size)
 
 
 def smiles_with_combined(frag_list, mol, MAX_ROTORS=2):
