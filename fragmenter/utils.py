@@ -2,6 +2,8 @@ import os
 import time
 import logging
 import sys
+import json
+from uuid import UUID
 import numpy as np
 
 from openeye import oechem, oeiupac, oedepict
@@ -470,3 +472,10 @@ def log_level(verbose=verbose):
         return logging.DEBUG
     else:
         return logging.INFO
+
+class UUIDEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, UUID):
+            # if the obj is uuid, we simply return the value of uuid
+            return obj.hex
+        return json.JSONEncoder.default(self, obj)

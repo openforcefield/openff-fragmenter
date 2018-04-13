@@ -13,7 +13,7 @@ import itertools
 import uuid
 import json
 
-from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase
+from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase, UUIDEncoder
 import fragmenter
 
 OPENEYE_VERSION = oe.__version__
@@ -84,7 +84,7 @@ def generate_fragments(inputf, generate_visualization=False, combinatorial=True,
             del charged, frags
     if json_filename:
         f = open(json_filename, 'w')
-        j = json.dump(fragments, f, indent=4, sort_keys=True)
+        j = json.dump(fragments, f, indent=4, sort_keys=True, cls=UUIDEncoder)
         f.close()
 
     return fragments
