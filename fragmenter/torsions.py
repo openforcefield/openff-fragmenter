@@ -4,9 +4,12 @@ try:
     import openeye.oechem as oechem
 except ImportError:
     pass
-from fragmenter.utils import logger
 import warnings
 import numpy as np
+import time
+from openmoltools import openeye
+
+from . import utils
 
 warnings.simplefilter('always')
 
@@ -43,6 +46,112 @@ def create_mapped_smiles(molecule):
     return oechem.OEMolToSmiles(molecule)
 
 
+def get_atom_map(tagged_smiles, molecule=None, is_mapped=False):
+    """
+    Returns a dictionary that maps tag on SMILES to atom index in molecule.
+    Parameters
+    ----------
+    tagged_smiles: str
+        index-tagged explicit hydrogen SMILES string
+    molecule: OEMol
+        molecule to generate map for. If None, a new OEMol will be generated from the tagged SMILES, the map will map to
+        this molecule and it will be returned.
+    is_mapped: bool
+        Default: False
+        When an OEMol is generated from SMART string with tags, the tag will be stored in atom.GetMapIdx(). The index-tagged
+        explicit-hydrogen SMILES are tagges SMARTS. Therefore, if a molecule was generated with the tagged SMILES, there is
+        no reason to do a substructure search to get the right order of the atoms. If is_mapped is True, the atom map will be
+        generated from atom.GetMapIdx().
+
+
+    Returns
+    -------
+    molecule: OEMol
+        The molecule for the atom_map. If a molecule was provided, it's that molecule.
+    atom_map: dict
+        a dictionary that maps tag to atom index {tag:idx}
+    """
+    if molecule is None:
+        molecule = openeye.smiles_to_oemol(tagged_smiles)
+        # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
+        is_mapped = True
+        # add tag to data
+        tag = oechem.OEGetTag("has_map")
+        molecule.SetData(tag, bool(True))
+
+    # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
+    # map won't be correct
+    if molecule.GetMaxConfIdx() <= 1:
+        for conf in molecule.GetConfs():
+            values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+                                range(conf.GetCoords().__len__())])
+        if values.all():
+            # Generate on Omega conformer
+            utils.logger().info("No conformers were found in the molecule. A new conformer will be generated")
+            molecule = openeye.generate_conformers(molecule, max_confs=1)
+
+    if is_mapped:
+        atom_map = {}
+        for atom in molecule.GetAtoms():
+            atom_map[atom.GetMapIdx()] = atom.GetIdx()
+        return molecule, atom_map
+
+    ss = oechem.OESubSearch(tagged_smiles)
+    oechem.OEPrepareSearch(molecule, ss)
+    ss.SetMaxMatches(1)
+
+    atom_map = {}
+    t1 = time.time()
+    matches = [m for m in ss.Match(molecule)]
+    t2 = time.time()
+    seconds = t2-t1
+    utils.logger().info("Substructure search took {} seconds".format(seconds))
+    if not matches:
+        utils.logger().info("MCSS failed for {}, smiles: {}".format(molecule.GetTitle(), tagged_smiles))
+        return False
+    for match in matches:
+        for ma in match.GetAtoms():
+            atom_map[ma.pattern.GetMapIdx()] = ma.target.GetIdx()
+
+    # sanity check
+    mol = oechem.OEGraphMol()
+    oechem.OESubsetMol(mol, match, True)
+    utils.logger().info("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
+
+    return molecule, atom_map
+
+
+def to_mapped_geometry(molecule, atom_map):
+    """
+    Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
+    tag on the SMILES to the atom idex in OEMol.
+    Parameters
+    ----------
+    molecule: OEMol with conformers
+    atom_map: dict
+        maps tag in SMILES to atom index
+
+    Returns
+    -------
+    dict: QC_JSON Molecule spec {symbols: [], geometry: []}
+
+    """
+    symbols = []
+    geometry = []
+    if molecule.GetMaxConfIdx() != 1:
+        raise Warning("The molecule must have at least and at most 1 conformation")
+
+    for mapping in range(1, len(atom_map)+1):
+        idx = atom_map[mapping]
+        atom = molecule.GetAtom(oechem.OEHasAtomIdx(idx))
+        syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
+        symbols.append(syb)
+        for i in range(3):
+            geometry.append(molecule.GetCoords()[idx][i])
+
+    return {'symbols': symbols, 'geometry': geometry}
+
+
 def find_torsions(molecule):
     """
     This function takes an OEMol (atoms must be tagged with index map) and finds the map indices for torsion that need
@@ -59,8 +168,8 @@ def find_torsions(molecule):
     except ValueError:
         warnings.warn('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
         tagged_smiles = create_mapped_smiles(molecule)
-        logger().info('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
-        logger().info('The new tagged SMARTS is: {}'.format(tagged_smiles))
+        utils.logger().info('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
+        utils.logger().info('The new tagged SMARTS is: {}'.format(tagged_smiles))
 
     mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
 
@@ -97,36 +206,90 @@ def find_torsions(molecule):
     best_tor = [sorted_tors[0][0], sorted_tors[0][0], sorted_tors[0][0], sorted_tors[0][0]]
     first_pass = True
     for tor in sorted_tors:
-        logger().info("Map Idxs: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
-        logger().info("Atom Numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
+        utils.logger().info("Map Idxs: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
+        utils.logger().info("Atom Numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
         if tor[1].GetMapIdx() != best_tor[1].GetMapIdx() or tor[2].GetMapIdx() != best_tor[2].GetMapIdx():
             new_tor = True
             if not first_pass:
-                logger().info("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
+                utils.logger().info("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
                 tors.append(best_tor)
             first_pass = False
             best_tor = tor
             best_tor_order = tor[0].GetAtomicNum() + tor[3].GetAtomicNum()
-            logger().info("new_tor with central bond across atoms: {} {}".format(tor[1].GetMapIdx(), tor[2].GetMapIdx()))
+            utils.logger().info("new_tor with central bond across atoms: {} {}".format(tor[1].GetMapIdx(), tor[2].GetMapIdx()))
         else:
-            logger().info("Not a new_tor but now with end atoms: {} {}".format(tor[0].GetMapIdx(), tor[3].GetMapIdx()))
+            utils.logger().info("Not a new_tor but now with end atoms: {} {}".format(tor[0].GetMapIdx(), tor[3].GetMapIdx()))
             tor_order = tor[0].GetAtomicNum() + tor[3].GetAtomicNum()
             if tor_order > best_tor_order:
                 best_tor = tor
                 best_tor_order = tor_order
-    logger().info("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
+    utils.logger().info("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
     tors.append(best_tor)
 
-    logger().info("List of torsion to drive:")
+    utils.logger().info("List of torsion to drive:")
     for tor in tors:
-        logger().info("Idx: {} {} {} {}".format(tor[0].GetIdx(), tor[1].GetIdx(), tor[2].GetIdx(), tor[3].GetIdx()))
-        logger().info("Atom numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
+        utils.logger().info("Idx: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
+        utils.logger().info("Atom numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
 
     needed_torsion_scans = dict()
     for i, tor in enumerate(tors):
-        tor_name = ((tor[0].GetIdx()+1), (tor[1].GetIdx()+1), (tor[2].GetIdx()+1), (tor[3].GetIdx()+1))
+        tor_name = ((tor[0].GetMapIdx()), (tor[1].GetMapIdx()), (tor[2].GetMapIdx()), (tor[3].GetMapIdx()))
         needed_torsion_scans['torsion_{}'.format(str(i))] = tor_name
     return needed_torsion_scans
+
+
+def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Psi4', method='B3LYP/aug-cc-pVDZ', **kwargs):
+    """
+
+    Parameters
+    ----------
+    fragment_data
+    grid: list of int
+        spacing for dihedral scan grid points in degree. Must be divisible by 360. If only one value is given, all
+        dimensions will have the same grid spacing.
+        Default None. When none, all dimensions will have a grid spacing of 30 degrees.
+        Can also be a list of lists for combinations.
+    combinations: list of ints
+        can be list of list. Each list defines which torsions in needed_torsion_drives to run on crank.
+        Default is None. Only one crank job will be defined for all torsions in needed_torsion_drives
+    qc_program
+    method
+    kwargs
+
+    Returns
+    -------
+
+    """
+    if not combinations:
+        #Only one crank job including all needed torsions
+        needed_torsion_drives = fragment_data['needed_torsion_drives']
+        scan_dimension = len(needed_torsion_drives)
+        if not grid:
+            grid = [30]*scan_dimension
+        if type(grid) is not list:
+            # Evenly spaced grid for all dimensions
+            grid = [grid]*scan_dimension
+        grid_dimension = len(grid)
+        if grid_dimension != scan_dimension:
+                raise Exception("scan dimension {} must be equal to grid dimension {}".format(scan_dimension, grid_dimension))
+
+        fragment_data['crank_torsion_drives'] = dict()
+        fragment_data['crank_torsion_drives']['crank_job_1'] = dict()
+        fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs'] = dict()
+
+        options = {'scf_type': 'df'}
+        if kwargs:
+            options = kwargs['options']
+        fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs']['method'] = method
+        fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs']['options'] = options
+
+        print(grid)
+        for d, spacing in enumerate(grid):
+            fragment_data['crank_torsion_drives']['crank_job_1']['torions_{}'.format(d+1)] = spacing
+
+    # ToDo define jobs combining different torsions
+
+    return fragment_data
 
 
 # def pdb_to_psi4(starting_geom, mol_name, method, basis_set, charge=0, multiplicity=1, symmetry='C1', geom_opt=True,

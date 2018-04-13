@@ -11,6 +11,7 @@ from pkg_resources import resource_filename
 import copy
 import itertools
 import uuid
+import json
 
 from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase
 import fragmenter
@@ -18,7 +19,8 @@ import fragmenter
 OPENEYE_VERSION = oe.__version__
 
 
-def generate_fragments(inputf, generate_visualization=False, combinatorial=True, MAX_ROTORS=2, strict_stereo=True, remove_map=True):
+def generate_fragments(inputf, generate_visualization=False, combinatorial=True, MAX_ROTORS=2, strict_stereo=True,
+                       remove_map=True, json_filename=None):
     """
     This function generates fragment SMILES files sorted by rotatable bonds from an input molecule file.
     The output .smi files are written out to `output_dir` and named `nrotor_n.smi` where n corresponds to the number
@@ -80,6 +82,10 @@ def generate_fragments(inputf, generate_visualization=False, combinatorial=True,
                 oname = '{}.pdf'.format(mol.GetTitle())
                 ToPdf(charged, oname, frags)
             del charged, frags
+    if json_filename:
+        f = open(json_filename, 'w')
+        j = json.dump(fragments, f, indent=4, sort_keys=True)
+        f.close()
 
     return fragments
 

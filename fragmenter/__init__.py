@@ -5,10 +5,12 @@ Fragment molecules for quantum mechanics torison scans.
 
 # Make Python 2 and 3 imports work the same
 # Safe to remove with Python 3-only code
-from __future__ import absolute_import
 
 # Add imports here
+from .utils import *
 from .fragment import *
+from .torsions import *
+
 
 # Handle versioneer
 from ._version import get_versions

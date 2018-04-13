@@ -6,6 +6,7 @@ import numpy as np
 
 from openeye import oechem, oeiupac, oedepict
 from openmoltools import openeye
+from .torsions import create_mapped_smiles
 
 
 def write_oedatabase(moldb, ofs, mlist, size):
@@ -169,7 +170,7 @@ def normalize_molecule(molecule, title=''):
 
 
 def png_atoms_labeled(smiles, fname):
-    """Write out png file of molecule with atoms labeled with their index.
+    """Write out png file of molecule with atoms labeled with their map index.
 
     Parameters
     ----------
@@ -187,7 +188,7 @@ def png_atoms_labeled(smiles, fname):
     width, height = 300, 200
 
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
-    opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
+    opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
     opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
 
     disp = oedepict.OE2DMolDisplay(mol, opts)
@@ -253,34 +254,6 @@ def mol2_to_psi4json(infile):
     pass
 
 
-def create_mapped_smiles(mol):
-    """
-    Generate an index-tagged explicit hydrogen SMILES.
-    Exmaple:
-    SMILES string for carbon monoxide "CO"
-    With index-tagged explicit hydrogen SMILES this becomes
-    '[H:3][C:1]([H:4])([H:5])[O:2][H:6]'
-
-    Parameters
-    ----------
-    mol: OEMOl
-
-    Returns
-    -------
-    index-tagged explicit hydrogen SMILES str
-
-    """
-    # Check if molecule already has explicit hydrogens
-    HAS_HYDROGENS = oechem.OEHasExplicitHydrogens(mol)
-    if not HAS_HYDROGENS:
-        # Add explicit hydrogens
-        oechem.OEAddExplicitHydrogens(mol)
-    for atom in mol.GetAtoms():
-        atom.SetMapIdx(atom.GetIdx() + 1)
-
-    return oechem.OEMolToSmiles(mol)
-
-
 def mol_to_tagged_smiles(infile, outfile):
     """
     Generate .smi from input mol with index-tagged explicit hydrogen SMILES
@@ -341,8 +314,8 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False):
     # map won't be correct
     if molecule.GetMaxConfIdx() <= 1:
         for conf in molecule.GetConfs():
-             values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
-                                  range(conf.GetCoords().__len__())])
+            values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+                                range(conf.GetCoords().__len__())])
         if values.all():
             # Generate on Omega conformer
             molecule = openeye.generate_conformers(molecule, max_confs=1)
