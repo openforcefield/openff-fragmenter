@@ -7,11 +7,56 @@ except ImportError:
 import warnings
 import numpy as np
 import time
+import json
 from openmoltools import openeye
 
 from . import utils
 
 warnings.simplefilter('always')
+
+
+def fragment_to_torsion_scan(fragments, json_filename=None):
+    """
+    Wrapper function for finding torsions to drive in fragments and generating crank jobs
+
+    Parameters
+    ----------
+    fragments: dict
+        This dictionary has 2 dictionaries. 1) Provenance: Information on how the fragments were generated
+                                            2) Fragments: Maps molecule SMILES to fragment SMILES
+
+    json_filename: str
+        If None, will not save molecules to file.
+    Returns
+    -------
+    molecules: dict
+        dictionary that maps fragment SMILES to crank job specs (includes torsions to drive, carnk specs and provenance)
+    """
+    provenance = fragments['provenance']
+    molecules = {}
+    for parent in fragments['fragments']:
+        for frag in fragments['fragments'][parent]:
+            json_specs = dict()
+            json_specs['provenance'] = provenance
+            json_specs['provenance']['parent_molecule'] = parent
+            json_specs['canonical_isomeric_SMILES'] = frag
+            molecule = openeye.smiles_to_oemol(frag)
+            tagged_SMARTS = create_mapped_smiles(molecule)
+            json_specs['tagged_SMARTS'] = tagged_SMARTS
+            molecule, atom_map = get_atom_map(tagged_SMARTS, is_mapped=True)
+            QC_JSON_molecule = to_mapped_geometry(molecule, atom_map)
+            json_specs['molecule_hash'] = QC_JSON_molecule
+            needed_torsion_drives = find_torsions(molecule)
+            json_specs['needed_torsion_drives'] = needed_torsion_drives
+            define_crank_job(json_specs)
+            molecules[frag] = json_specs
+
+    if json_filename:
+        f = open(json_filename, 'w')
+        j = json.dump(molecules, f, indent=4, sort_keys=True, cls=utils.UUIDEncoder)
+        f.close()
+
+    return molecules
 
 
 def create_mapped_smiles(molecule):
@@ -283,9 +328,8 @@ def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Ps
         fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs']['method'] = method
         fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs']['options'] = options
 
-        print(grid)
         for d, spacing in enumerate(grid):
-            fragment_data['crank_torsion_drives']['crank_job_1']['torions_{}'.format(d+1)] = spacing
+            fragment_data['crank_torsion_drives']['crank_job_1']['torsion_{}'.format(d)] = spacing
 
     # ToDo define jobs combining different torsions
 
