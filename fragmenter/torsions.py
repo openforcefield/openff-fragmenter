@@ -317,6 +317,12 @@ def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Ps
         grid_dimension = len(grid)
         if grid_dimension != scan_dimension:
                 raise Exception("scan dimension {} must be equal to grid dimension {}".format(scan_dimension, grid_dimension))
+        # Check that grid is divisible by 360
+        for spacing in grid:
+            print(spacing)
+            print(360%spacing)
+            if 360 % spacing:
+                raise ValueError("grid spacing must be a factor of 360")
 
         fragment_data['crank_torsion_drives'] = dict()
         fragment_data['crank_torsion_drives']['crank_job_1'] = dict()

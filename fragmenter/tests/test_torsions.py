@@ -176,5 +176,7 @@ class TesTorsions(unittest.TestCase):
 
         with self.assertRaises(Exception):
             torsions.define_crank_job(test_crank, [15, 30])
+        with self.assertRaises(ValueError):
+            torsions.define_crank_job(test_crank, [8, 25, 35])
 
 
