@@ -32,7 +32,7 @@ class TesTorsions(unittest.TestCase):
         inp_mol = oechem.OEMol()
         oechem.OEReadMolecule(ifs, inp_mol)
 
-        tagged_smiles = torsions.create_mapped_smiles(inp_mol)
+        tagged_smiles = utils.create_mapped_smiles(inp_mol)
 
         # Tags should always be the same as mol2 molecule ordering
         self.assertEqual(tagged_smiles, '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]')
@@ -48,7 +48,7 @@ class TesTorsions(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        mol_1, atom_map = torsions.get_atom_map(tagged_smiles, mol_1)
+        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_1)
 
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
@@ -65,7 +65,7 @@ class TesTorsions(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        mol_1, atom_map = torsions.get_atom_map(tagged_smiles, mol_1)
+        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_1)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
@@ -79,7 +79,7 @@ class TesTorsions(unittest.TestCase):
         from openeye import oechem
         tagged_smiles = '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]'
         mol_from_tagged_smiles = openeye.smiles_to_oemol(tagged_smiles)
-        mol_1, atom_map = torsions.get_atom_map(tagged_smiles, mol_from_tagged_smiles)
+        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_from_tagged_smiles)
 
         # Compare atom map to tag
         for i in range(1, len(atom_map) +1):
@@ -97,7 +97,7 @@ class TesTorsions(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        mol_1, atom_map = torsions.get_atom_map(tagged_smiles, mol_1)
+        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_1)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
@@ -121,9 +121,9 @@ class TesTorsions(unittest.TestCase):
         ifs = oechem.oemolistream(infile)
         molecule = oechem.OEMol()
         oechem.OEReadMolecule(ifs, molecule)
-        tagged_smiles = torsions.create_mapped_smiles(molecule)
-        molecule, atom_map = torsions.get_atom_map(tagged_smiles, molecule, is_mapped=True)
-        mapped_geometry = torsions.to_mapped_geometry(molecule, atom_map)
+        tagged_smiles = utils.create_mapped_smiles(molecule)
+        molecule, atom_map = utils.get_atom_map(tagged_smiles, molecule, is_mapped=True)
+        mapped_geometry = utils.to_mapped_QC_JSON_geometry(molecule, atom_map)
 
         f = open(infile)
         line = f.readline()

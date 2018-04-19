@@ -8,7 +8,6 @@ import numpy as np
 
 from openeye import oechem, oeiupac, oedepict
 from openmoltools import openeye
-from .torsions import create_mapped_smiles
 
 
 def write_oedatabase(moldb, ofs, mlist, size):
@@ -282,6 +281,36 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
+def create_mapped_smiles(molecule):
+    """
+    Generate an index-tagged explicit hydrogen SMILES.
+    Exmaple:
+    SMILES string for carbon monoxide "CO"
+    With index-tagged explicit hydrogen SMILES this becomes
+    '[H:3][C:1]([H:4])([H:5])[O:2][H:6]'
+
+    Parameters
+    ----------
+    molecule: OEMOl
+
+    Returns
+    -------
+    index-tagged explicit hydrogen SMILES str
+
+    """
+    #ToDo check if tags already exist raise warning about overwritting existing tags. Maybe also add an option to override existing tags
+    oechem.OEAddExplicitHydrogens(molecule)
+
+    for atom in molecule.GetAtoms():
+        atom.SetMapIdx(atom.GetIdx() + 1)
+
+    # add tag to data
+    tag = oechem.OEGetTag("has_map")
+    molecule.SetData(tag, bool(True))
+
+    return oechem.OEMolToSmiles(molecule)
+
+
 def get_atom_map(tagged_smiles, molecule=None, is_mapped=False):
     """
     Returns a dictionary that maps tag on SMILES to atom index in molecule.
@@ -398,6 +427,37 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
         file.write(xyz)
         file.close()
     return xyz
+
+
+def to_mapped_QC_JSON_geometry(molecule, atom_map):
+    """
+    Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
+    tag on the SMILES to the atom idex in OEMol.
+    Parameters
+    ----------
+    molecule: OEMol with conformers
+    atom_map: dict
+        maps tag in SMILES to atom index
+
+    Returns
+    -------
+    dict: QC_JSON Molecule spec {symbols: [], geometry: []}
+
+    """
+    symbols = []
+    geometry = []
+    if molecule.GetMaxConfIdx() != 1:
+        raise Warning("The molecule must have at least and at most 1 conformation")
+
+    for mapping in range(1, len(atom_map)+1):
+        idx = atom_map[mapping]
+        atom = molecule.GetAtom(oechem.OEHasAtomIdx(idx))
+        syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
+        symbols.append(syb)
+        for i in range(3):
+            geometry.append(molecule.GetCoords()[idx][i])
+
+    return {'symbols': symbols, 'geometry': geometry}
 
 
 # def run_psi4_json(tagged_smiles, molecule, driver, method, basis, properties=None, return_output=True, xyz_file=True):

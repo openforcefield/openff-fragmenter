@@ -41,10 +41,10 @@ def fragment_to_torsion_scan(fragments, json_filename=None):
             json_specs['provenance']['parent_molecule'] = parent
             json_specs['canonical_isomeric_SMILES'] = frag
             molecule = openeye.smiles_to_oemol(frag)
-            tagged_SMARTS = create_mapped_smiles(molecule)
+            tagged_SMARTS = utils.create_mapped_smiles(molecule)
             json_specs['tagged_SMARTS'] = tagged_SMARTS
-            molecule, atom_map = get_atom_map(tagged_SMARTS, is_mapped=True)
-            QC_JSON_molecule = to_mapped_geometry(molecule, atom_map)
+            molecule, atom_map = utils.get_atom_map(tagged_SMARTS, is_mapped=True)
+            QC_JSON_molecule = utils.to_mapped_QC_JSON_geometry(molecule, atom_map)
             json_specs['molecule_hash'] = QC_JSON_molecule
             needed_torsion_drives = find_torsions(molecule)
             json_specs['needed_torsion_drives'] = needed_torsion_drives
@@ -57,144 +57,6 @@ def fragment_to_torsion_scan(fragments, json_filename=None):
         f.close()
 
     return molecules
-
-
-def create_mapped_smiles(molecule):
-    """
-    Generate an index-tagged explicit hydrogen SMILES.
-    Exmaple:
-    SMILES string for carbon monoxide "CO"
-    With index-tagged explicit hydrogen SMILES this becomes
-    '[H:3][C:1]([H:4])([H:5])[O:2][H:6]'
-
-    Parameters
-    ----------
-    molecule: OEMOl
-
-    Returns
-    -------
-    index-tagged explicit hydrogen SMILES str
-
-    """
-    # Check if molecule already has explicit hydrogens
-    HAS_HYDROGENS = oechem.OEHasExplicitHydrogens(molecule)
-    if not HAS_HYDROGENS:
-        # Add explicit hydrogens
-        oechem.OEAddExplicitHydrogens(molecule)
-    for atom in molecule.GetAtoms():
-        atom.SetMapIdx(atom.GetIdx() + 1)
-
-    # add tag to data
-    tag = oechem.OEGetTag("has_map")
-    molecule.SetData(tag, bool(True))
-
-    return oechem.OEMolToSmiles(molecule)
-
-
-def get_atom_map(tagged_smiles, molecule=None, is_mapped=False):
-    """
-    Returns a dictionary that maps tag on SMILES to atom index in molecule.
-    Parameters
-    ----------
-    tagged_smiles: str
-        index-tagged explicit hydrogen SMILES string
-    molecule: OEMol
-        molecule to generate map for. If None, a new OEMol will be generated from the tagged SMILES, the map will map to
-        this molecule and it will be returned.
-    is_mapped: bool
-        Default: False
-        When an OEMol is generated from SMART string with tags, the tag will be stored in atom.GetMapIdx(). The index-tagged
-        explicit-hydrogen SMILES are tagges SMARTS. Therefore, if a molecule was generated with the tagged SMILES, there is
-        no reason to do a substructure search to get the right order of the atoms. If is_mapped is True, the atom map will be
-        generated from atom.GetMapIdx().
-
-
-    Returns
-    -------
-    molecule: OEMol
-        The molecule for the atom_map. If a molecule was provided, it's that molecule.
-    atom_map: dict
-        a dictionary that maps tag to atom index {tag:idx}
-    """
-    if molecule is None:
-        molecule = openeye.smiles_to_oemol(tagged_smiles)
-        # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
-        is_mapped = True
-        # add tag to data
-        tag = oechem.OEGetTag("has_map")
-        molecule.SetData(tag, bool(True))
-
-    # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
-    # map won't be correct
-    if molecule.GetMaxConfIdx() <= 1:
-        for conf in molecule.GetConfs():
-            values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
-                                range(conf.GetCoords().__len__())])
-        if values.all():
-            # Generate on Omega conformer
-            utils.logger().info("No conformers were found in the molecule. A new conformer will be generated")
-            molecule = openeye.generate_conformers(molecule, max_confs=1)
-
-    if is_mapped:
-        atom_map = {}
-        for atom in molecule.GetAtoms():
-            atom_map[atom.GetMapIdx()] = atom.GetIdx()
-        return molecule, atom_map
-
-    ss = oechem.OESubSearch(tagged_smiles)
-    oechem.OEPrepareSearch(molecule, ss)
-    ss.SetMaxMatches(1)
-
-    atom_map = {}
-    t1 = time.time()
-    matches = [m for m in ss.Match(molecule)]
-    t2 = time.time()
-    seconds = t2-t1
-    utils.logger().info("Substructure search took {} seconds".format(seconds))
-    if not matches:
-        utils.logger().info("MCSS failed for {}, smiles: {}".format(molecule.GetTitle(), tagged_smiles))
-        return False
-    for match in matches:
-        for ma in match.GetAtoms():
-            atom_map[ma.pattern.GetMapIdx()] = ma.target.GetIdx()
-
-    # sanity check
-    mol = oechem.OEGraphMol()
-    oechem.OESubsetMol(mol, match, True)
-    utils.logger().info("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
-
-    return molecule, atom_map
-
-
-def to_mapped_geometry(molecule, atom_map):
-    """
-    Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
-    tag on the SMILES to the atom idex in OEMol.
-    Parameters
-    ----------
-    molecule: OEMol with conformers
-    atom_map: dict
-        maps tag in SMILES to atom index
-
-    Returns
-    -------
-    dict: QC_JSON Molecule spec {symbols: [], geometry: []}
-
-    """
-    symbols = []
-    geometry = []
-    if molecule.GetMaxConfIdx() != 1:
-        raise Warning("The molecule must have at least and at most 1 conformation")
-
-    for mapping in range(1, len(atom_map)+1):
-        idx = atom_map[mapping]
-        atom = molecule.GetAtom(oechem.OEHasAtomIdx(idx))
-        syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
-        symbols.append(syb)
-        for i in range(3):
-            geometry.append(molecule.GetCoords()[idx][i])
-
-    return {'symbols': symbols, 'geometry': geometry}
 
 
 def find_torsions(molecule):
@@ -212,7 +74,7 @@ def find_torsions(molecule):
         molecule.GetData('has_map')
     except ValueError:
         warnings.warn('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
-        tagged_smiles = create_mapped_smiles(molecule)
+        tagged_smiles = utils.create_mapped_smiles(molecule)
         utils.logger().info('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
         utils.logger().info('The new tagged SMARTS is: {}'.format(tagged_smiles))
 
