@@ -5,6 +5,7 @@ import sys
 import json
 from uuid import UUID
 import numpy as np
+import itertools
 
 from openeye import oechem, oeiupac, oedepict
 from openmoltools import openeye
@@ -168,77 +169,6 @@ def normalize_molecule(molecule, title=''):
     if any([atom.GetName() == '' for atom in molcopy.GetAtoms()]):
         oechem.OETriposAtomNames(molcopy)
     return molcopy
-
-
-def png_atoms_labeled(smiles, fname):
-    """Write out png file of molecule with atoms labeled with their map index.
-
-    Parameters
-    ----------
-    smiles: str
-        SMILES
-    fname: str
-        absolute path and filename for png
-
-    """
-
-    mol = oechem.OEGraphMol()
-    oechem.OESmilesToMol(mol, smiles)
-    oedepict.OEPrepareDepiction(mol)
-
-    width, height = 300, 200
-
-    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
-    opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
-    opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
-
-    disp = oedepict.OE2DMolDisplay(mol, opts)
-    return oedepict.OERenderMolecule(fname, disp)
-
-
-def png_wiberg_labels(mol, fname, width=600, height=400):
-    """
-    Generate png figure of molecule. Bonds are labeled with Wiberg bond order
-
-    Parameters
-    ----------
-    mol: OpenEye OEMol
-    fname: str
-        filename for png
-    width: int
-    height: int
-
-    Returns
-    -------
-    bool:
-    """
-
-    oedepict.OEPrepareDepiction(mol)
-
-
-    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
-    # opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
-    # opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
-
-    bondlabel = LabelBondOrder()
-    opts.SetBondPropertyFunctor(bondlabel)
-
-    disp = oedepict.OE2DMolDisplay(mol, opts)
-    return oedepict.OERenderMolecule(fname, disp)
-
-
-class LabelBondOrder(oedepict.OEDisplayBondPropBase):
-    def __init__(self):
-        oedepict.OEDisplayBondPropBase.__init__(self)
-
-    def __call__(self, bond):
-        bondOrder = bond.GetData('WibergBondOrder')
-        label = "{:.2f}".format(bondOrder)
-        return label
-
-    def CreateCopy(self):
-        copy = LabelBondOrder()
-        return copy.__disown__()
 
 
 def mol2_to_psi4json(infile):
@@ -459,6 +389,210 @@ def to_mapped_QC_JSON_geometry(molecule, atom_map):
 
     return {'symbols': symbols, 'geometry': geometry}
 
+
+def bond_order_from_psi4_raw_output(psi_output):
+    """
+    Extract Wiberg and Mayer bond order from raw psi4 output
+
+    Parameters
+    ----------
+    psi_output: str
+        psi4 raw output. This can be extracted from JSON_data['raw_output'] or by reading entire psi4 output
+        file
+
+    Returns
+    -------
+    bond_order_arrays: dict of numpy arrays
+        {Wiberg_psi4: np.array, Mayer_psi4: np.array}
+        N x N array. N is the number of atoms in the molecule. Indices in this array corresponds to tag in
+        the molecule given by `tagged_smiles` in QC_JSON spec
+
+    """
+    Mayer = []
+    Wiberg = []
+    FLAG = None
+    for line in psi_output.split('\n'):
+        if not line:
+            continue
+        if 'Wiberg' in line:
+            FLAG = 'Wiberg'
+        if 'Mayer' in line:
+            FLAG = 'Mayer'
+        if 'Size' in line:
+            size = line.split()
+            size = int(size[3]), int(size[-1])
+        if FLAG is 'Mayer':
+            Mayer.append(line.split())
+        if FLAG is 'Wiberg':
+            Wiberg.append(line.split())
+
+    Wiberg_array = np.zeros(size)
+    Mayer_array = np.zeros(size)
+
+    for i, lines in enumerate(zip(Wiberg[2:], Mayer[2:])):
+        line_w = lines[0]
+        line_m = lines[1]
+        if i == 0:
+            elements = line_w
+            continue
+        if not i%float(size[0]+1) and i<((float(size[0]+1))*float((size[0]/5))):
+            #print(i)
+            if len(line_w) !=5:
+                if str(size[0]) in line_w:
+                    elements = line_w
+                continue
+            elements = line_w
+            continue
+        j = line_w[0]
+        for k, bo in enumerate(zip(line_w[1:], line_m[1:])):
+            bo_w = bo[0]
+            bo_m = bo[1]
+            try:
+                Wiberg_array[int(elements[k])-1][int(j)-1] = bo_w
+                Mayer_array[int(elements[k])-1][int(j)-1] = bo_m
+
+            except (ValueError, IndexError):
+                pass
+
+    return {'Wiberg_psi4': Wiberg_array, 'Mayer_psi4': Mayer_array}
+
+
+def bond_order_tag(molecule, atom_map, bond_order_array):
+    """
+    Add psi bond order to bond in molecule. This function adds a tag to the GetData dictionary
+    in bond.GetData()
+
+    Parameters
+    ----------
+    molecule: OEMol
+        This molecule must have tags that corresponds to the atom_map
+    atom_map: dict
+        dictionary that maps atom tag to atom index
+    bond_order_array: N x N numpy array
+        N - atoms in molecule. This array contains the bond order for bond(i,j) where i,j correspond to
+        tag on atom and index in bond_order_array
+    bond_order_type: str
+        Can be Wiberg_psi or Mayer_psi
+
+    """
+    wiberg_bond_order = bond_order_array['Wiberg_psi4']
+    mayer_bond_order = bond_order_array['Mayer_psi4']
+    # Sanity check, both arrays are same shape
+    for i, j in itertools.combinations(range(wiberg_bond_order.shape[0]), 2):
+        idx_1 = atom_map[i+1]
+        idx_2 = atom_map[j+1]
+        atom_1 = molecule.GetAtom(oechem.OEHasAtomIdx(idx_1))
+        atom_2 = molecule.GetAtom(oechem.OEHasAtomIdx(idx_2))
+        bond = molecule.GetBond(atom_1, atom_2)
+        if bond:
+            wbo = wiberg_bond_order[i][j]
+            mbo = mayer_bond_order[i][j]
+            tag = oechem.OEGetTag('Wiberg_psi')
+            bond.SetData(tag, wbo)
+            tag = oechem.OEGetTag('Mayer_psi')
+            bond.SetData(tag, mbo)
+
+
+def png_atoms_labeled(smiles, fname):
+    """Write out png file of molecule with atoms labeled with their map index.
+
+    Parameters
+    ----------
+    smiles: str
+        SMILES
+    fname: str
+        absolute path and filename for png
+
+    """
+
+    mol = oechem.OEGraphMol()
+    oechem.OESmilesToMol(mol, smiles)
+    oedepict.OEPrepareDepiction(mol)
+
+    width, height = 300, 200
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
+    opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+    return oedepict.OERenderMolecule(fname, disp)
+
+
+def png_bond_labels(mol, fname, width=600, height=400, label='WibergBondOrder'):
+    """
+    Generate png figure of molecule. Bonds are labeled with Wiberg bond order
+
+    Parameters
+    ----------
+    mol: OpenEye OEMol
+    fname: str
+        filename for png
+    width: int
+    height: int
+    label: str
+        Which label to print. Options are WibergBondOrder, Wiberg_psi4 and Mayer_psi4
+
+    Returns
+    -------
+    bool:
+    """
+
+    oedepict.OEPrepareDepiction(mol)
+
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    # opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
+    # opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
+    bond_label = {'WibergBondOrder': LabelWibergBondOrder, 'Wiberg_psi4': LabelWibergPsiBondOrder,
+                  'Mayer_psi4': LabelMayerPsiBondOrder}
+    bondlabel = bond_label[label]
+    opts.SetBondPropertyFunctor(bondlabel())
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+    return oedepict.OERenderMolecule(fname, disp)
+
+
+class LabelWibergBondOrder(oedepict.OEDisplayBondPropBase):
+    def __init__(self):
+        oedepict.OEDisplayBondPropBase.__init__(self)
+
+    def __call__(self, bond):
+        bondOrder = bond.GetData('WibergBondOrder')
+        label = "{:.2f}".format(bondOrder)
+        return label
+
+    def CreateCopy(self):
+        copy = LabelWibergBondOrder()
+        return copy.__disown__()
+
+
+class LabelWibergPsiBondOrder(oedepict.OEDisplayBondPropBase):
+    def __init__(self):
+        oedepict.OEDisplayBondPropBase.__init__(self)
+
+    def __call__(self, bond):
+        bondOrder = bond.GetData('Wiberg_psi')
+        label = "{:.2f}".format(bondOrder)
+        return label
+
+    def CreateCopy(self):
+        copy = LabelWibergPsiBondOrder()
+        return copy.__disown__()
+
+
+class LabelMayerPsiBondOrder(oedepict.OEDisplayBondPropBase):
+    def __init__(self):
+        oedepict.OEDisplayBondPropBase.__init__(self)
+
+    def __call__(self, bond):
+        bondOrder = bond.GetData('Mayer_psi')
+        label = "{:.2f}".format(bondOrder)
+        return label
+
+    def CreateCopy(self):
+        copy = LabelMayerPsiBondOrder()
+        return copy.__disown__()
 
 # def run_psi4_json(tagged_smiles, molecule, driver, method, basis, properties=None, return_output=True, xyz_file=True):
 #     """
