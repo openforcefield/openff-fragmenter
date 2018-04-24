@@ -1,21 +1,26 @@
 from itertools import combinations
-from openeye import oechem
-from openeye import oedepict
-from openeye import oegrapheme
-from openeye import oemedchem
+import openeye as oe
+from openeye import oechem, oedepict, oegrapheme
 
 from openmoltools import openeye
 
 import yaml
 import os
+import pwd
 from pkg_resources import resource_filename
 import copy
 import itertools
+import uuid
+import json
 
-from fragmenter import utils
+from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase, UUIDEncoder
+import fragmenter
+
+OPENEYE_VERSION = oe.__version__
 
 
-def generate_fragments(inputf, output_dir, pdf=False, combinatorial=True, MAX_ROTORS=2, strict_stereo=True, remove_map=True):
+def generate_fragments(inputf, generate_visualization=False, combinatorial=True, MAX_ROTORS=2, strict_stereo=True,
+                       remove_map=True, json_filename=None):
     """
     This function generates fragment SMILES files sorted by rotatable bonds from an input molecule file.
     The output .smi files are written out to `output_dir` and named `nrotor_n.smi` where n corresponds to the number
@@ -26,7 +31,7 @@ def generate_fragments(inputf, output_dir, pdf=False, combinatorial=True, MAX_RO
         absolute path to input molecule file
     output_dir: str
         absolute path to output directory
-    pdf: bool
+    generate_visualization: bool
         If true, visualization of the fragments will be written to pdf files. The pdf will be writtten in the directory
         where this function is run from.
     combinatorial: bool
@@ -34,45 +39,55 @@ def generate_fragments(inputf, output_dir, pdf=False, combinatorial=True, MAX_RO
     MAX_ROTORS: int
         rotor threshold for combinatorial
 
+    Returns
+    -------
+    fragments: a dict of 2 dictionaries
+        provenance: record of the job that generated fragments
+        fragments: mapping of SMILES from the parent molecule to the SMILES of the fragments
     """
+    options = copy.deepcopy(locals())
+    fragments = dict()
+    fragments['fragments'] = {}
+    fragments['provenance'] = {'job_id': uuid.uuid4(), 'package': fragmenter.__package__, 'version': fragmenter.__version__,
+                               'routine': generate_fragments.__module__ + '.' + generate_fragments.__name__,
+                               'canonicalization': oe.__name__ + ' v' + OPENEYE_VERSION,
+                               'user': pwd.getpwuid(os.getuid()).pw_name, 'routine_options': options}
     ifs = oechem.oemolistream()
-    smiles_unique = set()
-
     mol = oechem.OEMol()
     if ifs.open(inputf):
         while oechem.OEReadMolecule(ifs, mol):
-            openeye.normalize_molecule(mol)
-            utils.logger().info('fragmenting {}...'.format(mol.GetTitle()))
+            title = mol.GetTitle()
+            mol = normalize_molecule(mol, title=title)
+            logger().info('fragmenting {}...'.format(mol.GetTitle()))
             if remove_map:
                 # Remove tags from smiles. This is done to make it easier to find duplicate fragments
                 for a in mol.GetAtoms():
                     a.SetMapIdx(0)
             frags = _generate_fragments(mol, strict_stereo=strict_stereo)
             if not frags:
-                utils.logger().warn('Skipping {}, SMILES: {}'.format(mol.GetTitle(), oechem.OECreateSmiString(mol)))
+                logger().warn('Skipping {}, SMILES: {}'.format(mol.GetTitle(), oechem.OECreateSmiString(mol)))
                 continue
             charged = frags[0]
             frags = frags[-1]
+            frag_list = list(frags.values())
             if combinatorial:
-                smiles = smiles_with_combined(frags, charged, MAX_ROTORS=MAX_ROTORS)
+                smiles = smiles_with_combined(frag_list, charged, MAX_ROTORS=MAX_ROTORS)
             else:
-                smiles = frag_to_smiles(frags, charged)
+                smiles = frag_to_smiles(frag_list, charged)
 
-            smiles_unique.update(list(smiles.keys()))
-            if pdf:
+            parent_smiles = oechem.OEMolToSmiles(mol)
+            fragments['fragments'][parent_smiles] = list(smiles.keys())
+
+            if generate_visualization:
                 oname = '{}.pdf'.format(mol.GetTitle())
                 ToPdf(charged, oname, frags)
             del charged, frags
+    if json_filename:
+        f = open(json_filename, 'w')
+        j = json.dump(fragments, f, indent=4, sort_keys=True, cls=UUIDEncoder)
+        f.close()
 
-    # Generate oedatabase for all fragments
-    split_fname = inputf.split('.')
-    base = split_fname[-2].split('/')[-1]
-    ofname = base + '_frags'
-    utils.to_smi(list(smiles_unique), output_dir, ofname)
-    ofname_ext = ofname + '.smi'
-    oedb_name = os.path.join(output_dir, ofname_ext)
-    utils.create_oedatabase_idxfile(oedb_name)
-    _sort_by_rotbond(oedb_name, outdir=output_dir)
+    return fragments
 
 
 def _generate_fragments(mol, strict_stereo=True):
@@ -97,7 +112,7 @@ def _generate_fragments(mol, strict_stereo=True):
         try:
             bond.GetData('WibergBondOrder')
         except ValueError:
-            utils.logger().warn("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
+            logger().warn("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
             return False
 
     tagged_rings, tagged_fgroups = tag_molecule(charged)
@@ -132,8 +147,11 @@ def _tag_fgroups(mol, fgroups_smarts=None):
     """
     if not fgroups_smarts:
         # Load yaml file
-        fn = resource_filename('torsionfit', os.path.join('qmscan', 'fgroup_smarts.yml'))
-        fgroups_smarts = yaml.safe_load(open(fn, 'r'))
+        fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts.yml'))
+        f = open(fn, 'r')
+        fgroups_smarts = yaml.safe_load(f)
+        f.close()
+
     fgroup_tagged = {}
     for f_group in fgroups_smarts:
         qmol = oechem.OEQMol()
@@ -580,12 +598,12 @@ def frag_to_smiles(frags, mol):
     Convert fragments (AtomBondSet) to canonical isomeric SMILES string
     Parameters
     ----------
-    frags
+    frags: list
     mol
 
     Returns
     -------
-    smiles: list of smiles strings
+    smiles: dict of smiles to frag
 
     """
     smiles = {}
@@ -627,11 +645,11 @@ def _sort_by_rotbond(ifs, outdir):
     for nrotor in nrotors_map:
         size = len(nrotors_map[nrotor])
         ofname = os.path.join(outdir, 'nrotor_{}.smi'.format(nrotor))
-        ofs = utils.new_output_stream(ofname)
-        utils.write_oedatabase(moldb, ofs, nrotors_map[nrotor], size)
+        ofs = new_output_stream(ofname)
+        write_oedatabase(moldb, ofs, nrotors_map[nrotor], size)
 
 
-def smiles_with_combined(frags, mol, MAX_ROTORS=2):
+def smiles_with_combined(frag_list, mol, MAX_ROTORS=2):
     """
     Generates Smiles:frags mapping for fragments and fragment combinations with less than MAX_ROTORS rotatable bonds
 
@@ -645,7 +663,6 @@ def smiles_with_combined(frags, mol, MAX_ROTORS=2):
     smiles: dict of smiles sting to fragment
 
     """
-    frag_list = list(frags.values())
     comb_list = GetFragmentAtomBondSetCombinations(frag_list, MAX_ROTORS=MAX_ROTORS)
 
     combined_list = comb_list + frag_list
@@ -653,7 +670,6 @@ def smiles_with_combined(frags, mol, MAX_ROTORS=2):
     smiles = frag_to_smiles(combined_list, mol)
 
     return smiles
-
 
 
 def ToPdf(mol, oname, frags):#, fragcombs):

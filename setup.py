@@ -17,7 +17,7 @@ setup(
     license='MIT',
     packages=['fragmenter', "fragmenter.tests"],
     # Optional include package data to ship with your package
-    package_data={'fragmenter': []  # + ["data/*.dat"]
+    package_data={'fragmenter': [] + ["data/*.yml"]
                   },
     # Additional entries you may want simply uncomment the lines you want and fill in the data
     # author_email='me@place.org',      # Author email
