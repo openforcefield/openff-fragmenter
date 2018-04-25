@@ -43,9 +43,15 @@ def fragment_to_torsion_scan(fragments, json_filename=None):
             molecule = openeye.smiles_to_oemol(frag)
             tagged_SMARTS = utils.create_mapped_smiles(molecule)
             json_specs['tagged_SMARTS'] = tagged_SMARTS
-            molecule, atom_map = utils.get_atom_map(tagged_SMARTS, is_mapped=True)
+
+            # Check if SMILES have stereochemistry
+            if provenance['canonicalization_details']['DEFAULT']:
+                StrictStereo = False
+            else:
+                StrictStereo = True
+            molecule, atom_map = utils.get_atom_map(tagged_SMARTS, is_mapped=True, StrictStereo=StrictStereo)
             QC_JSON_molecule = utils.to_mapped_QC_JSON_geometry(molecule, atom_map)
-            json_specs['molecule_hash'] = QC_JSON_molecule
+            json_specs['molecule'] = QC_JSON_molecule
             needed_torsion_drives = find_torsions(molecule)
             json_specs['needed_torsion_drives'] = needed_torsion_drives
             define_crank_job(json_specs)
@@ -145,7 +151,7 @@ def find_torsions(molecule):
     return needed_torsion_scans
 
 
-def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Psi4', method='B3LYP/aug-cc-pVDZ', **kwargs):
+def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Psi4', method='B3LYP', basis='aug-cc-pVDZ', **kwargs):
     """
 
     Parameters
@@ -181,8 +187,6 @@ def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Ps
                 raise Exception("scan dimension {} must be equal to grid dimension {}".format(scan_dimension, grid_dimension))
         # Check that grid is divisible by 360
         for spacing in grid:
-            print(spacing)
-            print(360%spacing)
             if 360 % spacing:
                 raise ValueError("grid spacing must be a factor of 360")
 
@@ -190,10 +194,12 @@ def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Ps
         fragment_data['crank_torsion_drives']['crank_job_1'] = dict()
         fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs'] = dict()
 
+        model = {'method': method, 'basis': basis}
         options = {'scf_type': 'df'}
         if kwargs:
             options = kwargs['options']
-        fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs']['method'] = method
+        fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs']['model'] = model
+
         fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs']['options'] = options
 
         for d, spacing in enumerate(grid):
