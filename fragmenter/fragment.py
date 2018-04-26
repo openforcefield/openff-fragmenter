@@ -16,21 +16,23 @@ import json
 from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase, UUIDEncoder
 import fragmenter
 
-OPENEYE_VERSION = oe.__version__
+OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 
 def generate_fragments(inputf, generate_visualization=False, combinatorial=True, MAX_ROTORS=2, strict_stereo=True,
-                       remove_map=True, json_filename=None):
+                       remove_map=True, json_filename=None, canonicalization=OPENEYE_VERSION, OESMILESFlag='ISOMERIC'):
     """
-    This function generates fragment SMILES files sorted by rotatable bonds from an input molecule file.
-    The output .smi files are written out to `output_dir` and named `nrotor_n.smi` where n corresponds to the number
-    of rotatable bonds for all fragments in the file.
+    This function generates fragments from molecules. The output is a dictionary that maps SMILES of molecules to SMILES
+     for fragments. The default SMILES are generated with openeye.oechem.OEMolToSmiles. These SMILES strings are canonical
+     isomeric SMILES. It is also possible to generate non isomeric canonical SMILES if stereochemistry is not available.
+     However, this is not recommended. If your SMILES string for a molecule is missing stereochemistry, you can generate an
+     isomeric canonical SMILES by generating an OEMol from SMILES and then calling oepenye.oechem.OEMolToSmiles on it.
+     The dictionary also includes a providence field which defines how the fragments were generated.
+
     Parameters
     ----------
     inputf: str
         absolute path to input molecule file
-    output_dir: str
-        absolute path to output directory
     generate_visualization: bool
         If true, visualization of the fragments will be written to pdf files. The pdf will be writtten in the directory
         where this function is run from.
@@ -38,6 +40,23 @@ def generate_fragments(inputf, generate_visualization=False, combinatorial=True,
         If true, find all connected fragments from fragments and add all new fragments that have less than MAX_ROTORS
     MAX_ROTORS: int
         rotor threshold for combinatorial
+    strict_stereo: bool
+        If True, omega will generate conformation with stereochemistry defined in the SMILES string for charging.
+        ***Warning***
+        If  the SMILES string does not include stereochemistry, this option can be set to False. However, it is not
+        recommended. A better strategy is to regenarate an Canonical Isomeric SMILES from a molecule generated from the
+        SMILES String
+    remove_map: bool
+        If True, the index tags will be removed. This will remove duplicate fragments. Defualt True
+    json_filename: str
+        filenmae for JSON. If provided, will save the returned dictionary to a JSON file. Default is None
+    canonicalization: str
+        Program used to canonicalize SMILES string. Different chemiinformatics programs have different canonicalization
+        algorithms. Therefore it's important to specify the program used and version
+        Default: Openeye with version
+    OESMILESFlag: str
+        The Flag used to generate SMILES. The two options are ISOMERIC and DEFAULT. Default is ISOMERIC. See OpenEye
+        documentation (https://docs.eyesopen.com/toolkits/python/oechemtk/OEChemConstants/OESMILESFlag.html)
 
     Returns
     -------
@@ -47,10 +66,24 @@ def generate_fragments(inputf, generate_visualization=False, combinatorial=True,
     """
     options = copy.deepcopy(locals())
     fragments = dict()
+    canonicalization_details = {'package': OPENEYE_VERSION, 'ISOMERIC': True,  'DEFAULT': False, 'Isotopes': True,
+                                'AtomStereo': True, 'BondStereo': True, 'Canonical': True, 'AtomMaps': True,
+                                'RGroups': True, 'oe_function': 'openeye.oechem.OEMolToSmiles', 'notes': 'All other available OESMILESFlag are set to False'}
+    if OESMILESFlag == 'DEFAULT':
+        # The default option should only be used if stereochemistry information does not exist for the parent molecule
+        if strict_stereo:
+            raise Warning("Only use the DEFAULT flag if you do not have stereochemistry information. Set stereo_chemistry to False")
+        canonicalization_details['ISOMERIC'] = False
+        canonicalization_details['DEFAULT'] = True
+        canonicalization_details['Isotopes'] = False
+        canonicalization_details['AtomStereo'] = False
+        canonicalization_details['BondStereo'] = False
+        canonicalization_details['oe_function'] = 'openeye.oechem.OECreateCanSmiString'
+
     fragments['fragments'] = {}
     fragments['provenance'] = {'job_id': uuid.uuid4(), 'package': fragmenter.__package__, 'version': fragmenter.__version__,
                                'routine': generate_fragments.__module__ + '.' + generate_fragments.__name__,
-                               'canonicalization': oe.__name__ + ' v' + OPENEYE_VERSION,
+                               'canonicalization_details': canonicalization_details,
                                'user': pwd.getpwuid(os.getuid()).pw_name, 'routine_options': options}
     ifs = oechem.oemolistream()
     mol = oechem.OEMol()
@@ -71,9 +104,9 @@ def generate_fragments(inputf, generate_visualization=False, combinatorial=True,
             frags = frags[-1]
             frag_list = list(frags.values())
             if combinatorial:
-                smiles = smiles_with_combined(frag_list, charged, MAX_ROTORS=MAX_ROTORS)
+                smiles = smiles_with_combined(frag_list, charged, MAX_ROTORS, OESMILESFlag)
             else:
-                smiles = frag_to_smiles(frag_list, charged)
+                smiles = frag_to_smiles(frag_list, charged, OESMILESFlag)
 
             parent_smiles = oechem.OEMolToSmiles(mol)
             fragments['fragments'][parent_smiles] = list(smiles.keys())
@@ -97,6 +130,8 @@ def _generate_fragments(mol, strict_stereo=True):
     Parameters
     ----------
     mol: OEMol
+    strict_stereo: bool
+        If False, omega will generate conformer without the specific stereochemistry
 
     Returns
     -------
@@ -593,19 +628,22 @@ def _ring_substiuents(mol, bond, rotor_bond, tagged_rings, ring_idx, fgroup_tagg
     return rs_atoms, rs_bonds
 
 
-def frag_to_smiles(frags, mol):
+def frag_to_smiles(frags, mol, OESMILESFlag):
     """
     Convert fragments (AtomBondSet) to canonical isomeric SMILES string
     Parameters
     ----------
     frags: list
-    mol
+    mol: OEMol
+    OESMILESFlag: str
+        Either 'ISOMERIC' or 'DEFAULT'. This flag determines which OE function to use to generate SMILES string
 
     Returns
     -------
     smiles: dict of smiles to frag
 
     """
+
     smiles = {}
     for frag in frags:
         fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
@@ -614,7 +652,13 @@ def frag_to_smiles(frags, mol):
         fragment = oechem.OEGraphMol()
         adjustHCount = True
         oechem.OESubsetMol(fragment, mol, fragatompred, fragbondpred, adjustHCount)
-        s = oechem.OEMolToSmiles(fragment)
+        if OESMILESFlag is 'ISOMERIC':
+            s = oechem.OEMolToSmiles(fragment)
+        elif OESMILESFlag is 'DEFAULT':
+            s = oechem.OECreateCanSmiString(fragment)
+        else:
+            raise Warning("FLAG has to be either ISOMERIC or DEFAULT")
+
         if s not in smiles:
             smiles[s] = []
         smiles[s].append(frag)
@@ -649,7 +693,7 @@ def _sort_by_rotbond(ifs, outdir):
         write_oedatabase(moldb, ofs, nrotors_map[nrotor], size)
 
 
-def smiles_with_combined(frag_list, mol, MAX_ROTORS=2):
+def smiles_with_combined(frag_list, mol, MAX_ROTORS=2, OESMILESFlag='ISOMERIC'):
     """
     Generates Smiles:frags mapping for fragments and fragment combinations with less than MAX_ROTORS rotatable bonds
 
@@ -657,6 +701,8 @@ def smiles_with_combined(frag_list, mol, MAX_ROTORS=2):
     ----------
     frags: dict of rot band mapped to AtomBondSet
     mol: OpenEye Mol
+    OESMILESFlag: str
+        Either 'ISOMERIC' or 'DEFAULT'. This flag determines which OE function to use to generate SMILES string
 
     Returns
     -------
@@ -667,7 +713,7 @@ def smiles_with_combined(frag_list, mol, MAX_ROTORS=2):
 
     combined_list = comb_list + frag_list
 
-    smiles = frag_to_smiles(combined_list, mol)
+    smiles = frag_to_smiles(combined_list, mol, OESMILESFlag)
 
     return smiles
 

@@ -241,7 +241,7 @@ def create_mapped_smiles(molecule):
     return oechem.OEMolToSmiles(molecule)
 
 
-def get_atom_map(tagged_smiles, molecule=None, is_mapped=False):
+def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=True):
     """
     Returns a dictionary that maps tag on SMILES to atom index in molecule.
     Parameters
@@ -279,7 +279,7 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False):
                                 range(conf.GetCoords().__len__())])
         if values.all():
             # Generate on Omega conformer
-            molecule = openeye.generate_conformers(molecule, max_confs=1)
+            molecule = openeye.generate_conformers(molecule, max_confs=1, strictStereo=StrictStereo)
 
     if is_mapped:
         atom_map = {}
@@ -359,7 +359,7 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
     return xyz
 
 
-def to_mapped_QC_JSON_geometry(molecule, atom_map):
+def to_mapped_QC_JSON_geometry(molecule, atom_map, charge=0, multiplicity=1):
     """
     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
     tag on the SMILES to the atom idex in OEMol.
@@ -368,10 +368,14 @@ def to_mapped_QC_JSON_geometry(molecule, atom_map):
     molecule: OEMol with conformers
     atom_map: dict
         maps tag in SMILES to atom index
+    charge: int
+        charge of molecule. Default is 0 (neural)
+    multiplicity: int
+        spin multiplicity of molecule (2S +1). Default is 1 (all electrons are paired)
 
     Returns
     -------
-    dict: QC_JSON Molecule spec {symbols: [], geometry: []}
+    dict: QC_JSON Molecule spec {symbols: [], geometry: [], 'molecular_charge': int, 'molecular_multiplicity': int}
 
     """
     symbols = []
@@ -387,7 +391,8 @@ def to_mapped_QC_JSON_geometry(molecule, atom_map):
         for i in range(3):
             geometry.append(molecule.GetCoords()[idx][i])
 
-    return {'symbols': symbols, 'geometry': geometry}
+    return {'symbols': symbols, 'geometry': geometry, 'molecular_charge': charge,
+            'molecular_multiplicity': multiplicity}
 
 
 def bond_order_from_psi4_raw_output(psi_output):
@@ -436,7 +441,6 @@ def bond_order_from_psi4_raw_output(psi_output):
             elements = line_w
             continue
         if not i%float(size[0]+1) and i<((float(size[0]+1))*float((size[0]/5))):
-            #print(i)
             if len(line_w) !=5:
                 if str(size[0]) in line_w:
                     elements = line_w
@@ -468,12 +472,10 @@ def bond_order_tag(molecule, atom_map, bond_order_array):
         This molecule must have tags that corresponds to the atom_map
     atom_map: dict
         dictionary that maps atom tag to atom index
-    bond_order_array: N x N numpy array
+    bond_order_array: dict
+        maps Wiberg and Meyer bond indices to N x N numpy arrays.
         N - atoms in molecule. This array contains the bond order for bond(i,j) where i,j correspond to
         tag on atom and index in bond_order_array
-    bond_order_type: str
-        Can be Wiberg_psi or Mayer_psi
-
     """
     wiberg_bond_order = bond_order_array['Wiberg_psi4']
     mayer_bond_order = bond_order_array['Mayer_psi4']
@@ -521,7 +523,7 @@ def png_atoms_labeled(smiles, fname):
 
 def png_bond_labels(mol, fname, width=600, height=400, label='WibergBondOrder'):
     """
-    Generate png figure of molecule. Bonds are labeled with Wiberg bond order
+    Generate png figure of molecule. Bonds should include bond order defined in label
 
     Parameters
     ----------
