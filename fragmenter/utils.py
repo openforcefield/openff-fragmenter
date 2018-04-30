@@ -241,6 +241,24 @@ def create_mapped_smiles(molecule):
     return oechem.OEMolToSmiles(molecule)
 
 
+def is_mapped(molecule):
+    """
+    Check if atoms are mapped. If any atom is missing a tag, this will return False
+    Parameters
+    ----------
+    molecule: OEMol
+
+    Returns
+    -------
+    Bool: True if mapped. False otherwise
+    """
+    IS_MAPPED = True
+    for atom in molecule.GetAtoms():
+        if atom.GetMapIdx() == 0:
+            IS_MAPPED = False
+    return IS_MAPPED
+
+
 def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=True):
     """
     Returns a dictionary that maps tag on SMILES to atom index in molecule.
@@ -280,6 +298,7 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=Tru
         if values.all():
             # Generate on Omega conformer
             molecule = openeye.generate_conformers(molecule, max_confs=1, strictStereo=StrictStereo)
+            # Omega can change the ordering so whatever map existed is not there anymore
 
     if is_mapped:
         atom_map = {}

@@ -76,13 +76,13 @@ def find_torsions(molecule):
 
     """
     # Check if molecule has map
-    try:
-        molecule.GetData('has_map')
-    except ValueError:
+    is_mapped = utils.is_mapped(molecule)
+    if not is_mapped:
         warnings.warn('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
         tagged_smiles = utils.create_mapped_smiles(molecule)
         utils.logger().info('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
         utils.logger().info('The new tagged SMARTS is: {}'.format(tagged_smiles))
+
 
     mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
 
@@ -208,6 +208,33 @@ def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Ps
     # ToDo define jobs combining different torsions
 
     return fragment_data
+
+
+def run_crank(fragment):
+
+    n_atoms = len(fragment['molecule']['symbols'])
+    init_geometry = fragment['molecule']['geometry']
+    init_geometry_3d = [[init_geometry[i*3:i*3+3]] for i in range(n_atoms)]
+    needed_torsions = fragment['needed_torsions']
+    crank_jobs = fragment['crank_torsion_drives']
+    for job in crank_jobs:
+        dihedrals = []
+        grid_spacing = []
+        crank_specs = crank_jobs[job]['crank_specs']
+        for torsion in needed_torsions:
+            # Convert to 0 based numbering. Tag numbering starts at 1 because zero is no tag in OpenEye. Crank uses atom
+            # indices which start at 0.
+            dihedrals.append([i-1 for i in needed_torsions[torsion]])
+            grid_spacing.append(crank_jobs[job][torsion])
+
+        crank_state = {}
+        crank_state['dihedrals'] = dihedrals
+        crank_state['Grid_spacing'] = grid_spacing
+        crank_state['elements'] = fragment['molecule']['symbols']
+        crank_state['init_coords'] = [init_geometry]
+        crank_state['grid_status'] = []
+
+
 
 
 # def pdb_to_psi4(starting_geom, mol_name, method, basis_set, charge=0, multiplicity=1, symmetry='C1', geom_opt=True,
