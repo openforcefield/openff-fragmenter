@@ -264,7 +264,7 @@ def get_initial_crank_state(fragment, fragment_name=None):
     return crank_initial_states
 
 
-def launch_crank(fragment, path=None, base_name=None, init_coords=None, crank_job='crank_job_1', grid=30, engine='psi4',
+def launch_crank(fragment, inputfile, dihedralfile, init_coords=None, crank_job='crank_job_1', grid=30, engine='psi4',
                  native_opt=False, wq_port=None, verbose=True, **kwargs):
     """
     Launch crank-launch for a specific crank job in fragment.
@@ -293,28 +293,6 @@ def launch_crank(fragment, path=None, base_name=None, init_coords=None, crank_jo
 
     """
 
-    if not base_name:
-        # Generate Python valid identifier string from smiles by converting forbidden characters to _hex_
-        smiles = fragment['canonical_isomeric_SMILES']
-        base_name, namespace = utils.make_python_identifier(smiles, convert='hex')
-    if not path:
-        cwd = os.getcwd()
-        path = os.path.join(cwd, base_name)
-
-    # create folder to launch crank in
-    try:
-        os.mkdir(path)
-    except FileExistsError:
-        warnings.warn("Overwriting {}".format(path))
-
-    os.chdir(path)
-
-    # Write out input files
-    inputfile = base_name + '.dat'
-    utils.to_psi4_input(fragment, molecule_name=base_name, crank_job=crank_job, filename=inputfile, **kwargs)
-    dihedralfile = base_name + '.txt'
-    utils.to_dihedraltxt(fragment, crank_job=crank_job, filename=dihedralfile)
-
     #launch crank
     command = 'crank-launch {} {} -g {} -e {}'.format(
             inputfile, dihedralfile, grid, engine)
@@ -327,4 +305,44 @@ def launch_crank(fragment, path=None, base_name=None, init_coords=None, crank_jo
     if verbose:
         command += ' -v'
 
-    os.system(command + ' > {}.out'.format(base_name))
+    outfile = inputfile.replace('dat', 'out')
+    os.system(command + ' > {}'.format(outfile))
+
+
+def to_crank_input(fragment, base_name=None, path=None, crank_job='crank_job_1', launch=False, **kwargs):
+    """
+
+    Parameters
+    ----------
+    fragment
+
+    Returns
+    -------
+
+    """
+    if not base_name:
+        # Generate Python valid identifier string from smiles by converting forbidden characters to _hex_
+        smiles = fragment['canonical_isomeric_SMILES']
+        base_name, namespace = utils.make_python_identifier(smiles, convert='hex')
+    if not path:
+        cwd = os.getcwd()
+        path = os.path.join(cwd, base_name + '_{}'.format(crank_job))
+
+    # create folder to launch crank in
+    try:
+        os.mkdir(path)
+    except FileExistsError:
+        warnings.warn("Overwriting {}".format(path))
+
+    #os.chdir(path)
+
+    # Write out input files
+    inputfile = os.path.join(path, base_name + '_{}.dat'.format(crank_job))
+    utils.to_psi4_input(fragment, molecule_name=base_name, crank_job=crank_job, filename=inputfile, **kwargs)
+    dihedralfile = os.path.join(path, base_name + '_{}.txt'.format(crank_job))
+    utils.to_dihedraltxt(fragment, crank_job=crank_job, filename=dihedralfile)
+
+    if launch:
+        launch_crank(fragment, inputfile, dihedralfile, **kwargs)
+    else:
+        return path, inputfile, dihedralfile
