@@ -187,7 +187,8 @@ class TesTorsions(unittest.TestCase):
         jsonfile.close()
 
         crank_initial_state = torsions.get_initial_crank_state(test_crank_job['CCCC'])
-        self.assertEqual(crank_initial_state['crank_job_1']['dihedrals'], [[2, 1, 0, 6], [0, 1, 2, 3], [1, 2, 3, 12]])
+        for dihedral in crank_initial_state['crank_job_1']['dihedrals']:
+            self.assertTrue(dihedral in [[2, 1, 0, 6], [0, 1, 2, 3], [1, 2, 3, 12]])
         self.assertEqual(crank_initial_state['crank_job_1']['grid_spacing'], [30, 30, 30])
         self.assertFalse(crank_initial_state['crank_job_1']['grid_status'])
 
