@@ -254,7 +254,7 @@ def get_initial_crank_state(fragment, fragment_name=None):
                 os.mkdir(path)
             except FileExistsError:
                 utils.logger().info('Warning: overwriting {}'.format(path))
-            #extend with job number
+            # extend with job number because several jobs can exist in a fragment
             jsonfilename = os.path.join(path, fragment_name + '_{}.json'.format(job))
             outfile = open(jsonfilename, 'w')
             json.dump(crank_state, outfile, indent=2, sort_keys=True, cls=utils.UUIDEncoder)
@@ -264,8 +264,8 @@ def get_initial_crank_state(fragment, fragment_name=None):
     return crank_initial_states
 
 
-def launch_crank(fragment, inputfile, dihedralfile, init_coords=None, crank_job='crank_job_1', grid=30, engine='psi4',
-                 native_opt=False, wq_port=None, verbose=True, **kwargs):
+def launch_crank(fragment, inputfile, dihedralfile, init_coords=None, grid=30, engine='psi4', native_opt=False,
+                 wq_port=None, verbose=True):
     """
     Launch crank-launch for a specific crank job in fragment.
 
@@ -273,12 +273,13 @@ def launch_crank(fragment, inputfile, dihedralfile, init_coords=None, crank_job=
     ----------
     fragment: dict
         A fragment from JSON crank jobs
-    path: str
-        path for crank job output. If None, path will be inferred from cwd
-    base_name: str
-        base name for job and molecule. If None, will use SMILES for new directory and molecule
-    crank_job: str
-        key for crank job to launch. Default is crank_job_1.
+    inputfile: str
+        Path to psi4 inputfile
+    dihedralfile: str
+        path to dihedralfile
+    init_coords: str
+        path to coordinates trajectory if starting the scan from several starting configurations. Default is None and
+        the geometry in fragment will be used.
     grid: int or list of ints
         grid spacing for crank torsion scan in degrees. Default is 30. Must be divisor of 360.
     engine: str
@@ -289,7 +290,6 @@ def launch_crank(fragment, inputfile, dihedralfile, init_coords=None, crank_job=
         Specify port number ot use Work Queue to distribute optimization jobs. Default is None - crank will run sequentially.
     verbose: bool
         If True, output will be verbose. Default is True
-    kwargs: keyed arguments for writing psi4 input files.
 
     """
 
@@ -309,24 +309,41 @@ def launch_crank(fragment, inputfile, dihedralfile, init_coords=None, crank_job=
     os.system(command + ' > {}'.format(outfile))
 
 
-def to_crank_input(fragment, base_name=None, path=None, crank_job='crank_job_1', launch=False, **kwargs):
+def to_crank_input(fragment, mol_name=None, path=None, crank_job='crank_job_1', launch=False, **kwargs):
     """
+    Generate crank input files for a fragment (psi4 input file and dihedral file containing torsions that should
+    be restrained
 
     Parameters
     ----------
-    fragment
+    fragment: dict
+    mol_name: str
+        name for molecule. Will be used for filename and molecule name in psi4 input file so it should be a valid Python
+        identifier. If None, a name will be generated from SMILES with invalid characters converted to hex. Default is
+        None
+    path: str
+        path to write files to. If None, the directory will be created in current directory. Default None
+    crank_job: str
+        key to crank job in fragment. Default is crank_job_1
+    **kwargs: key arguments for generating psi4 input file
 
     Returns
     -------
+    path: str
+        path to where the files were written
+    inputfile: str
+        absolute path to psi4 input file
+    dihedralfile: str
+        absolute path to dihedral file
 
     """
-    if not base_name:
+    if not mol_name:
         # Generate Python valid identifier string from smiles by converting forbidden characters to _hex_
         smiles = fragment['canonical_isomeric_SMILES']
-        base_name, namespace = utils.make_python_identifier(smiles, convert='hex')
+        mol_name, namespace = utils.make_python_identifier(smiles, convert='hex')
     if not path:
         cwd = os.getcwd()
-        path = os.path.join(cwd, base_name + '_{}'.format(crank_job))
+        path = os.path.join(cwd, mol_name + '_{}'.format(crank_job))
 
     # create folder to launch crank in
     try:
@@ -334,15 +351,10 @@ def to_crank_input(fragment, base_name=None, path=None, crank_job='crank_job_1',
     except FileExistsError:
         warnings.warn("Overwriting {}".format(path))
 
-    #os.chdir(path)
-
     # Write out input files
-    inputfile = os.path.join(path, base_name + '_{}.dat'.format(crank_job))
-    utils.to_psi4_input(fragment, molecule_name=base_name, crank_job=crank_job, filename=inputfile, **kwargs)
-    dihedralfile = os.path.join(path, base_name + '_{}.txt'.format(crank_job))
+    inputfile = os.path.join(path, mol_name + '_{}.dat'.format(crank_job))
+    utils.to_psi4_input(fragment, molecule_name=mol_name, crank_job=crank_job, filename=inputfile, **kwargs)
+    dihedralfile = os.path.join(path, mol_name + '_{}.txt'.format(crank_job))
     utils.to_dihedraltxt(fragment, crank_job=crank_job, filename=dihedralfile)
 
-    if launch:
-        launch_crank(fragment, inputfile, dihedralfile, **kwargs)
-    else:
-        return path, inputfile, dihedralfile
+    return path, inputfile, dihedralfile

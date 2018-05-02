@@ -1,6 +1,7 @@
 """ Tests generating files for qm torsion scan """
 
 import unittest
+import json
 from fragmenter.tests.utils import get_fn, has_openeye
 import fragmenter.torsions as torsions
 from fragmenter import utils
@@ -179,4 +180,14 @@ class TesTorsions(unittest.TestCase):
         with self.assertRaises(ValueError):
             torsions.define_crank_job(test_crank, [8, 25, 35])
 
+    def test_crank_initial_state(self):
+        """ Test generate crank initial state"""
+        jsonfile = open(get_fn('butane_crankjob.json'), 'r')
+        test_crank_job = json.load(jsonfile)
+        jsonfile.close()
+
+        crank_initial_state = torsions.get_initial_crank_state(test_crank_job['CCCC'])
+        self.assertEqual(crank_initial_state['crank_job_1']['dihedrals'], [[2, 1, 0, 6], [0, 1, 2, 3], [1, 2, 3, 12]])
+        self.assertEqual(crank_initial_state['crank_job_1']['grid_spacing'], [30, 30, 30])
+        self.assertFalse(crank_initial_state['crank_job_1']['grid_status'])
 

@@ -1,0 +1,138 @@
+{
+    "CCCC": {
+        "canonical_isomeric_SMILES": "CCCC",
+        "crank_torsion_drives": {
+            "crank_job_1": {
+                "crank_specs": {
+                    "model": {
+                        "basis": "aug-cc-pVDZ",
+                        "method": "B3LYP"
+                    },
+                    "options": {
+                        "scf_type": "df"
+                    }
+                },
+                "torsion_0": 30,
+                "torsion_1": 30,
+                "torsion_2": 30
+            }
+        },
+        "molecule": {
+            "geometry": [
+                0.31914281845092773,
+                -1.093637466430664,
+                -1.5644147396087646,
+                0.09283685684204102,
+                -0.7512494325637817,
+                -0.10052239894866943,
+                -0.09279406070709229,
+                0.7513599395751953,
+                0.1004934310913086,
+                -0.290915846824646,
+                1.0967583656311035,
+                1.5677818059921265,
+                -0.5198796391487122,
+                -0.7551677227020264,
+                -2.180879592895508,
+                1.2282583713531494,
+                -0.6067847013473511,
+                -1.931321620941162,
+                0.43323153257369995,
+                -2.1737723350524902,
+                -1.7016046047210693,
+                0.9486593008041382,
+                -1.1027858257293701,
+                0.48745453357696533,
+                -0.7917245626449585,
+                -1.287994146347046,
+                0.26173627376556396,
+                -0.960730254650116,
+                1.099387764930725,
+                -0.47136321663856506,
+                0.7833671569824219,
+                1.2891098260879517,
+                -0.28042128682136536,
+                -0.42176103591918945,
+                2.176612377166748,
+                1.6888495683670044,
+                0.5750753879547119,
+                0.7906937599182129,
+                2.16329026222229,
+                -1.1788761615753174,
+                0.5997258424758911,
+                1.971407413482666
+            ],
+            "molecular_charge": 0,
+            "molecular_multiplicity": 1,
+            "symbols": [
+                "C",
+                "C",
+                "C",
+                "C",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H",
+                "H"
+            ]
+        },
+        "needed_torsion_drives": {
+            "torsion_0": [
+                3,
+                2,
+                1,
+                7
+            ],
+            "torsion_1": [
+                1,
+                2,
+                3,
+                4
+            ],
+            "torsion_2": [
+                2,
+                3,
+                4,
+                13
+            ]
+        },
+        "provenance": {
+            "canonicalization_details": {
+                "AtomMaps": true,
+                "AtomStereo": true,
+                "BondStereo": true,
+                "Canonical": true,
+                "DEFAULT": false,
+                "ISOMERIC": true,
+                "Isotopes": true,
+                "RGroups": true,
+                "notes": "All other available OESMILESFlag are set to False",
+                "oe_function": "openeye.oechem.OEMolToSmiles",
+                "package": "openeye-v2017.Oct.1"
+            },
+            "job_id": "b6d0c461f9dd4ab59aa954415d5f432f",
+            "package": "fragmenter",
+            "parent_molecule": "CCCC",
+            "routine": "fragmenter.fragment.generate_fragments",
+            "routine_options": {
+                "MAX_ROTORS": 2,
+                "OESMILESFlag": "ISOMERIC",
+                "canonicalization": "openeye-v2017.Oct.1",
+                "combinatorial": true,
+                "generate_visualization": false,
+                "inputf": "../../../openforcefield/fragmenter/fragmenter/tests/reference/butane.smi",
+                "json_filename": null,
+                "remove_map": true,
+                "strict_stereo": true
+            },
+            "user": "chayastern",
+            "version": "0.0.0+37.gaa58fe7.dirty"
+        },
+        "tagged_SMARTS": "[H:5][C:1]([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])[H:14]"
+    }
+}
