@@ -6,6 +6,7 @@ except ImportError:
     pass
 import warnings
 import numpy as np
+import os
 import time
 import json
 from openmoltools import openeye
@@ -76,13 +77,13 @@ def find_torsions(molecule):
 
     """
     # Check if molecule has map
-    try:
-        molecule.GetData('has_map')
-    except ValueError:
+    is_mapped = utils.is_mapped(molecule)
+    if not is_mapped:
         warnings.warn('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
         tagged_smiles = utils.create_mapped_smiles(molecule)
         utils.logger().info('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
         utils.logger().info('The new tagged SMARTS is: {}'.format(tagged_smiles))
+
 
     mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
 
@@ -210,154 +211,150 @@ def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Ps
     return fragment_data
 
 
-# def pdb_to_psi4(starting_geom, mol_name, method, basis_set, charge=0, multiplicity=1, symmetry='C1', geom_opt=True,
-#                 sp_energy=False, fixed_dih=None, mem=None, constrain='dihedral', dynamic_level=3,
-#                 consecutive_backsteps=None, geom_maxiter=250, xyz_traj=True):
-#     """
-#
-#     :param pdb: str
-#         path to pdb file
-#     :param method: list of str
-#         QM method (see psi4 website for options)
-#         If length 2, first one will be used for geom opt and second for spe.
-#     :param basis_set: str
-#         specification of basis set
-#     :param symmetry: str
-#         symmetry of molecule. Default is None.
-#     :param geom_opt: bool
-#         if True, will generate input file for geometry optimization
-#     :param sp_energy: bool
-#         if True, will run a single point energy calculation (if geom_opt also true, SPE calculation will occur after
-#         geom opt
-#     :param fixed_dih: str
-#         string of dihedral that should be fixed at specified angle. Format: "4 7 10 14 90.00"
-#         default: None - will not fix dihedral
-#         Beware:
-#         ------
-#         Because of a bug in psi4, dihedral angle can't be exactly 0 (same would apply for 180) so use 0.001 instead
-#     constrain: string. Either 'dihedral' or 'cartesian'
-#     The kind of constrain to use
-#
-#     :param mem: int
-#         memory allocation for calculation
-#     :param outfile: str
-#         if specified, will save file there
-#     :return:
-#         psi4 input string. If outfile, save file to specified path
-#     """
-#
-#     input_string = ""
-#
-#     if mem is not None:
-#         input_string += "\nmemory {}\n".format(mem)
-#
-#     input_string += "\nmolecule {}".format(mol_name)
-#     input_string += " {\n"
-#     input_string += "  symmetry {}\n".format(symmetry)
-#     input_string += "  {} {} \n".format(charge, multiplicity)
-#
-#     input_string += starting_geom
-#
-#     input_string += "  units Angstrom\n"
-#     input_string += "}\n"
-#
-#     if fixed_dih is not None:
-#         if constrain == 'dihedral':
-#             input_string += '\ndih_string = "{}"'.format(fixed_dih)
-#             # ToDo add string because that's the only thing that seems to work
-#             input_string += '\nset optking { fixed_dihedral = $dih_string\n'
-#         elif constrain == 'cartesian':
-#             input_string += '\n frozen_string = """ \n {} xyz \n {} xyz \n {} xyz \n {} xyz \n"""'.format(fixed_dih[0],
-#                                                                                                           fixed_dih[2],
-#                                                                                                           fixed_dih[4],
-#                                                                                                           fixed_dih[6])
-#             input_string += '\nset optking { opt_coordinates = cartesian\n    frozen_cartesian = $frozen_string\n'
-#         else:
-#             raise NameError('Only dihedral or cartesian constraints are valid')
-#         if dynamic_level:
-#             input_string += '    dynamic_level = {}\n'.format(dynamic_level)
-#         if consecutive_backsteps:
-#             input_string += '    consecutive_backsteps = {}\n'.format(consecutive_backsteps)
-#         if geom_maxiter:
-#             input_string += '    geom_maxiter = {}\n'.format(geom_maxiter)
-#         if xyz_traj:
-#             input_string += '    print_trajectory_xyz_file = True '
-#         input_string += '}\n'
-#
-#     if geom_opt:
-#         input_string += "\noptimize('{}/{}')\n".format(method[0], basis_set[0])
-#
-#     if sp_energy:
-#         input_string += "\nenergy('{}/{}')\n".format(method[-1], basis_set[-1])
-#
-#     return input_string
-#
-#
-# def generate_scan_input(root, filetype, mol_name, method, basis_set, dihedral=None, charge=0, multiplicity=1, symmetry=None,
-#                         geom_opt=True, sp_energy=False, mem=None):
-#     """
-#     This function takes a directory and writes out psi4 input files for all files that match the filetype specified
-#
-#     :param root: str
-#         path to files
-#     :param filetype: str
-#         input filetypes
-#     :param mol_name: str
-#         molecule name
-#     :param dihedral: str
-#         index of atoms that should remain fixed. format '1  2  3  4'
-#     :param method: list of str
-#         QM method (see psi4 website for options)
-#     :param basis_set: list of str
-#         see psi4 website for options
-#     :param charge: int
-#         default 0
-#     :param multiplicity: int
-#         default 1
-#     :param symmetry: str
-#         symmetry of molecule. default None
-#     :param geom_opt: bool
-#         if True, run geometry optimization
-#     :param sp_energy: bool
-#         if True, run a single point energy calculation after geomoetry optimization
-#     :param mem: str
-#         memory allocation
-#
-#     """
-#     if not dihedral:
-#         dihedral = list(filter(None, root.split('/')))[-1].split('_')
-#         dihedral = dihedral[0] + ' ' + dihedral[1] + ' ' + dihedral[2] + ' ' + dihedral[3]
-#     input_files = []
-#     pattern = "*.{}".format(filetype)
-#     for path, subdir, files in os.walk(root):
-#         for name in files:
-#             if fnmatch(name, pattern):
-#                 input_files.append(os.path.join(path, name))
-#
-#     for f in input_files:
-#         fixed_dih_angle = f.split('/')[-2]
-#         if fixed_dih_angle == '0':
-#             fixed_dih_angle = '0.001'
-#         if fixed_dih_angle == '180':
-#             fixed_dih_angle = '180.001'
-#         if fixed_dih_angle == '360':
-#             fixed_dih_angle = '360.001'
-#         dihedral_string = dihedral + ' ' + fixed_dih_angle
-#         mol = md.load(f)
-#         starting_geom = ""
-#         for i, atom in enumerate(mol.topology.atoms):
-#             element = atom.element.symbol
-#             # Convert to Angstroms
-#             xyz = mol.xyz[0]*10
-#             starting_geom += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(element, xyz[i][0], xyz[i][1], xyz[i][2])
-#
-#         output = pdb_to_psi4(starting_geom=starting_geom, mol_name=mol_name, method=method, basis_set=basis_set, charge=charge,
-#                              multiplicity=multiplicity, symmetry=symmetry, geom_opt=geom_opt, sp_energy=sp_energy,
-#                              fixed_dih=dihedral_string, mem=mem)
-#
-#         filename = f.replace(filetype, 'dat')
-#         psi4_input = open(filename, 'w')
-#         psi4_input.write(output)
-#         psi4_input.close()
+def get_initial_crank_state(fragment, fragment_name=None):
+    """
+    Generate initial crank state JSON for each crank job in fragment
+    Parameters
+    ----------
+    fragment: dict
+        A fragment from JSON crank jobs
+    fragment_name: str
+        Name for path and file for crank jsonstatefile. Default is None. If None the file does not get written
+
+    Returns
+    -------
+    crank_initial_states: dict
+        dictionary containing JSON specs for initial states for all crank jobs in a fragment.
+    """
+    crank_initial_states = {}
+    init_geometry = fragment['molecule']['geometry']
+    needed_torsions = fragment['needed_torsion_drives']
+    crank_jobs = fragment['crank_torsion_drives']
+    for job in crank_jobs:
+        dihedrals = []
+        grid_spacing = []
+        for torsion in needed_torsions:
+            if torsion in crank_jobs[job]:
+                # Convert to 0 based numbering which crank uses. Tags start counting at 1
+                dihedrals.append([i-1 for i in needed_torsions[torsion]])
+                grid_spacing.append(crank_jobs[job][torsion])
+        crank_state = {}
+        crank_state['dihedrals'] = dihedrals
+        crank_state['grid_spacing'] = grid_spacing
+        crank_state['elements'] = fragment['molecule']['symbols']
+
+        #ToDo add ability to start with many geomotries
+        crank_state['init_coords'] = [init_geometry]
+        crank_state['grid_status'] = {}
+        if fragment_name:
+            # Make directory for job
+            current_path = os.getcwd()
+            path = os.path.join(current_path, fragment_name + '_{}'.format(job))
+            try:
+                os.mkdir(path)
+            except FileExistsError:
+                utils.logger().info('Warning: overwriting {}'.format(path))
+            # extend with job number because several jobs can exist in a fragment
+            jsonfilename = os.path.join(path, fragment_name + '_{}.json'.format(job))
+            outfile = open(jsonfilename, 'w')
+            json.dump(crank_state, outfile, indent=2, sort_keys=True, cls=utils.UUIDEncoder)
+            outfile.close()
+
+        crank_initial_states[job] = crank_state
+    return crank_initial_states
 
 
+def launch_crank(fragment, inputfile, dihedralfile, init_coords=None, grid=30, engine='psi4', native_opt=False,
+                 wq_port=None, verbose=True):
+    """
+    Launch crank-launch for a specific crank job in fragment.
+
+    Parameters
+    ----------
+    fragment: dict
+        A fragment from JSON crank jobs
+    inputfile: str
+        Path to psi4 inputfile
+    dihedralfile: str
+        path to dihedralfile
+    init_coords: str
+        path to coordinates trajectory if starting the scan from several starting configurations. Default is None and
+        the geometry in fragment will be used.
+    grid: int or list of ints
+        grid spacing for crank torsion scan in degrees. Default is 30. Must be divisor of 360.
+    engine: str
+        QM engine crank should use. Default psi4. Allowed options:['qchem', 'psi4', 'terachem']
+    native_opt: bool
+        If True, use QM program native optimizer. Default is False - crank will use geometric for optimizaiton
+    wq_port: int
+        Specify port number ot use Work Queue to distribute optimization jobs. Default is None - crank will run sequentially.
+    verbose: bool
+        If True, output will be verbose. Default is True
+
+    """
+
+    #launch crank
+    command = 'crank-launch {} {} -g {} -e {}'.format(
+            inputfile, dihedralfile, grid, engine)
+    if init_coords:
+        command = command + ' --init_coords {}'.format(init_coords)
+    if native_opt:
+        command += ' --native_opt '
+    if wq_port:
+        command = command + ' --wq_port {} '.format(wq_port)
+    if verbose:
+        command += ' -v'
+
+    outfile = inputfile.replace('dat', 'out')
+    os.system(command + ' > {}'.format(outfile))
+
+
+def to_crank_input(fragment, mol_name=None, path=None, crank_job='crank_job_1', launch=False, **kwargs):
+    """
+    Generate crank input files for a fragment (psi4 input file and dihedral file containing torsions that should
+    be restrained
+
+    Parameters
+    ----------
+    fragment: dict
+    mol_name: str
+        name for molecule. Will be used for filename and molecule name in psi4 input file so it should be a valid Python
+        identifier. If None, a name will be generated from SMILES with invalid characters converted to hex. Default is
+        None
+    path: str
+        path to write files to. If None, the directory will be created in current directory. Default None
+    crank_job: str
+        key to crank job in fragment. Default is crank_job_1
+    **kwargs: key arguments for generating psi4 input file
+
+    Returns
+    -------
+    path: str
+        path to where the files were written
+    inputfile: str
+        absolute path to psi4 input file
+    dihedralfile: str
+        absolute path to dihedral file
+
+    """
+    if not mol_name:
+        # Generate Python valid identifier string from smiles by converting forbidden characters to _hex_
+        smiles = fragment['canonical_isomeric_SMILES']
+        mol_name, namespace = utils.make_python_identifier(smiles, convert='hex')
+    if not path:
+        cwd = os.getcwd()
+        path = os.path.join(cwd, mol_name + '_{}'.format(crank_job))
+
+    # create folder to launch crank in
+    try:
+        os.mkdir(path)
+    except FileExistsError:
+        warnings.warn("Overwriting {}".format(path))
+
+    # Write out input files
+    inputfile = os.path.join(path, mol_name + '_{}.dat'.format(crank_job))
+    utils.to_psi4_input(fragment, molecule_name=mol_name, crank_job=crank_job, filename=inputfile, **kwargs)
+    dihedralfile = os.path.join(path, mol_name + '_{}.txt'.format(crank_job))
+    utils.to_dihedraltxt(fragment, crank_job=crank_job, filename=dihedralfile)
+
+    return path, inputfile, dihedralfile

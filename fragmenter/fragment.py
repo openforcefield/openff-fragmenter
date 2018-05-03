@@ -66,6 +66,7 @@ def generate_fragments(inputf, generate_visualization=False, combinatorial=True,
     """
     options = copy.deepcopy(locals())
     fragments = dict()
+    #ToDo add both canonical isomeric and cononical SMILES to fragment provenance
     canonicalization_details = {'package': OPENEYE_VERSION, 'ISOMERIC': True,  'DEFAULT': False, 'Isotopes': True,
                                 'AtomStereo': True, 'BondStereo': True, 'Canonical': True, 'AtomMaps': True,
                                 'RGroups': True, 'oe_function': 'openeye.oechem.OEMolToSmiles', 'notes': 'All other available OESMILESFlag are set to False'}
