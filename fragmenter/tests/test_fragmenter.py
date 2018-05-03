@@ -4,9 +4,9 @@ Unit and regression test for the fragmenter package.
 
 # Import package, test suite, and other packages as needed
 import fragmenter
-import pytest
 import sys
 import unittest
+from openmoltools import openeye
 from fragmenter.tests.utils import get_fn, has_openeye
 
 
@@ -18,33 +18,35 @@ def test_fragmenter_imported():
 class TestFragment(unittest.TestCase):
 
     @unittest.skipUnless(has_openeye, "Cannot test without openeye")
-    def test_generate_fragments(self):
-        """ generate fragments regression test"""
+    def test_canoicalization_details(self):
+        """ test canonicalization detail"""
         input_smi = get_fn('butane.smi')
         fragments = fragmenter.generate_fragments(inputf=input_smi)
 
         provenance = fragments['provenance']
         canon_detail = provenance['canonicalization_details']
-        self.assertTrue(canon_detail['AtomMaps'])
-        self.assertTrue(canon_detail['AtomStereo'])
-        self.assertTrue(canon_detail['BondStereo'])
-        self.assertTrue(canon_detail['Canonical'])
-        self.assertTrue(canon_detail['Isotopes'])
-        self.assertTrue(canon_detail['RGroups'])
-        self.assertTrue(canon_detail['ISOMERIC'])
-        self.assertFalse(canon_detail['DEFAULT'])
+        isomeric_smiles = canon_detail['canonical_isomeric_SMILES']
+        for flag in isomeric_smiles['Flags_set_to_True']:
+            self.assertTrue(flag in ['ISOMERIC', 'Isotopes', 'AtomStereo', 'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'])
+        canonical_smiles = canon_detail['canonical_SMILES']
+        for flag in canonical_smiles['Flags_set_to_True']:
+            print(flag)
+            self.assertTrue(flag in ['DEFAULT', 'AtomMaps', 'Canonical', 'RGroups'])
 
-        with self.assertRaises(Warning):
-            fragmenter.generate_fragments(input_smi, OESMILESFlag='DEFAULT')
+    def test_stereo_parent(self):
+        """Test non isomeric and isomeric parent molecule SMILES"""
+        smiles = 'NC(C)(F)C(=O)O'
+        isomeric_smiles_r = 'N[C@](C)(F)C(=O)O'
+        isomeric_smiles_s = 'N[C@@](C)(F)C(=O)O'
+        mol_1 = openeye.smiles_to_oemol(smiles)
+        mol_2 = openeye.smiles_to_oemol(isomeric_smiles_r)
+        mol_3 = openeye.smiles_to_oemol(isomeric_smiles_s)
 
-        fragments = fragmenter.generate_fragments(input_smi, strict_stereo=False, OESMILESFlag='DEFAULT')
-        provenance = fragments['provenance']
-        canon_detail = provenance['canonicalization_details']
-        self.assertTrue(canon_detail['AtomMaps'])
-        self.assertFalse(canon_detail['AtomStereo'])
-        self.assertFalse(canon_detail['BondStereo'])
-        self.assertTrue(canon_detail['Canonical'])
-        self.assertFalse(canon_detail['Isotopes'])
-        self.assertTrue(canon_detail['RGroups'])
-        self.assertFalse(canon_detail['ISOMERIC'])
-        self.assertTrue(canon_detail['DEFAULT'])
+        with self.assertRaises(RuntimeError):
+            fragmenter.fragment._generate_fragments(mol_1)
+        fragmenter.fragment._generate_fragments(mol_1, strict_stereo=False)
+        fragmenter.fragment._generate_fragments(mol_2)
+        fragmenter.fragment._generate_fragments(mol_3)
+
+
+
