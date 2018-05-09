@@ -213,7 +213,7 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def create_mapped_smiles(molecule):
+def create_mapped_smiles(molecule, tagged=True):
     """
     Generate an index-tagged explicit hydrogen SMILES.
     Exmaple:
@@ -232,6 +232,9 @@ def create_mapped_smiles(molecule):
     """
     #ToDo check if tags already exist raise warning about overwritting existing tags. Maybe also add an option to override existing tags
     oechem.OEAddExplicitHydrogens(molecule)
+    if not tagged:
+        return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Isotopes | oechem.OESMILESFlag_AtomStereo
+                                        | oechem.OESMILESFlag_BondStereo | oechem.OESMILESFlag_Canonical | oechem.OESMILESFlag_RGroups)
 
     for atom in molecule.GetAtoms():
         atom.SetMapIdx(atom.GetIdx() + 1)
@@ -543,6 +546,7 @@ def bond_order_from_psi4_raw_output(psi_output):
         the molecule given by `tagged_smiles` in QC_JSON spec
 
     """
+    size = None
     Mayer = []
     Wiberg = []
     FLAG = None
@@ -560,7 +564,8 @@ def bond_order_from_psi4_raw_output(psi_output):
             Mayer.append(line.split())
         if FLAG is 'Wiberg':
             Wiberg.append(line.split())
-
+    if not size:
+        print("I have no idea what's happening")
     Wiberg_array = np.zeros(size)
     Mayer_array = np.zeros(size)
 
@@ -625,7 +630,46 @@ def bond_order_tag(molecule, atom_map, bond_order_array):
             bond.SetData(tag, mbo)
 
 
-def png_atoms_labeled(smiles, fname):
+# def to_bond_order_dict(molecule, atom_map, bond_order_arrays):
+#     """
+#
+#     Parameters
+#     ----------
+#     molecule
+#     atom_map
+#     bond_oder_arrays
+#
+#     Returns
+#     -------
+#
+#     """
+#     # for bond in molecule.GetBonds():
+#     #     try:
+#     #         bond.GetData('Wiberg_ensa')
+#     #     except ValueError:
+#     #
+#     #     tag = oechem.OEGetTag('Wiberg_ensamble')
+#     #     bond.SetData(tag, [])
+#     #     tag = oechem.OEGetTag('Mayer_ensamble')
+#     #     bond.SetData(tag, [])
+#
+#     wiberg_bond_order = bond_order_arrays['wiberg_psi']
+#     mayer_bond_order = bond_order_arrays['Mayer_psi']
+#     for i, j in itertools.combinations(range(wiberg_bond_order.shape[0], 2)):
+#         idx_1 = atom_map[i+1]
+#         idx_2 = atom_map[j+1]
+#         atom_1 = molecule.GetAtom(oechem.OEHasAtomIdx(idx_1))
+#         atom_2 = molecule.GetAtom(oechem.OEHasAtomIdx(idx_2))
+#         bond = molecule.GetBond(atom_1, atom_2)
+#         if bond:
+#             wbo = wiberg_bond_order[i][j]
+#             mbo = mayer_bond_order[i][j]
+
+
+
+
+
+def png_atoms_labeled(smiles, fname, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
     """Write out png file of molecule with atoms labeled with their map index.
 
     Parameters
@@ -641,11 +685,11 @@ def png_atoms_labeled(smiles, fname):
     oechem.OESmilesToMol(mol, smiles)
     oedepict.OEPrepareDepiction(mol)
 
-    width, height = 300, 200
-
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
     opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
     opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
+    opts.SetAtomPropLabelFontScale(label_scale)
+    opts.SetBondWidthScaling(scale_bondwidth)
 
     disp = oedepict.OE2DMolDisplay(mol, opts)
     return oedepict.OERenderMolecule(fname, disp)
