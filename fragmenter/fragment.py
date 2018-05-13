@@ -1,6 +1,6 @@
 from itertools import combinations
 import openeye as oe
-from openeye import oechem, oedepict, oegrapheme
+from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega
 
 from openmoltools import openeye
 
@@ -17,6 +17,90 @@ from .utils import logger, normalize_molecule, new_output_stream, write_oedataba
 import fragmenter
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
+
+
+def expand_states(molecules, protonation=True, tautomers=True, stereocenters=True, consider_atomaticity=True, maxstates=200,
+                  verbose=True, filename=None):
+    """
+
+    Parameters
+    ----------
+    molecules
+    protonation
+    tautomers
+    stereocenters
+    consider_atomaticity
+    maxstates
+    verbose
+
+    Returns
+    -------
+
+    """
+    if protonation:
+        molecules = _expand_states(molecules, enumerate='protonation', consider_aromaticity=consider_atomaticity,
+                                   maxstates=maxstates, verbose=verbose)
+    if tautomers:
+        molecules = _expand_states(molecules, enumerate='tautomers', consider_atomaticity=consider_atomaticity,
+                                   maxstates=maxstates, verbose=verbose)
+    if stereocenters:
+        molecules = _expand_states(molecules, enumerate='steroecenters', maxstates=maxstates, verbos=verbose)
+
+    # Name molecules and convert to SMILES
+    states = list()
+    if filename:
+        oname = filename
+        ofs = oechem.oemolostream()
+        ofs.SetFormat(oechem.OEFormat_SMI)
+        if not ofs.open(oname):
+            oechem.OEThrow.Fatal('Unable to open {} for writing molecules.'.format(oname))
+
+    count = 0
+    for molecule in molecules:
+        molecule.SetTitle('{}_{}'.format(molecule.GetTitle()), count)
+        count +=1
+        if filename:
+            oechem.OEWriteMolecule(ofs, molecule)
+        states.append(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_h=False))
+
+    return states
+
+
+def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True, maxstates=200, verbose=True):
+    if type(molecules) != type(list()):
+        molecules = [molecules]
+
+    states = list()
+    for molecule in molecules:
+        ostream = oechem.oemolostream()
+        ostream.openstring()
+        ostream.SetFormat(oechem.OEFormat_SDF)
+        states_enumerated = 0
+        if verbose:
+            logger().info("Enumerating states for molecule %s." % molecule.GetTitle())
+        if enumerate == 'protonation':
+            functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
+            if verbose:
+                logger().info("Enumerating protonation states...")
+            states_enumerated += oequacpac.OEEnumerateFormalCharges(molecule, functor, verbose)
+        if enumerate == 'tautomers':
+            functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
+            states_enumerated += oequacpac.OEEnumerateTautomers(molecule, functor, verbose)
+        if enumerate == 'stereocenters':
+            for enantiomer in oeomega.OEFlipper(molecule, 12, True):
+                states_enumerated += 1
+                enantiomer = oechem.OEMol(enantiomer)
+                oechem.OEWriteMolecule(ostream, enantiomer)
+
+    if states_enumerated > 0:
+        state = oechem.OEMol()
+        istream = oechem.oemolistream()
+        istream.openstring(ostream.GetString())
+        istream.SetFormat(oechem.OEFormat_SDF)
+        while oechem.OEReadMolecule(istream, state):
+            mol = oechem.OEMol(state)
+            states.append(mol)
+    return states
 
 
 def generate_fragments(inputf, generate_visualization=False, strict_stereo=True, combinatorial=True, MAX_ROTORS=2, remove_map=True,
