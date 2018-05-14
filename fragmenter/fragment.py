@@ -19,49 +19,70 @@ import fragmenter
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 
-def expand_states(molecules, protonation=True, tautomers=True, stereocenters=True, consider_atomaticity=True, maxstates=200,
+def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=True, consider_aromaticity=True, maxstates=200,
                   verbose=True, filename=None):
     """
+    Expand molecule states (choice of protonation, tautomers and/or stereoisomers).
+    Protonation states expands molecules to protonation of protonation sites (Some states might only be reasonable in
+    very high or low pH. ToDo: Only keep reasonable protonation states)
+    Tatutomers: Should expand to tautomer states but most of hte results are some resonance structures. Defualt if False
+    for this reason
+    Stereoisomers expands enantiomers and geometric isomers (cis/trans).
+    Returns set of SMILES
 
     Parameters
     ----------
-    molecules
-    protonation
-    tautomers
-    stereocenters
-    consider_atomaticity
-    maxstates
-    verbose
+    molecule: OEMol
+        Molecule to expand
+    protonation: Bool
+        If True will enumerate protonation states. Default True
+    tautomers: Bool
+        If True, will enumerate tautomers. Default False (Note: This is False because results usually give resonance structures
+        which ins't needed for torsion scans
+    stereoisomers: Bool
+        If True will enumerate stereoisomers (cis/trans and R/S). Default is True
+    consider_atomaticity: Bool
+    maxstates: int
+        Defulat 200
+    verbose: Bool
+    filename: str
+        Filename to save SMILES to. If None, SMILES will not be saved to file. Defualt None.
 
     Returns
     -------
+    states: set of SMILES for enumerated states
 
     """
+    title = molecule.GetTitle()
+    states = set()
+    molecules = [molecule]
+    if verbose:
+        logger().info("Enumerating states for {}".format(title))
     if protonation:
-        molecules = _expand_states(molecules, enumerate='protonation', consider_aromaticity=consider_atomaticity,
-                                   maxstates=maxstates, verbose=verbose)
+        molecules.extend(_expand_states(molecules, enumerate='protonation', consider_aromaticity=consider_aromaticity,
+                                   maxstates=maxstates, verbose=verbose))
     if tautomers:
-        molecules = _expand_states(molecules, enumerate='tautomers', consider_atomaticity=consider_atomaticity,
-                                   maxstates=maxstates, verbose=verbose)
-    if stereocenters:
-        molecules = _expand_states(molecules, enumerate='steroecenters', maxstates=maxstates, verbos=verbose)
+        molecules.extend(_expand_states(molecules, enumerate='tautomers', consider_aromaticity=consider_aromaticity,
+                                   maxstates=maxstates, verbose=verbose))
+    if stereoisomers:
+        molecules.extend(_expand_states(molecules, enumerate='stereoisomers', maxstates=maxstates, verbose=verbose))
 
-    # Name molecules and convert to SMILES
-    states = list()
     if filename:
         oname = filename
         ofs = oechem.oemolostream()
-        ofs.SetFormat(oechem.OEFormat_SMI)
         if not ofs.open(oname):
             oechem.OEThrow.Fatal('Unable to open {} for writing molecules.'.format(oname))
 
-    count = 0
     for molecule in molecules:
-        molecule.SetTitle('{}_{}'.format(molecule.GetTitle()), count)
-        count +=1
-        if filename:
-            oechem.OEWriteMolecule(ofs, molecule)
-        states.append(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_h=False))
+        states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_h=False))
+    if filename:
+        count = 0
+        smiles_list = []
+        for molecule in states:
+            molecule = molecule + ' ' + title + '_' + str(count)
+            count += 1
+            smiles_list.append(molecule)
+        fragmenter.utils.to_smi(smiles_list, filename)
 
     return states
 
@@ -76,8 +97,6 @@ def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True
         ostream.openstring()
         ostream.SetFormat(oechem.OEFormat_SDF)
         states_enumerated = 0
-        if verbose:
-            logger().info("Enumerating states for molecule %s." % molecule.GetTitle())
         if enumerate == 'protonation':
             functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
             if verbose:
@@ -85,8 +104,12 @@ def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True
             states_enumerated += oequacpac.OEEnumerateFormalCharges(molecule, functor, verbose)
         if enumerate == 'tautomers':
             functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
+            if verbose:
+                logger().info("Enumerating tautomers...")
             states_enumerated += oequacpac.OEEnumerateTautomers(molecule, functor, verbose)
-        if enumerate == 'stereocenters':
+        if enumerate == 'stereoisomers':
+            if verbose:
+                logger().info("Enumerating stereoisomers...")
             for enantiomer in oeomega.OEFlipper(molecule, 12, True):
                 states_enumerated += 1
                 enantiomer = oechem.OEMol(enantiomer)

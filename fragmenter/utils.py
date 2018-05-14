@@ -29,7 +29,7 @@ def write_oedatabase(moldb, ofs, mlist, size):
         moldb.WriteMolecule(ofs, molidx)
 
 
-def to_smi(smiles, path, base, return_fname=False):
+def to_smi(smiles, filename, return_fname=False):
     """
     This function writes out an .smi file for a list of SMILES
     Parameters
@@ -42,13 +42,13 @@ def to_smi(smiles, path, base, return_fname=False):
         base name for output file
 
     """
-    fname = os.path.join(path, base + '.smi')
-    outf = open(fname, 'w')
+
+    outf = open(filename, 'w')
     smiles_list = map(lambda x: x+"\n", list(smiles))
     outf.writelines(smiles_list)
     outf.close()
     if return_fname:
-        return fname
+        return filename
 
 
 def create_oedatabase_idxfile(ifname):
@@ -213,7 +213,7 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def create_mapped_smiles(molecule, tagged=True):
+def create_mapped_smiles(molecule, tagged=True, explicit_h=True, isomeric=True):
     """
     Generate an index-tagged explicit hydrogen SMILES.
     Exmaple:
@@ -231,10 +231,15 @@ def create_mapped_smiles(molecule, tagged=True):
 
     """
     #ToDo check if tags already exist raise warning about overwritting existing tags. Maybe also add an option to override existing tags
+    if not explicit_h and not tagged:
+        return oechem.OEMolToSmiles(molecule)
     oechem.OEAddExplicitHydrogens(molecule)
-    if not tagged:
+    if not tagged and explicit_h and isomeric:
         return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Isotopes | oechem.OESMILESFlag_AtomStereo
                                         | oechem.OESMILESFlag_BondStereo | oechem.OESMILESFlag_Canonical | oechem.OESMILESFlag_RGroups)
+    if not tagged and explicit_h and not isomeric:
+        return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Canonical |
+                                        oechem.OESMILESFlag_RGroups)
 
     for atom in molecule.GetAtoms():
         atom.SetMapIdx(atom.GetIdx() + 1)
