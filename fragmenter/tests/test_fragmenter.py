@@ -71,7 +71,7 @@ class TestFragment(unittest.TestCase):
                          'Cc1ccc(cc1[N-]c2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)C[NH+]5CC[NH+](CC5)C'}
         protonation_2 = set()
         for mol in protonation:
-            protonation_2.add(fragmenter.utils.create_mapped_smiles(mol, tagged=False, explicit_h=False))
+            protonation_2.add(fragmenter.utils.create_mapped_smiles(mol, tagged=False, explicit_hydrogen=False))
 
         intersection = protonation_1.intersection(protonation_2)
         self.assertEqual(len(intersection), len(protonation_1))
@@ -87,7 +87,7 @@ class TestFragment(unittest.TestCase):
                         'Cc1cccc(c1[NH+]=C(c2cnc(s2)Nc3cc(nc(n3)C)N4CCN(CC4)CCO)[O-])Cl'}
         tautomers_2 = set()
         for mol in tautomers:
-            tautomers_2.add(fragmenter.utils.create_mapped_smiles(mol, tagged=False, explicit_h=False))
+            tautomers_2.add(fragmenter.utils.create_mapped_smiles(mol, tagged=False, explicit_hydrogen=False))
 
         intersection = tautomers_1.intersection(tautomers_2)
         self.assertEqual(len(tautomers_1), len(intersection))
@@ -106,7 +106,7 @@ class TestFragment(unittest.TestCase):
 
         stereoisomers_2 = set()
         for mol in stereoisomers:
-            stereoisomers_2.add(fragmenter.utils.create_mapped_smiles(mol, tagged=False, explicit_h=False))
+            stereoisomers_2.add(fragmenter.utils.create_mapped_smiles(mol, tagged=False, explicit_hydrogen=False))
         intersection = stereoisomers_1.intersection(stereoisomers_2)
         self.assertEqual(len(intersection), len(stereoisomers_1))
         self.assertEqual(len(intersection), len(stereoisomers_2))

@@ -36,18 +36,19 @@ def to_smi(smiles, filename, return_fname=False):
     ----------
     smiles: list of SMILES.
         The list can also contain strings that include name for SMILES separated by a space. ("SMILES Name")
-    path: str
-        path to output file
-    base: str
-        base name for output file
+    filename: str
+        name of output file
+    return_fname: bool, optional, default=False
+        If True, returns absolute path to filename.
 
     """
 
-    outf = open(filename, 'w')
     smiles_list = map(lambda x: x+"\n", list(smiles))
-    outf.writelines(smiles_list)
-    outf.close()
+    with open(filename, 'w') as outf:
+        outf.writelines(smiles_list)
+
     if return_fname:
+        filenmae = os.path.join(os.getcwd(), filename)
         return filename
 
 
@@ -213,7 +214,7 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def create_mapped_smiles(molecule, tagged=True, explicit_h=True, isomeric=True):
+def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric=True):
     """
     Generate an index-tagged explicit hydrogen SMILES.
     Exmaple:
@@ -224,6 +225,13 @@ def create_mapped_smiles(molecule, tagged=True, explicit_h=True, isomeric=True):
     Parameters
     ----------
     molecule: OEMOl
+    tagged: Bool, optional, default=True
+        If True, will add index tags to each atom. If True, explicit_hydrogen should also be tru so that hydrogens are
+        numbered as well.
+    explicit_hydrogen: Bool, optional, default=True
+        If True, will write explicit hydrogens in SMILES
+    isomeric: Bool, optiona, default=True
+        If True, will specify cis/trans and R/S isomerism
 
     Returns
     -------
@@ -231,15 +239,17 @@ def create_mapped_smiles(molecule, tagged=True, explicit_h=True, isomeric=True):
 
     """
     #ToDo check if tags already exist raise warning about overwritting existing tags. Maybe also add an option to override existing tags
-    if not explicit_h and not tagged:
+    if not explicit_hydrogen and not tagged:
         return oechem.OEMolToSmiles(molecule)
     oechem.OEAddExplicitHydrogens(molecule)
-    if not tagged and explicit_h and isomeric:
+    if not tagged and explicit_hydrogen and isomeric:
         return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Isotopes | oechem.OESMILESFlag_AtomStereo
                                         | oechem.OESMILESFlag_BondStereo | oechem.OESMILESFlag_Canonical | oechem.OESMILESFlag_RGroups)
-    if not tagged and explicit_h and not isomeric:
+    if not tagged and explicit_hydrogen and not isomeric:
         return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Canonical |
                                         oechem.OESMILESFlag_RGroups)
+    if tagged and not explicit_hydrogen:
+        raise Warning("Tagged SMILES must include hydrogens to retain order")
 
     for atom in molecule.GetAtoms():
         atom.SetMapIdx(atom.GetIdx() + 1)

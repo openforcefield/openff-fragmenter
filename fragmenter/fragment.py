@@ -20,7 +20,7 @@ OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 
 def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=True, consider_aromaticity=True, maxstates=200,
-                  verbose=True, filename=None):
+                  verbose=True, filename=None, return_smiles_list=False):
     """
     Expand molecule states (choice of protonation, tautomers and/or stereoisomers).
     Protonation states expands molecules to protonation of protonation sites (Some states might only be reasonable in
@@ -34,19 +34,21 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
     ----------
     molecule: OEMol
         Molecule to expand
-    protonation: Bool
-        If True will enumerate protonation states. Default True
-    tautomers: Bool
-        If True, will enumerate tautomers. Default False (Note: This is False because results usually give resonance structures
+    protonation: Bool, optional, default=True
+        If True will enumerate protonation states.
+    tautomers: Bool, optional, default=False
+        If True, will enumerate tautomers.  (Note: Default is False because results usually give resonance structures
         which ins't needed for torsion scans
-    stereoisomers: Bool
-        If True will enumerate stereoisomers (cis/trans and R/S). Default is True
-    consider_atomaticity: Bool
-    maxstates: int
-        Defulat 200
-    verbose: Bool
-    filename: str
-        Filename to save SMILES to. If None, SMILES will not be saved to file. Defualt None.
+    stereoisomers: Bool, optional, default=True
+        If True will enumerate stereoisomers (cis/trans and R/S).
+    consider_atomaticity: Bool, optional, default=True
+    maxstates: int, optional, default=True
+    verbose: Bool, optiona, default=True
+    filename: str, optional, default=None
+        Filename to save SMILES to. If None, SMILES will not be saved to file.
+    return_smiles_list: bool, optional, default=False
+        If True, will return a list of SMILES with numbered name of molecule. Use this if you want ot write out an
+        smi file of all molecules processed with a unique numbered name for each state.
 
     Returns
     -------
@@ -67,14 +69,9 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
     if stereoisomers:
         molecules.extend(_expand_states(molecules, enumerate='stereoisomers', maxstates=maxstates, verbose=verbose))
 
-    if filename:
-        oname = filename
-        ofs = oechem.oemolostream()
-        if not ofs.open(oname):
-            oechem.OEThrow.Fatal('Unable to open {} for writing molecules.'.format(oname))
-
     for molecule in molecules:
         states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_h=False))
+
     if filename:
         count = 0
         smiles_list = []
@@ -84,10 +81,32 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
             smiles_list.append(molecule)
         fragmenter.utils.to_smi(smiles_list, filename)
 
+    if return_smiles_list:
+        return smiles_list
+
     return states
 
 
 def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True, maxstates=200, verbose=True):
+    """
+    Expand the state specified by enumerate variable
+
+    Parameters
+    ----------
+    molecules: OEMol or list of OEMol
+        molecule to expand states
+    enumerate: str, optional, default='protonation'
+        Kind of state to enumerate. Choice of protonation, tautomers, stereoiserms
+    consider_aromaticity: Bool, optiona, default True
+    maxstates: int, optional, default=200
+    verbose: Bool, optional, deault=TRue
+
+    Returns
+    -------
+    states: list of OEMol
+        enumerated states
+
+    """
     if type(molecules) != type(list()):
         molecules = [molecules]
 
