@@ -70,7 +70,7 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
         molecules.extend(_expand_states(molecules, enumerate='stereoisomers', maxstates=maxstates, verbose=verbose))
 
     for molecule in molecules:
-        states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_h=False))
+        states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
 
     if filename:
         count = 0
@@ -151,7 +151,7 @@ def generate_fragments(inputf, generate_visualization=False, strict_stereo=True,
     This function generates fragments from molecules. The output is a dictionary that maps SMILES of molecules to SMILES
      for fragments. The default SMILES are generated with openeye.oechem.OEMolToSmiles. These SMILES strings are canonical
      isomeric SMILES.
-     The dictionary also includes a providence field which defines how the fragments were generated.
+     The dictionary also includes a provenance field which defines how the fragments were generated.
 
     Parameters
     ----------
