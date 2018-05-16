@@ -44,9 +44,9 @@ def fragment_to_torsion_scan(fragments, json_filename=None):
             molecule = openeye.smiles_to_oemol(frag)
             json_specs['canonical_SMILES'] = oechem.OECreateCanSmiString(molecule)
             explicit_h_isomeric = utils.create_mapped_smiles(molecule, tagged=False)
-            json_specs['explicit_H_canonical_isomeric_SMILES'] = explicit_h_isomeric
+            json_specs['explicit_hydrogen_canonical_isomeric_SMILES'] = explicit_h_isomeric
             explicit_h = utils.create_mapped_smiles(molecule, tagged=False, isomeric=False)
-            json_specs['explicit_H_canonical_SMILES'] = explicit_h
+            json_specs['explicit_hydrogen_canonical_SMILES'] = explicit_h
             tagged_SMARTS = utils.create_mapped_smiles(molecule)
             json_specs['tagged_SMARTS'] = tagged_SMARTS
             molecule, atom_map = utils.get_atom_map(tagged_SMARTS, is_mapped=True)

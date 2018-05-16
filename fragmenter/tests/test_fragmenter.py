@@ -26,10 +26,10 @@ class TestFragment(unittest.TestCase):
         provenance = fragments['provenance']
         canon_detail = provenance['canonicalization_details']
         isomeric_smiles = canon_detail['canonical_isomeric_SMILES']
-        for flag in isomeric_smiles['Flags_set_to_True']:
+        for flag in isomeric_smiles['Flags']:
             self.assertTrue(flag in ['ISOMERIC', 'Isotopes', 'AtomStereo', 'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'])
         canonical_smiles = canon_detail['canonical_SMILES']
-        for flag in canonical_smiles['Flags_set_to_True']:
+        for flag in canonical_smiles['Flags']:
             print(flag)
             self.assertTrue(flag in ['DEFAULT', 'AtomMaps', 'Canonical', 'RGroups'])
 

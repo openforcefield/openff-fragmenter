@@ -185,11 +185,16 @@ def generate_fragments(inputf, generate_visualization=False, strict_stereo=True,
     options = copy.deepcopy(locals())
     fragments = dict()
     canonicalization_details = {'package': OPENEYE_VERSION,
-                                'canonical_isomeric_SMILES': {'Flags_set_to_True': ['ISOMERIC', 'Isotopes', 'AtomStereo',
-                                                                                     'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'],
+                                'canonical_isomeric_SMILES': {'Flags': ['ISOMERIC', 'Isotopes', 'AtomStereo',
+                                                                        'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'],
                                                                'oe_function': 'openeye.oechem.OEMolToSmiles(molecule)'},
-                                'canonical_SMILES': {'Flags_set_to_True': ['DEFAULT', 'Canonical', 'AtomMaps', 'RGroups'],
+                                'canonical_SMILES': {'Flags': ['DEFAULT', 'Canonical', 'AtomMaps', 'RGroups'],
                                                       'oe_function': 'openeye.oechem.OECreateCanSmiString(molecule)'},
+                                'canonical_isomeric_explicit_hydrogen_SMILES': {'Flags': ['Hydrogens', 'Isotopes', 'AtomStereo',
+                                                                                          'BondStereo', 'Canonical', 'RGroups'],
+                                                                                'oe_function': 'openeye.oechem.OECreateSmiString()'},
+                                'canonical_explicit_hydrogen_SMILES': {'Flags': ['Hydrogens', 'Canonical', 'RGroups'],
+                                                                       'oe_function': 'openeye.oechem.OECreateSmiString()'},
                                 'notes': 'All other available OESMIELSFlag are set to False'}
 
 
