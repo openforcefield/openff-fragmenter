@@ -1,6 +1,6 @@
 from itertools import combinations
 import openeye as oe
-from openeye import oechem, oedepict, oegrapheme
+from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega
 
 from openmoltools import openeye
 
@@ -19,13 +19,139 @@ import fragmenter
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 
+def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=True, consider_aromaticity=True, maxstates=200,
+                  verbose=True, filename=None, return_smiles_list=False):
+    """
+    Expand molecule states (choice of protonation, tautomers and/or stereoisomers).
+    Protonation states expands molecules to protonation of protonation sites (Some states might only be reasonable in
+    very high or low pH. ToDo: Only keep reasonable protonation states)
+    Tatutomers: Should expand to tautomer states but most of hte results are some resonance structures. Defualt if False
+    for this reason
+    Stereoisomers expands enantiomers and geometric isomers (cis/trans).
+    Returns set of SMILES
+
+    Parameters
+    ----------
+    molecule: OEMol
+        Molecule to expand
+    protonation: Bool, optional, default=True
+        If True will enumerate protonation states.
+    tautomers: Bool, optional, default=False
+        If True, will enumerate tautomers.  (Note: Default is False because results usually give resonance structures
+        which ins't needed for torsion scans
+    stereoisomers: Bool, optional, default=True
+        If True will enumerate stereoisomers (cis/trans and R/S).
+    consider_atomaticity: Bool, optional, default=True
+    maxstates: int, optional, default=True
+    verbose: Bool, optiona, default=True
+    filename: str, optional, default=None
+        Filename to save SMILES to. If None, SMILES will not be saved to file.
+    return_smiles_list: bool, optional, default=False
+        If True, will return a list of SMILES with numbered name of molecule. Use this if you want ot write out an
+        smi file of all molecules processed with a unique numbered name for each state.
+
+    Returns
+    -------
+    states: set of SMILES for enumerated states
+
+    """
+    title = molecule.GetTitle()
+    states = set()
+    molecules = [molecule]
+    if verbose:
+        logger().info("Enumerating states for {}".format(title))
+    if protonation:
+        molecules.extend(_expand_states(molecules, enumerate='protonation', consider_aromaticity=consider_aromaticity,
+                                   maxstates=maxstates, verbose=verbose))
+    if tautomers:
+        molecules.extend(_expand_states(molecules, enumerate='tautomers', consider_aromaticity=consider_aromaticity,
+                                   maxstates=maxstates, verbose=verbose))
+    if stereoisomers:
+        molecules.extend(_expand_states(molecules, enumerate='stereoisomers', maxstates=maxstates, verbose=verbose))
+
+    for molecule in molecules:
+        states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
+
+    if filename:
+        count = 0
+        smiles_list = []
+        for molecule in states:
+            molecule = molecule + ' ' + title + '_' + str(count)
+            count += 1
+            smiles_list.append(molecule)
+        fragmenter.utils.to_smi(smiles_list, filename)
+
+    if return_smiles_list:
+        return smiles_list
+
+    return states
+
+
+def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True, maxstates=200, verbose=True):
+    """
+    Expand the state specified by enumerate variable
+
+    Parameters
+    ----------
+    molecules: OEMol or list of OEMol
+        molecule to expand states
+    enumerate: str, optional, default='protonation'
+        Kind of state to enumerate. Choice of protonation, tautomers, stereoiserms
+    consider_aromaticity: Bool, optiona, default True
+    maxstates: int, optional, default=200
+    verbose: Bool, optional, deault=TRue
+
+    Returns
+    -------
+    states: list of OEMol
+        enumerated states
+
+    """
+    if type(molecules) != type(list()):
+        molecules = [molecules]
+
+    states = list()
+    for molecule in molecules:
+        ostream = oechem.oemolostream()
+        ostream.openstring()
+        ostream.SetFormat(oechem.OEFormat_SDF)
+        states_enumerated = 0
+        if enumerate == 'protonation':
+            functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
+            if verbose:
+                logger().info("Enumerating protonation states...")
+            states_enumerated += oequacpac.OEEnumerateFormalCharges(molecule, functor, verbose)
+        if enumerate == 'tautomers':
+            functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
+            if verbose:
+                logger().info("Enumerating tautomers...")
+            states_enumerated += oequacpac.OEEnumerateTautomers(molecule, functor, verbose)
+        if enumerate == 'stereoisomers':
+            if verbose:
+                logger().info("Enumerating stereoisomers...")
+            for enantiomer in oeomega.OEFlipper(molecule, 12, True):
+                states_enumerated += 1
+                enantiomer = oechem.OEMol(enantiomer)
+                oechem.OEWriteMolecule(ostream, enantiomer)
+
+    if states_enumerated > 0:
+        state = oechem.OEMol()
+        istream = oechem.oemolistream()
+        istream.openstring(ostream.GetString())
+        istream.SetFormat(oechem.OEFormat_SDF)
+        while oechem.OEReadMolecule(istream, state):
+            mol = oechem.OEMol(state)
+            states.append(mol)
+    return states
+
+
 def generate_fragments(inputf, generate_visualization=False, strict_stereo=True, combinatorial=True, MAX_ROTORS=2, remove_map=True,
                        json_filename=None, canonicalization=OPENEYE_VERSION):
     """
     This function generates fragments from molecules. The output is a dictionary that maps SMILES of molecules to SMILES
      for fragments. The default SMILES are generated with openeye.oechem.OEMolToSmiles. These SMILES strings are canonical
      isomeric SMILES.
-     The dictionary also includes a providence field which defines how the fragments were generated.
+     The dictionary also includes a provenance field which defines how the fragments were generated.
 
     Parameters
     ----------
@@ -59,11 +185,16 @@ def generate_fragments(inputf, generate_visualization=False, strict_stereo=True,
     options = copy.deepcopy(locals())
     fragments = dict()
     canonicalization_details = {'package': OPENEYE_VERSION,
-                                'canonical_isomeric_SMILES': {'Flags_set_to_True': ['ISOMERIC', 'Isotopes', 'AtomStereo',
-                                                                                     'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'],
+                                'canonical_isomeric_SMILES': {'Flags': ['ISOMERIC', 'Isotopes', 'AtomStereo',
+                                                                        'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'],
                                                                'oe_function': 'openeye.oechem.OEMolToSmiles(molecule)'},
-                                'canonical_SMILES': {'Flags_set_to_True': ['DEFAULT', 'Canonical', 'AtomMaps', 'RGroups'],
+                                'canonical_SMILES': {'Flags': ['DEFAULT', 'Canonical', 'AtomMaps', 'RGroups'],
                                                       'oe_function': 'openeye.oechem.OECreateCanSmiString(molecule)'},
+                                'canonical_isomeric_explicit_hydrogen_SMILES': {'Flags': ['Hydrogens', 'Isotopes', 'AtomStereo',
+                                                                                          'BondStereo', 'Canonical', 'RGroups'],
+                                                                                'oe_function': 'openeye.oechem.OECreateSmiString()'},
+                                'canonical_explicit_hydrogen_SMILES': {'Flags': ['Hydrogens', 'Canonical', 'RGroups'],
+                                                                       'oe_function': 'openeye.oechem.OECreateSmiString()'},
                                 'notes': 'All other available OESMIELSFlag are set to False'}
 
 
