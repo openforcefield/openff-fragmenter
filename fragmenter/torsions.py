@@ -23,8 +23,8 @@ def fragment_to_torsion_scan(fragments, json_filename=None):
     Parameters
     ----------
     fragments: dict
-        This dictionary has 2 dictionaries. 1) Provenance: Information on how the fragments were generated
-                                            2) Fragments: Maps molecule SMILES to fragment SMILES
+        This dictionary has 2 dictionaries. 1) provenance: Information on how the fragments were generated
+                                            2) fragments: Maps molecule SMILES to fragment SMILES
 
     json_filename: str
         If None, will not save molecules to file.

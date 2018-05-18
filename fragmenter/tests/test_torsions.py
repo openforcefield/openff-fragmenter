@@ -192,3 +192,13 @@ class TesTorsions(unittest.TestCase):
         self.assertEqual(crank_initial_state['crank_job_1']['grid_spacing'], [30, 30, 30])
         self.assertFalse(crank_initial_state['crank_job_1']['grid_status'])
 
+    def test_formal_charge(self):
+        """Test formal charge of molecule"""
+        smiles = 'c1cc(c[nH+]c1)c2ccncn2'
+        fragments = {'fragments':{'c1cc(c[nH+]c1)c2ccncn2': ['c1cc(c[nH+]c1)c2ccncn2',
+                                                             'C[NH+]1CC[NH+](CC1)Cc2ccccc2']},
+                     'provenance': {}}
+        crank_job = torsions.fragment_to_torsion_scan(fragments)
+        self.assertEqual(crank_job['c1cc(c[nH+]c1)c2ccncn2']['molecule']['molecular_charge'], 1)
+        self.assertEqual(crank_job['C[NH+]1CC[NH+](CC1)Cc2ccccc2']['molecule']['molecular_charge'], 2)
+
