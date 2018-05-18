@@ -23,8 +23,8 @@ def fragment_to_torsion_scan(fragments, json_filename=None):
     Parameters
     ----------
     fragments: dict
-        This dictionary has 2 dictionaries. 1) Provenance: Information on how the fragments were generated
-                                            2) Fragments: Maps molecule SMILES to fragment SMILES
+        This dictionary has 2 dictionaries. 1) provenance: Information on how the fragments were generated
+                                            2) fragments: Maps molecule SMILES to fragment SMILES
 
     json_filename: str
         If None, will not save molecules to file.
@@ -50,7 +50,11 @@ def fragment_to_torsion_scan(fragments, json_filename=None):
             tagged_SMARTS = utils.create_mapped_smiles(molecule)
             json_specs['tagged_SMARTS'] = tagged_SMARTS
             molecule, atom_map = utils.get_atom_map(tagged_SMARTS, is_mapped=True)
-            QC_JSON_molecule = utils.to_mapped_QC_JSON_geometry(molecule, atom_map)
+            # Find formal charge
+            charge = 0
+            for atom in molecule.GetAtoms():
+                charge += atom.GetFormalCharge()
+            QC_JSON_molecule = utils.to_mapped_QC_JSON_geometry(molecule, atom_map, charge=charge)
             json_specs['molecule'] = QC_JSON_molecule
             needed_torsion_drives = find_torsions(molecule)
             json_specs['needed_torsion_drives'] = needed_torsion_drives
