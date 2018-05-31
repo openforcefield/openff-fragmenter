@@ -19,8 +19,8 @@ import fragmenter
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 
-def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=True, consider_aromaticity=True, maxstates=200,
-                  verbose=True, filename=None, return_smiles_list=False):
+def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=True, max_states=200, level=0, reasonable=True,
+                  carbon_hybridization=True, verbose=True, filename=None, return_smiles_list=False, return_molecules=False):
     """
     Expand molecule states (choice of protonation, tautomers and/or stereoisomers).
     Protonation states expands molecules to protonation of protonation sites (Some states might only be reasonable in
@@ -61,13 +61,12 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
     if verbose:
         logger().info("Enumerating states for {}".format(title))
     if protonation:
-        molecules.extend(_expand_states(molecules, enumerate='protonation', consider_aromaticity=consider_aromaticity,
-                                   maxstates=maxstates, verbose=verbose))
+        molecules.extend(_expand_states(molecules, enumerate='protonation', max_states=max_states, verbose=verbose, level=level))
     if tautomers:
-        molecules.extend(_expand_states(molecules, enumerate='tautomers', consider_aromaticity=consider_aromaticity,
-                                   maxstates=maxstates, verbose=verbose))
+        molecules.extend(_expand_states(molecules, enumerate='tautomers', max_states=max_states, reasonable=reasonable,
+                                        carbon_hybridization=carbon_hybridization, verbose=verbose, level=level))
     if stereoisomers:
-        molecules.extend(_expand_states(molecules, enumerate='stereoisomers', maxstates=maxstates, verbose=verbose))
+        molecules.extend(_expand_states(molecules, enumerate='stereoisomers', max_states=max_states, verbose=verbose))
 
     for molecule in molecules:
         states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
@@ -84,10 +83,14 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
     if return_smiles_list:
         return smiles_list
 
+    if return_molecules:
+        return molecules
+
     return states
 
 
-def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True, maxstates=200, verbose=True):
+def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True, max_states=200, verbose=True,
+                   reasonable=True, carbon_hybridization=True, level=0):
     """
     Expand the state specified by enumerate variable
 
@@ -116,16 +119,34 @@ def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True
         ostream.openstring()
         ostream.SetFormat(oechem.OEFormat_SDF)
         states_enumerated = 0
+        oechem.OESuppressHydrogens(molecule)
         if enumerate == 'protonation':
-            functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
+            formal_charge_options = oequacpac.OEFormalChargeOptions()
+            formal_charge_options.SetMaxCount(max_states)
+            formal_charge_options.SetVerbose(verbose)
+            #functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
             if verbose:
                 logger().info("Enumerating protonation states...")
-            states_enumerated += oequacpac.OEEnumerateFormalCharges(molecule, functor, verbose)
+            for protonation_state in oequacpac.OEEnumerateFormalCharges(molecule, formal_charge_options):
+                states_enumerated += 1
+                oechem.OEWriteMolecule(ostream, protonation_state)
+            #states_enumerated.extend(list(oequacpac.OEEnumerateFormalCharges(molecule, formal_charge_options)))
         if enumerate == 'tautomers':
-            functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
+            max_zone_size = molecule.GetMaxAtomIdx()
+            tautomer_options = oequacpac.OETautomerOptions()
+            tautomer_options.SetMaxTautomersGenerated(max_states)
+            tautomer_options.SetLevel(level)
+            #tautomer_options.SetRankTautomers(reasonable)
+            tautomer_options.SetCarbonHybridization(carbon_hybridization)
+            tautomer_options.SetMaxZoneSize(max_zone_size)
+            tautomer_options.SetApplyWarts(True)
+            #functor = oequacpac.OETyperMolFunction(ostream, consider_aromaticity, False, maxstates)
             if verbose:
                 logger().info("Enumerating tautomers...")
-            states_enumerated += oequacpac.OEEnumerateTautomers(molecule, functor, verbose)
+            for tautomer in oequacpac.OEEnumerateTautomers(molecule, tautomer_options):
+                states_enumerated += 1
+                oechem.OEWriteMolecule(ostream, tautomer)
+            #states_enumerated.extend(list(oequacpac.OEEnumerateTautomers(molecule, tautomer_options)))
         if enumerate == 'stereoisomers':
             if verbose:
                 logger().info("Enumerating stereoisomers...")
@@ -134,14 +155,14 @@ def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True
                 enantiomer = oechem.OEMol(enantiomer)
                 oechem.OEWriteMolecule(ostream, enantiomer)
 
-    if states_enumerated > 0:
-        state = oechem.OEMol()
-        istream = oechem.oemolistream()
-        istream.openstring(ostream.GetString())
-        istream.SetFormat(oechem.OEFormat_SDF)
-        while oechem.OEReadMolecule(istream, state):
-            mol = oechem.OEMol(state)
-            states.append(mol)
+        if states_enumerated > 0:
+            state = oechem.OEMol()
+            istream = oechem.oemolistream()
+            istream.openstring(ostream.GetString())
+            istream.SetFormat(oechem.OEFormat_SDF)
+            while oechem.OEReadMolecule(istream, state):
+                mol = oechem.OEMol(state)
+                states.append(mol)
     return states
 
 
