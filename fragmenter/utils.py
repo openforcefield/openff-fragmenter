@@ -137,6 +137,29 @@ def to_oemol(filename, title=True, verbose=True):
     return mollist
 
 
+def smiles_to_oemol(smiles, name='', normalize=True):
+    """Create a OEMolBuilder from a smiles string.
+    Parameters
+    ----------
+    smiles : str
+        SMILES representation of desired molecule.
+    Returns
+    -------
+    molecule : OEMol
+        A normalized molecule with desired smiles string.
+    """
+    if not oechem.OEChemIsLicensed(): raise(ImportError("Need License for OEChem!"))
+
+    molecule = oechem.OEMol()
+    if not oechem.OEParseSmiles(molecule, smiles):
+        raise ValueError("The supplied SMILES '%s' could not be parsed." % smiles)
+
+    if normalize:
+        molecule = normalize_molecule(molecule, name)
+
+    return molecule
+
+
 def normalize_molecule(molecule, title=''):
     """Normalize a copy of the molecule by checking aromaticity, adding explicit hydrogens and renaming by IUPAC name
     or given title
@@ -580,7 +603,7 @@ def bond_order_from_psi4_raw_output(psi_output):
         if FLAG is 'Wiberg':
             Wiberg.append(line.split())
     if not size:
-        print("I have no idea what's happening")
+        raise Warning("Wiberg and Mayer bond orders were not found")
     Wiberg_array = np.zeros(size)
     Mayer_array = np.zeros(size)
 
@@ -611,6 +634,143 @@ def bond_order_from_psi4_raw_output(psi_output):
     return {'Wiberg_psi4': Wiberg_array, 'Mayer_psi4': Mayer_array}
 
 
+def boltzman_average_bond_order(bond_orders):
+    """
+    Calculate the Boltzmann weighted bond order average.
+
+    Parameters
+    ----------
+    bond_orders: Dictionary of bond orders. The key is the energy of the molecule.
+
+    Returns
+    -------
+    bond_order_arrays: Dictionary of Boltzmann weighted bond orders.
+
+    """
+    energies = np.asarray(list(bond_orders.keys()))
+    weights = np.exp(-energies/298.15)
+    denominator = weights.sum()
+    weights = weights/denominator
+
+    Wiberg = np.zeros((tuple([len(energies)]) + bond_orders[energies[0]]['Wiberg_psi4'].shape))
+    Mayer = np.zeros((tuple([len(energies)]) + bond_orders[energies[0]]['Wiberg_psi4'].shape))
+    for i, energy in enumerate(energies):
+        Wiberg[i] = bond_orders[energy]['Wiberg_psi4']
+        Mayer[i] = bond_orders[energy]['Mayer_psi4']
+
+    average_Wiberg =( weights[:, np.newaxis, np.newaxis] * Wiberg).sum(axis=0)
+    average_Mayer = (weights[:, np.newaxis, np.newaxis] * Mayer).sum(axis=0)
+    bond_order_arrays = {'Wiberg_psi4': average_Wiberg, 'Mayer_psi4': average_Mayer}
+    return bond_order_arrays
+
+
+def tag_conjugated_bond(mol, tautomers=None, tag=None, threshold=1.05):
+    """
+    Add conjugated bond data tag. If the bond order is above the threshold, this tag will be True, otherwise it will be
+    False
+    Parameters
+    ----------
+    mol: OEMol
+    tautomers: list of OEMols, optional, Default None
+        If a list is provided, the conjugation tag will be true if the bond in any of the set of molecules is double.
+        The list should consist of resonance structures of the molecules. You can get that from oequacpac.EnumerateTautomres
+    tag: str, optional, Default None
+        If provided, will use that bond order. Options are WibergBondOrder, Wiberg_psi4, Mayer_psi4
+    threshold: int, optional, Default is 1.05
+        The fractional bond order threshold above which the bond will be considered conjugated.
+
+    Returns
+    -------
+    atom_indices: list of atom indices in conjugated bonds.
+
+    """
+    atom_indices = []
+    for bond in mol.GetBonds():
+        resonance = False
+        if tautomers is not None:
+            for tmol in tautomers:
+                t_bond = tmol.GetBond(oechem.OEHasBondIdx(bond.GetIdx()))
+                if t_bond.GetOrder() > 1:
+                    resonance = True
+                    break
+        elif bond.GetData()[tag] >= threshold:
+            resonance = True
+        # Add tag to bond
+        conj_tag = oechem.OEGetTag("conjugated")
+        bond.SetData(conj_tag, resonance)
+        if resonance:
+            a1 = bond.GetBgnIdx()
+            a2 = bond.GetEndIdx()
+            atom_indices.extend([a1, a2])
+    return atom_indices
+
+
+def highlight_bonds(mol_copy, fname, conjugation=True, rotor=False, width=600, height=400, label=None):
+    """
+    Generate image of molecule with highlighted bonds. The bonds can either be highlighted with a conjugation tag
+    or if it is rotatable.
+
+    Parameters
+    ----------
+    mol_copy: OEMol
+    fname: str
+        Name of image file
+    conjugation: Bool, optional, Default is True
+        If True, the bonds with conjugation tag set to True will be highlighted
+    rotor: Bool, optional, Default is False
+        If True, the rotatable bonds will be highlighted.
+    width: int
+    height: int
+    label: string. Optional, Default is None
+        The bond order label. The options are WibergBondOrder, Wiberg_psi4, Mayer_psi4.
+
+    """
+    mol = oechem.OEMol(mol_copy)
+    bond_index_list = []
+    for bond in mol.GetBonds():
+        if conjugation:
+            try:
+                if bond.GetData('conjugated'):
+                    bond_index_list.append(bond.GetIdx())
+            except ValueError:
+                pass
+        if rotor:
+            if bond.IsRotor():
+                bond_index_list.append(bond.GetIdx())
+
+    atomBondSet = oechem.OEAtomBondSet()
+    for bond in mol.GetBonds():
+        if bond.GetIdx() in bond_index_list:
+            atomBondSet.AddBond(bond)
+            atomBondSet.AddAtom(bond.GetBgn())
+            atomBondSet.AddAtom(bond.GetEnd())
+
+    dopt = oedepict.OEPrepareDepictionOptions()
+    dopt.SetSuppressHydrogens(True)
+    oedepict.OEPrepareDepiction(mol, dopt)
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+    if label is not None:
+        bond_label = {'WibergBondOrder': LabelWibergBondOrder, 'Wiberg_psi4': LabelWibergPsiBondOrder,
+                      'Mayer_psi4': LabelMayerPsiBondOrder}
+
+        bondlabel = bond_label[label]
+        opts.SetBondPropertyFunctor(bondlabel())
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+
+    aroStyle = oedepict.OEHighlightStyle_Color
+    aroColor = oechem.OEColor(oechem.OEBlack)
+    oedepict.OEAddHighlighting(disp, aroColor, aroStyle,
+                               oechem.OEIsAromaticAtom(), oechem.OEIsAromaticBond() )
+    hstyle = oedepict.OEHighlightStyle_BallAndStick
+    hcolor = oechem.OEColor(oechem.OELightBlue)
+    oedepict.OEAddHighlighting(disp, hcolor, hstyle, atomBondSet)
+
+    return oedepict.OERenderMolecule(fname, disp)
+
+
 def bond_order_tag(molecule, atom_map, bond_order_array):
     """
     Add psi bond order to bond in molecule. This function adds a tag to the GetData dictionary
@@ -639,49 +799,23 @@ def bond_order_tag(molecule, atom_map, bond_order_array):
         if bond:
             wbo = wiberg_bond_order[i][j]
             mbo = mayer_bond_order[i][j]
-            tag = oechem.OEGetTag('Wiberg_psi')
+            tag = oechem.OEGetTag('Wiberg_psi4')
             bond.SetData(tag, wbo)
-            tag = oechem.OEGetTag('Mayer_psi')
+            tag = oechem.OEGetTag('Mayer_psi4')
             bond.SetData(tag, mbo)
 
 
-# def to_bond_order_dict(molecule, atom_map, bond_order_arrays):
-#     """
-#
-#     Parameters
-#     ----------
-#     molecule
-#     atom_map
-#     bond_oder_arrays
-#
-#     Returns
-#     -------
-#
-#     """
-#     # for bond in molecule.GetBonds():
-#     #     try:
-#     #         bond.GetData('Wiberg_ensa')
-#     #     except ValueError:
-#     #
-#     #     tag = oechem.OEGetTag('Wiberg_ensamble')
-#     #     bond.SetData(tag, [])
-#     #     tag = oechem.OEGetTag('Mayer_ensamble')
-#     #     bond.SetData(tag, [])
-#
-#     wiberg_bond_order = bond_order_arrays['wiberg_psi']
-#     mayer_bond_order = bond_order_arrays['Mayer_psi']
-#     for i, j in itertools.combinations(range(wiberg_bond_order.shape[0], 2)):
-#         idx_1 = atom_map[i+1]
-#         idx_2 = atom_map[j+1]
-#         atom_1 = molecule.GetAtom(oechem.OEHasAtomIdx(idx_1))
-#         atom_2 = molecule.GetAtom(oechem.OEHasAtomIdx(idx_2))
-#         bond = molecule.GetBond(atom_1, atom_2)
-#         if bond:
-#             wbo = wiberg_bond_order[i][j]
-#             mbo = mayer_bond_order[i][j]
-
-
-
+def mol_to_graph(molecule):
+    """
+    Generate networkx graph from oe molecule
+    """
+    import networkx as nx
+    G = nx.Graph()
+    for atom in molecule.GetAtoms():
+        G.add_node(atom.GetIdx(), element=atom.GetElement())
+    for bond in molecule.GetBonds():
+        G.add_edge(bond.GetBgnIdx(), bond.GetEndIdx(), index=bond.GetIdx())
+    return G
 
 
 def png_atoms_labeled(smiles, fname, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
@@ -763,7 +897,7 @@ class LabelWibergPsiBondOrder(oedepict.OEDisplayBondPropBase):
         oedepict.OEDisplayBondPropBase.__init__(self)
 
     def __call__(self, bond):
-        bondOrder = bond.GetData('Wiberg_psi')
+        bondOrder = bond.GetData('Wiberg_psi4')
         label = "{:.2f}".format(bondOrder)
         return label
 
@@ -777,55 +911,13 @@ class LabelMayerPsiBondOrder(oedepict.OEDisplayBondPropBase):
         oedepict.OEDisplayBondPropBase.__init__(self)
 
     def __call__(self, bond):
-        bondOrder = bond.GetData('Mayer_psi')
+        bondOrder = bond.GetData('Mayer_psi4')
         label = "{:.2f}".format(bondOrder)
         return label
 
     def CreateCopy(self):
         copy = LabelMayerPsiBondOrder()
         return copy.__disown__()
-
-# def run_psi4_json(tagged_smiles, molecule, driver, method, basis, properties=None, return_output=True, xyz_file=True):
-#     """
-#
-#     Parameters
-#     ----------
-#     tagged_smiles
-#     xyz
-#     driver
-#     method
-#     basis
-#     properties
-#     return_output
-#     xyz_file
-#
-#     Returns
-#     -------
-#
-#     """
-#     json_data = {}
-#     json_data["tagged_smiles"] = tagged_smiles
-#     json_data["molecule"] = molecule
-#     json_data["driver"] = "property"
-#     json_data["kwargs"] = {"properties": properties}
-#     json_data["method"] = method
-#     json_data["options"] = {"BASIS": basis}
-#     json_data["return_output"] = return_output
-#
-#     name = molecule.split("\n")[2]
-#     if xyz_file:
-#         file = open("{}.xyz".format(name), 'w')
-#         file.write(molecule)
-#         file.close()
-#
-#     j = json.dumb(json_data, indent=4, sort_keys=True)
-#     f = open("{}.input.json".format(name), 'w')
-#     f.close()
-#
-#     psi4.json_wrapper.run_json(json_data)
-#     j = json.dump(json_data, indent=4, sort_keys=True)
-#
-#     f = open("{}.output.json".format(name))
 
 
 def logger(name='fragmenter', pattern='%(asctime)s %(levelname)s %(name)s: %(message)s',
