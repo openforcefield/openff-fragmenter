@@ -162,15 +162,6 @@ def _expand_states(molecules, enumerate='protonation', consider_aromaticity=True
                 oechem.OEWriteMolecule(ostream, enantiomer)
                 states.append(enantiomer)
 
-        # if states_enumerated > 0:
-        #     state = oechem.OEMol()
-        #     istream = oechem.oemolistream()
-        #     istream.openstring(ostream.GetString())
-        #     istream.SetFormat(oechem.OEFormat_SDF)
-        #     while oechem.OEReadMolecule(istream, state):
-        #         #mol = oechem.OEMol(state)
-        #         print(state.GetTitle())
-        #         states.append(state)
     return states
 
 
