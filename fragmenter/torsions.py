@@ -118,6 +118,14 @@ def find_torsions(molecule):
             tor_name = ((tor[0].GetMapIdx()), (tor[1].GetMapIdx()), (tor[2].GetMapIdx()), (tor[3].GetMapIdx()))
             needed_torsion_scans['mid_torsion_{}'.format(str(i))] = tor_name
 
+    # Check that there are no duplicate torsions in mid and h_torsions
+    set_tor = set(needed_torsion_scans.values())
+    list_tor = list(needed_torsion_scans.values())
+
+    if not len(set_tor) == len(list_tor):
+        raise Warning("There is a torsion defined in both mid and terminal torsions. This should not happen. Check "
+                      "your molecule and the atom mapping")
+
     return needed_torsion_scans
 
 
