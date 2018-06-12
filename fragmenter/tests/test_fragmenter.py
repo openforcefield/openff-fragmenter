@@ -79,20 +79,14 @@ class TestFragment(unittest.TestCase):
 
     def test_expand_tautomers(self):
         """Test expand tautomer"""
-        smiles ='C1=C(SC(=N1)NC2=CC(=NC(=N2)C)N3CCN(CC3)CCO)C(=O)NC4=C(C=CC=C4Cl)C'
-        molecule = openeye.smiles_to_oemol(smiles)
-        tautomers = fragmenter.fragment._expand_states(molecule, enumerate='tautomers')
-        tautomers_1 = {'Cc1cccc(c1NC(=C2C=NC(=[NH+]c3cc(nc(n3)C)N4CCN(CC4)CCO)S2)[O-])Cl',
-                        'Cc1cccc(c1NC(=O)c2cnc(s2)Nc3cc(nc(n3)C)N4CCN(CC4)CCO)Cl',
-                        'Cc1cccc(c1[NH+]=C(c2cnc(s2)Nc3cc(nc(n3)C)N4CCN(CC4)CCO)[O-])Cl'}
-        tautomers_2 = set()
-        for mol in tautomers:
-            tautomers_2.add(fragmenter.utils.create_mapped_smiles(mol, tagged=False, explicit_hydrogen=False))
+        smiles_1 ='c1ccc2c(c1)C=CCC2=O'
+        smiles_2 = 'c1ccc2c(c1)cccc2O'
+        molecule_1 = fragmenter.utils.smiles_to_oemol(smiles_1)
+        molecule_2 = fragmenter.utils.smiles_to_oemol(smiles_2)
+        tautomers_1 = fragmenter.fragment.expand_states(molecule_1, protonation=False, tautomers=True, stereoisomers=False)
+        tautomers_2 = fragmenter.fragment.expand_states(molecule_2, protonation=False, tautomers=True, stereoisomers=False)
 
-        intersection = tautomers_1.intersection(tautomers_2)
-        self.assertEqual(len(tautomers_1), len(intersection))
-        self.assertEqual(len(tautomers_2), len(intersection))
-        self.assertEqual(len(tautomers_1), len(tautomers_2))
+        self.assertEqual(tautomers_1, tautomers_2)
 
     def test_expand_enantiomers(self):
         smiles = 'CN(C)C/C=C/C(=O)NC1=C(C=C2C(=C1)C(=NC=N2)NC3=CC(=C(C=C3)F)Cl)O[C@H]4CCOC4'
