@@ -8,7 +8,7 @@ from fragmenter import utils
 from openmoltools import openeye
 
 
-class TesTorsions(unittest.TestCase):
+class TestTorsions(unittest.TestCase):
 
     @unittest.skipUnless(has_openeye, 'Cannot test without openeye')
     def test_generate_torsions(self):
@@ -20,9 +20,9 @@ class TesTorsions(unittest.TestCase):
         oechem.OEReadMolecule(ifs, inp_mol)
         needed_torsion_scans = torsions.find_torsions(molecule=inp_mol)
         self.assertEqual(len(needed_torsion_scans), 3)
-        self.assertEqual(needed_torsion_scans['torsion_1'], (14, 10, 7, 4))
-        self.assertEqual(needed_torsion_scans['torsion_0'], (10, 7, 4, 3))
-        self.assertEqual(needed_torsion_scans['torsion_2'], (7, 10, 14, 13))
+        self.assertEqual(needed_torsion_scans['mid_torsion_0'], (14, 10, 7, 4))
+        self.assertEqual(needed_torsion_scans['terminal_torsion_0'], (10, 7, 4, 3))
+        self.assertEqual(needed_torsion_scans['terminal_torsion_1'], (7, 10, 14, 13))
 
     @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_tagged_smiles(self):
@@ -147,9 +147,9 @@ class TesTorsions(unittest.TestCase):
         """Test crank job JSON"""
 
         test_crank = {'canonical_isomeric_SMILES': 'CCCC',
-                      'needed_torsion_drives': {'torsion_0': (3, 2, 1, 7),
-                                                'torsion_1': (1, 2, 3, 4),
-                                                'torsion_2': (2, 3, 4, 13)},
+                      'needed_torsion_drives': {'mid_torsion_0': 30,
+                                                'terminal_torsion_0': 30,
+                                                'terminal_torsion_1': 30},
                       'provenance': {'canonicalization': 'openeye v2017.Oct.1',
                                      'package': 'fragmenter',
                                      'parent_molecule': 'CCCC',
@@ -165,20 +165,20 @@ class TesTorsions(unittest.TestCase):
                       'tagged_SMARTS': '[H:5][C:1]([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])[H:14]'}
 
         crank_job = torsions.define_crank_job(test_crank)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['torsion_0'], 30)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['torsion_1'], 30)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['torsion_2'], 30)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['mid_torsion_0'], 30)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_0'], 30)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_1'], 30)
         crank_job = torsions.define_crank_job(test_crank, 15)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['torsion_0'], 15)
-        crank_job = torsions.define_crank_job(test_crank, [10, 20, 30])
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['torsion_0'], 10)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['torsion_1'], 20)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['torsion_2'], 30)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['mid_torsion_0'], 15)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_0'], 30)
+        crank_job = torsions.define_crank_job(test_crank, 15, None)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['mid_torsion_0'], 15)
+        with self.assertRaises(KeyError):
+            self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_0'], 30)
 
-        with self.assertRaises(Exception):
-            torsions.define_crank_job(test_crank, [15, 30])
-        with self.assertRaises(ValueError):
-            torsions.define_crank_job(test_crank, [8, 25, 35])
+        crank_job = torsions.define_crank_job(test_crank, terminal_torsion_spacing=60)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['mid_torsion_0'], 30)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_0'], 60)
 
     def test_crank_initial_state(self):
         """ Test generate crank initial state"""
@@ -201,4 +201,5 @@ class TesTorsions(unittest.TestCase):
         crank_job = torsions.fragment_to_torsion_scan(fragments)
         self.assertEqual(crank_job['c1cc(c[nH+]c1)c2ccncn2']['molecule']['molecular_charge'], 1)
         self.assertEqual(crank_job['C[NH+]1CC[NH+](CC1)Cc2ccccc2']['molecule']['molecular_charge'], 2)
+
 

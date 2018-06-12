@@ -16,7 +16,7 @@ from . import utils
 warnings.simplefilter('always')
 
 
-def fragment_to_torsion_scan(fragments, json_filename=None):
+def fragment_to_torsion_scan(fragments, json_filename=None, grid=30, terminal_torsion_spacing=30):
     """
     Wrapper function for finding torsions to drive in fragments and generating crank jobs
 
@@ -58,7 +58,7 @@ def fragment_to_torsion_scan(fragments, json_filename=None):
             json_specs['molecule'] = QC_JSON_molecule
             needed_torsion_drives = find_torsions(molecule)
             json_specs['needed_torsion_drives'] = needed_torsion_drives
-            define_crank_job(json_specs)
+            define_crank_job(json_specs, grid=grid, terminal_torsion_spacing=terminal_torsion_spacing)
             molecules[frag] = json_specs
 
     if json_filename:
@@ -77,7 +77,6 @@ def find_torsions(molecule):
     ----------
     molecule : OEMol
         The atoms in the molecule need to be tagged with map indices
-
     """
     # Check if molecule has map
     is_mapped = utils.is_mapped(molecule)
@@ -86,11 +85,12 @@ def find_torsions(molecule):
         tagged_smiles = utils.create_mapped_smiles(molecule)
         utils.logger().info('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
         utils.logger().info('The new tagged SMARTS is: {}'.format(tagged_smiles))
-
+        # ToDo: save the new tagged SMILES somewhere. Maybe return it?
 
     mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
 
     # This smarts should match terminal torsions such as -CH3, -NH2, -NH3+, -OH, and -SH
+
     smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
     qmol=oechem.OEQMol()
     if not oechem.OEParseSmarts(qmol, smarts):
@@ -106,17 +106,51 @@ def find_torsions(molecule):
             tor.append(ma.target)
         h_tors.append(tor)
 
-    # Combine middle and terminal torsions
-    all_tors = mid_tors + h_tors
-    # Sort all_tors so that it's grouped by central bond
-    central_bonds = np.zeros((len(all_tors), 3), dtype=int)
-    for i, tor in enumerate(all_tors):
+    needed_torsion_scans = dict()
+    if h_tors:
+        h_tors_min = one_torsion_per_rotatable_bond(h_tors)
+        for i, tor in enumerate(h_tors_min):
+            tor_name = ((tor[0].GetMapIdx()), (tor[1].GetMapIdx()), (tor[2].GetMapIdx()), (tor[3].GetMapIdx()))
+            needed_torsion_scans['terminal_torsion_{}'.format(str(i))] = tor_name
+    if mid_tors:
+        mid_tors_min = one_torsion_per_rotatable_bond(mid_tors)
+        for i, tor in enumerate(mid_tors_min):
+            tor_name = ((tor[0].GetMapIdx()), (tor[1].GetMapIdx()), (tor[2].GetMapIdx()), (tor[3].GetMapIdx()))
+            needed_torsion_scans['mid_torsion_{}'.format(str(i))] = tor_name
+
+    # Check that there are no duplicate torsions in mid and h_torsions
+    set_tor = set(needed_torsion_scans.values())
+    list_tor = list(needed_torsion_scans.values())
+
+    if not len(set_tor) == len(list_tor):
+        raise Warning("There is a torsion defined in both mid and terminal torsions. This should not happen. Check "
+                      "your molecule and the atom mapping")
+
+    return needed_torsion_scans
+
+
+def one_torsion_per_rotatable_bond(torsion_list):
+    """
+    Keep only one torsion per rotatable bond
+    Parameters
+    ----------
+    torsion_list: list
+        list of torsion in molecule
+
+    Returns
+    -------
+    list of only one torsion per rotatable bonds
+
+    """
+
+    central_bonds = np.zeros((len(torsion_list), 3), dtype=int)
+    for i, tor in enumerate(torsion_list):
         central_bonds[i][0] = i
         central_bonds[i][1] = tor[1].GetIdx()
         central_bonds[i][2] = tor[2].GetIdx()
 
     grouped = central_bonds[central_bonds[:, 2].argsort()]
-    sorted_tors = [all_tors[i] for i in grouped[:, 0]]
+    sorted_tors = [torsion_list[i] for i in grouped[:, 0]]
 
     # Keep only one torsion per rotatable bond
     tors = []
@@ -148,49 +182,42 @@ def find_torsions(molecule):
         utils.logger().info("Idx: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
         utils.logger().info("Atom numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
 
-    needed_torsion_scans = dict()
-    for i, tor in enumerate(tors):
-        tor_name = ((tor[0].GetMapIdx()), (tor[1].GetMapIdx()), (tor[2].GetMapIdx()), (tor[3].GetMapIdx()))
-        needed_torsion_scans['torsion_{}'.format(str(i))] = tor_name
-    return needed_torsion_scans
+    return tors
 
 
-def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Psi4', method='B3LYP', basis='aug-cc-pVDZ', **kwargs):
+def define_crank_job(fragment_data, grid=30, terminal_torsion_spacing=30, combinations=None,
+                     qc_program='Psi4', method='B3LYP', basis='aug-cc-pVDZ', **kwargs):
     """
 
     Parameters
     ----------
     fragment_data
-    grid: list of int
-        spacing for dihedral scan grid points in degree. Must be divisible by 360. If only one value is given, all
-        dimensions will have the same grid spacing.
-        Default None. When none, all dimensions will have a grid spacing of 30 degrees.
-        Can also be a list of lists for combinations.
+    grid: int, optional, default 30
+        spacing for mid dihedral scan grid points in degree. Must be divisible by 360.
+    terminal_torsion_spacing: int, optional, defualt 30
+        spacing for terminal (usually trivial) torsions. If None, will not specify crank to drive terminal torsions. Only
+        mid torsion will be cranked.
     combinations: list of ints
         can be list of list. Each list defines which torsions in needed_torsion_drives to run on crank.
         Default is None. Only one crank job will be defined for all torsions in needed_torsion_drives
-    qc_program
-    method
+    qc_program: str, optional, default Psi4
+    method: str, optional, default B3LYP
+    basis: str, optional, default aug-cc-pVDZ
     kwargs
 
     Returns
     -------
+    JSON crank job specs
 
     """
     if not combinations:
         #Only one crank job including all needed torsions
         needed_torsion_drives = fragment_data['needed_torsion_drives']
         scan_dimension = len(needed_torsion_drives)
-        if not grid:
-            grid = [30]*scan_dimension
-        if type(grid) is not list:
-            # Evenly spaced grid for all dimensions
-            grid = [grid]*scan_dimension
-        grid_dimension = len(grid)
-        if grid_dimension != scan_dimension:
-                raise Exception("scan dimension {} must be equal to grid dimension {}".format(scan_dimension, grid_dimension))
-        # Check that grid is divisible by 360
-        for spacing in grid:
+
+        for spacing in (grid, terminal_torsion_spacing):
+            if spacing is None:
+                break
             if 360 % spacing:
                 raise ValueError("grid spacing must be a factor of 360")
 
@@ -206,8 +233,11 @@ def define_crank_job(fragment_data, grid=None, combinations=None, qc_program='Ps
 
         fragment_data['crank_torsion_drives']['crank_job_1']['crank_specs']['options'] = options
 
-        for d, spacing in enumerate(grid):
-            fragment_data['crank_torsion_drives']['crank_job_1']['torsion_{}'.format(d)] = spacing
+        for torsion in needed_torsion_drives:
+            if torsion.startswith('mid'):
+                fragment_data['crank_torsion_drives']['crank_job_1'][torsion] = grid
+            if torsion.startswith('term') and terminal_torsion_spacing is not None:
+                fragment_data['crank_torsion_drives']['crank_job_1'][torsion] = terminal_torsion_spacing
 
     # ToDo define jobs combining different torsions
 
