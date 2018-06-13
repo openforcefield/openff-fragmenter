@@ -63,7 +63,7 @@ def fragment_to_torsion_scan(fragments, json_filename=None, grid=30, terminal_to
 
     if json_filename:
         f = open(json_filename, 'w')
-        j = json.dump(molecules, f, indent=4, sort_keys=True, cls=utils.UUIDEncoder)
+        j = json.dump(molecules, f, indent=4, sort_keys=True)
         f.close()
 
     return molecules

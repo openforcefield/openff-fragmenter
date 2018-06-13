@@ -13,7 +13,7 @@ import itertools
 import uuid
 import json
 
-from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase, UUIDEncoder
+from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase
 import fragmenter
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
@@ -230,7 +230,7 @@ def generate_fragments(inputf, generate_visualization=False, strict_stereo=True,
 
 
     fragments['fragments'] = {}
-    fragments['provenance'] = {'job_id': uuid.uuid4(), 'package': fragmenter.__package__, 'version': fragmenter.__version__,
+    fragments['provenance'] = {'job_id': uuid.uuid4().hex, 'package': fragmenter.__package__, 'version': fragmenter.__version__,
                                'routine': generate_fragments.__module__ + '.' + generate_fragments.__name__,
                                'canonicalization_details': canonicalization_details,
                                'user': pwd.getpwuid(os.getuid()).pw_name, 'routine_options': options}
@@ -266,7 +266,7 @@ def generate_fragments(inputf, generate_visualization=False, strict_stereo=True,
             del charged, frags
     if json_filename:
         f = open(json_filename, 'w')
-        j = json.dump(fragments, f, indent=4, sort_keys=True, cls=UUIDEncoder)
+        j = json.dump(fragments, f, indent=4, sort_keys=True)
         f.close()
 
     return fragments
