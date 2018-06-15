@@ -230,7 +230,7 @@ def generate_fragments(inputf, generate_visualization=False, strict_stereo=True,
 
 
     fragments['fragments'] = {}
-    fragments['provenance'] = {'job_id': uuid.uuid4().hex, 'package': fragmenter.__package__, 'version': fragmenter.__version__,
+    fragments['provenance'] = {'job_id': str(uuid.uuid4()), 'package': fragmenter.__package__, 'version': fragmenter.__version__,
                                'routine': generate_fragments.__module__ + '.' + generate_fragments.__name__,
                                'canonicalization_details': canonicalization_details,
                                'user': pwd.getpwuid(os.getuid()).pw_name, 'routine_options': options}
