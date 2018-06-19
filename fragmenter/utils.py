@@ -950,13 +950,6 @@ def log_level(verbose=verbose):
     else:
         return logging.INFO
 
-class UUIDEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, UUID):
-            # if the obj is uuid, we simply return the value of uuid
-            return obj.hex
-        return json.JSONEncoder.default(self, obj)
-
 
 def make_python_identifier(string, namespace=None, reserved_words=None,
                            convert='drop', handle='force'):
@@ -1081,3 +1074,30 @@ def make_python_identifier(string, namespace=None, reserved_words=None,
     namespace[string] = s
 
     return s, namespace
+
+
+def flatten(l, ltypes=(list, tuple)):
+    """
+    Flatten list of lists
+    Parameters
+    ----------
+    l: list to flatten
+    ltypes: tuple of types
+
+    Returns
+    -------
+    flattened list
+    """
+    ltype = type(l)
+    l = list(l)
+    i = 0
+    while i < len(l):
+        while isinstance(l[i], ltypes):
+            if not l[i]:
+                l.pop(i)
+                i -=1
+                break
+            else:
+                l[i:i + 1] = l[i]
+        i += 1
+    return ltype(l)

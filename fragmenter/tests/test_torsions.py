@@ -19,10 +19,11 @@ class TestTorsions(unittest.TestCase):
         inp_mol = oechem.OEMol()
         oechem.OEReadMolecule(ifs, inp_mol)
         needed_torsion_scans = torsions.find_torsions(molecule=inp_mol)
-        self.assertEqual(len(needed_torsion_scans), 3)
-        self.assertEqual(needed_torsion_scans['mid_torsion_0'], (14, 10, 7, 4))
-        self.assertEqual(needed_torsion_scans['terminal_torsion_0'], (10, 7, 4, 3))
-        self.assertEqual(needed_torsion_scans['terminal_torsion_1'], (7, 10, 14, 13))
+        self.assertEqual(len(needed_torsion_scans['mid'])-1, 1)
+        self.assertEqual(len(needed_torsion_scans['terminal'])-1, 2)
+        self.assertEqual(needed_torsion_scans['mid']['torsion_0'], (14, 10, 7, 4))
+        self.assertEqual(needed_torsion_scans['terminal']['torsion_0'], (10, 7, 4, 3))
+        self.assertEqual(needed_torsion_scans['terminal']['torsion_1'], (7, 10, 14, 13))
 
     @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_tagged_smiles(self):
@@ -147,9 +148,11 @@ class TestTorsions(unittest.TestCase):
         """Test crank job JSON"""
 
         test_crank = {'canonical_isomeric_SMILES': 'CCCC',
-                      'needed_torsion_drives': {'mid_torsion_0': 30,
-                                                'terminal_torsion_0': 30,
-                                                'terminal_torsion_1': 30},
+                      'needed_torsion_drives': {'mid': {'grid_spacing': 30,
+                                                        'torsion_0': (1, 2, 3, 4)},
+                                                'terminal': {'grid_spacing': 30,
+                                                             'torsion_0': (3, 2, 1, 5),
+                                                             'torsion_1': (2, 3, 4, 12)}},
                       'provenance': {'canonicalization': 'openeye v2017.Oct.1',
                                      'package': 'fragmenter',
                                      'parent_molecule': 'CCCC',
@@ -165,20 +168,73 @@ class TestTorsions(unittest.TestCase):
                       'tagged_SMARTS': '[H:5][C:1]([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])[H:14]'}
 
         crank_job = torsions.define_crank_job(test_crank)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['mid_torsion_0'], 30)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_0'], 30)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_1'], 30)
-        crank_job = torsions.define_crank_job(test_crank, 15)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['mid_torsion_0'], 15)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_0'], 30)
-        crank_job = torsions.define_crank_job(test_crank, 15, None)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['mid_torsion_0'], 15)
-        with self.assertRaises(KeyError):
-            self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_0'], 30)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_0']['mid_torsions']['torsion_0'], 30)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_0'], 30)
+        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_1'], 30)
 
-        crank_job = torsions.define_crank_job(test_crank, terminal_torsion_spacing=60)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['mid_torsion_0'], 30)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsion_0'], 60)
+    def test_customize_grid(self):
+        """Test more complicated grid structures"""
+
+        json_file = open(get_fn('butane_crankjob.json'), 'r')
+        test_crank_job = json.load(json_file)
+        json_file.close()
+
+        torsions.customize_grid_spacing(test_crank_job['CCCC'])
+        torsions.define_crank_job(test_crank_job['CCCC'])
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['mid_torsions'], {'torsion_0': 15})
+        self.assertFalse(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions'])
+
+        torsions.customize_grid_spacing(test_crank_job['CCCC'], mid_grid=None, terminal_grid=None)
+        with self.assertRaises(Warning):
+            torsions.define_crank_job(test_crank_job['CCCC'])
+
+        torsions.customize_grid_spacing(test_crank_job['CCCC'], mid_grid=None, terminal_grid=15)
+        torsions.define_crank_job(test_crank_job['CCCC'])
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_0'], 15)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_1'], 15)
+        self.assertFalse(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['mid_torsions'])
+
+        torsions.customize_grid_spacing(test_crank_job['CCCC'], mid_grid=15, terminal_grid=[30, 60])
+        torsions.define_crank_job(test_crank_job['CCCC'])
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_0'], 30)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_1'], 60)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['mid_torsions']['torsion_0'], 15)
+
+        torsions.customize_grid_spacing(test_crank_job['CCCC'], mid_grid=None, terminal_grid=[30, 60])
+        torsions.define_crank_job(test_crank_job['CCCC'])
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_0'], 30)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_1'], 60)
+        self.assertFalse(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['mid_torsions'])
+
+        torsions.customize_grid_spacing(test_crank_job['CCCC'], mid_grid=[[15], [30]], terminal_grid=None)
+        torsions.define_crank_job(test_crank_job['CCCC'])
+        self.assertFalse(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions'])
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['mid_torsions']['torsion_0'], 15)
+        self.assertFalse(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_1']['terminal_torsions'])
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_1']['mid_torsions']['torsion_0'], 30)
+
+        torsions.customize_grid_spacing(test_crank_job['CCCC'], mid_grid=[[15], [30]], terminal_grid=[[None, 30], [60, None]])
+        torsions.define_crank_job(test_crank_job['CCCC'])
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_1'], 30)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['mid_torsions']['torsion_0'], 15)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_1']['terminal_torsions']['torsion_0'], 60)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_1']['mid_torsions']['torsion_0'], 30)
+
+        torsions.customize_grid_spacing(test_crank_job['CCCC'], mid_grid=[[15], [30]], terminal_grid=60)
+        torsions.define_crank_job(test_crank_job['CCCC'])
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_0'], 60)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_1'], 60)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['mid_torsions']['torsion_0'], 15)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_1']['terminal_torsions']['torsion_0'], 60)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_1']['terminal_torsions']['torsion_1'], 60)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_1']['mid_torsions']['torsion_0'], 30)
+
+        torsions.customize_grid_spacing(test_crank_job['CCCC'], mid_grid=[[15], [None], [None]],
+                                        terminal_grid=[[None, None], [15, None], [None, 15]])
+        torsions.define_crank_job(test_crank_job['CCCC'])
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_0']['mid_torsions']['torsion_0'], 15)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_1']['terminal_torsions']['torsion_0'], 15)
+        self.assertEqual(test_crank_job['CCCC']['crank_torsion_drives']['crank_job_2']['terminal_torsions']['torsion_1'], 15)
 
     def test_crank_initial_state(self):
         """ Test generate crank initial state"""
@@ -187,10 +243,10 @@ class TestTorsions(unittest.TestCase):
         jsonfile.close()
 
         crank_initial_state = torsions.get_initial_crank_state(test_crank_job['CCCC'])
-        for dihedral in crank_initial_state['crank_job_1']['dihedrals']:
-            self.assertTrue(dihedral in [[2, 1, 0, 6], [0, 1, 2, 3], [1, 2, 3, 12]])
-        self.assertEqual(crank_initial_state['crank_job_1']['grid_spacing'], [30, 30, 30])
-        self.assertFalse(crank_initial_state['crank_job_1']['grid_status'])
+        for dihedral in crank_initial_state['crank_job_0']['dihedrals']:
+            self.assertTrue(dihedral in [[2, 1, 0, 4], [0, 1, 2, 3], [1, 2, 3, 11]])
+        self.assertEqual(crank_initial_state['crank_job_0']['grid_spacing'], [30, 30, 30])
+        self.assertFalse(crank_initial_state['crank_job_0']['grid_status'])
 
     def test_formal_charge(self):
         """Test formal charge of molecule"""
