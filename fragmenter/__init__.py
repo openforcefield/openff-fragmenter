@@ -10,6 +10,7 @@ Fragment molecules for quantum mechanics torison scans.
 from .utils import *
 from .fragment import *
 from .torsions import *
+from .launch import *
 
 
 # Handle versioneer

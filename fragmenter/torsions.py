@@ -250,6 +250,18 @@ def customize_grid_spacing(fragment_data, mid_grid=15, terminal_grid=None):
         if not all(len(el) == terminal_torsion_dimension for el in terminal_grid):
             raise Warning("dimension of the grid must be equal to dimension of torsion scan")
 
+    if mid_grid_type == 'list_of_lists' and term_grid_type == 'list':
+        raise Warning("Multiple crank jobs are specified for mid torsions but only one for terminal torsions. Both grids "
+                      "need to be lists of lists when specifying multiple crank job grids")
+    if mid_grid_type == 'list' and term_grid_type == 'list_of_lists':
+        raise Warning("Multiple crank jobs are specified for terminal torsions but only one for mid torsions. Both grids "
+                      "need to be lists of lists when specifying multiple crank job grids")
+    if mid_grid_type == 'list_of_lists' and term_grid_type == 'list_of_lists':
+        # Check dimension
+        if len(mid_grid) != len(terminal_grid):
+            raise Warning("Mid grid and terminal grid must have the same number of lists when specifying more than one "
+                          "torsion scan job")
+
     fragment_data['needed_torsion_drives']['mid']['grid_spacing'] = mid_grid
     fragment_data['needed_torsion_drives']['terminal']['grid_spacing'] = terminal_grid
 
@@ -260,14 +272,6 @@ def define_crank_job(fragment_data, qc_program='Psi4', method='B3LYP', basis='au
     Parameters
     ----------
     fragment_data
-    grid: int, optional, default 30
-        spacing for mid dihedral scan grid points in degree. Must be divisible by 360.
-    terminal_torsion_spacing: int, optional, defualt 30
-        spacing for terminal (usually trivial) torsions. If None, will not specify crank to drive terminal torsions. Only
-        mid torsion will be cranked.
-    combinations: list of ints
-        can be list of list. Each list defines which torsions in needed_torsion_drives to run on crank.
-        Default is None. Only one crank job will be defined for all torsions in needed_torsion_drives
     qc_program: str, optional, default Psi4
     method: str, optional, default B3LYP
     basis: str, optional, default aug-cc-pVDZ

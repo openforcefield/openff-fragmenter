@@ -148,7 +148,6 @@ def smiles_to_oemol(smiles, name='', normalize=True):
     molecule : OEMol
         A normalized molecule with desired smiles string.
     """
-    if not oechem.OEChemIsLicensed(): raise(ImportError("Need License for OEChem!"))
 
     molecule = oechem.OEMol()
     if not oechem.OEParseSmiles(molecule, smiles):
@@ -634,6 +633,36 @@ def bond_order_from_psi4_raw_output(psi_output):
     return {'Wiberg_psi4': Wiberg_array, 'Mayer_psi4': Mayer_array}
 
 
+def bond_order_to_bond_graph(bond_order, threshold=0.8, hydrogen_bond=True, molecule=None, atom_map=None):
+    """
+    Get bond graph from bond orders. This function returns a set of bonds where the bond order is above a threshold
+    Parameters
+    ----------
+    bond_order: np array
+    threshold: int
+
+    Returns
+    -------
+    bonds: set
+
+    """
+    bonds = set()
+    for i in range(bond_order.shape[0]):
+        for j in range(bond_order.shape[1]):
+            if bond_order[i, j] >= threshold:
+                if not hydrogen_bond:
+                    idx_1 = atom_map[i+1]
+                    idx_2 = atom_map[j+1]
+                    atom_1 = molecule.GetAtom(oechem.OEHasMapIdx(idx_1))
+                    atom_2 = molecule.GetAtom(oechem.OEHasAtomIdx(idx_2))
+                    if atom_1.IsHydrogen() or atom_2.IsHydrogen():
+                        continue
+                if (j+1, i+1) in bonds:
+                    continue
+                bonds.add((i+1, j+1))
+    return bonds
+
+
 def boltzman_average_bond_order(bond_orders):
     """
     Calculate the Boltzmann weighted bond order average.
@@ -949,6 +978,22 @@ def log_level(verbose=verbose):
         return logging.DEBUG
     else:
         return logging.INFO
+
+
+def sort_nicely(l):
+    """
+
+    Parameters
+    ----------
+    l
+
+    Returns
+    -------
+
+    """
+    convert = lambda text: int(text) if text.isdigit() else text
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    l.sort(key=alphanum_key)
 
 
 def make_python_identifier(string, namespace=None, reserved_words=None,
