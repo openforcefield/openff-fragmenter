@@ -258,9 +258,8 @@ def customize_grid_spacing(fragment_data, mid_grid=15, terminal_grid=None):
                       "need to be lists of lists when specifying multiple crank job grids")
     if mid_grid_type == 'list_of_lists' and term_grid_type == 'list_of_lists':
         # Check dimension
-        if len(mid_grid) != len(terminal_grid):
-            raise Warning("Mid grid and terminal grid must have the same number of lists when specifying more than one "
-                          "torsion scan job")
+        if len(mid_grid) !=mid_torsion_dimension or  len(terminal_grid) != terminal_torsion_dimension:
+            raise Warning("grid dimensions are not the same as torsion dimensions")
 
     fragment_data['needed_torsion_drives']['mid']['grid_spacing'] = mid_grid
     fragment_data['needed_torsion_drives']['terminal']['grid_spacing'] = terminal_grid
@@ -285,13 +284,29 @@ def define_crank_job(fragment_data, qc_program='Psi4', method='B3LYP', basis='au
 
     needed_torsion_drives = fragment_data['needed_torsion_drives']
 
+    mid_grids = needed_torsion_drives['mid']['grid_spacing']
+    term_grids = needed_torsion_drives['terminal']['grid_spacing']
+
+    mid_dimension = len(needed_torsion_drives['mid']) - 1
+    term_dimesion = len(needed_torsion_drives['terminal']) - 1
+    torsion_dimension = mid_dimension + term_dimesion
+
+    if mid_grids is None and term_grids is None:
+        warnings.warn("No torsion scan was specified.", Warning)
+
+    # Check grid dimension
+    if isinstance(mid_grids, list):
+        for l in mid_grids:
+            if len(l) != torsion_dimension:
+                raise Warning('grid must be the same dimension as torsions')
+
     for spacing in (needed_torsion_drives['mid']['grid_spacing'], needed_torsion_drives['terminal']['grid_spacing']):
         if not isinstance(spacing, list):
             spacing = [spacing]
         flattened = utils.flatten(spacing)
         for grid_interval in flattened:
             if grid_interval is None:
-                break
+                continue
             if 360 % grid_interval:
                 raise ValueError("grid spacing must be a factor of 360")
 
@@ -303,125 +318,49 @@ def define_crank_job(fragment_data, qc_program='Psi4', method='B3LYP', basis='au
         options = kwargs['options']
 
     # Figure out how many crank jobs are needed
-    mid_grids = needed_torsion_drives['mid']['grid_spacing']
-    terminal_grids = needed_torsion_drives['terminal']['grid_spacing']
-    crank_jobs = 1
+    crank_jobs = 0
     if isinstance(mid_grids, list):
         # Check if it is a list of lists
-        if any(isinstance(el, list) for el in mid_grids):
-            crank_jobs = len(mid_grids)
-    if mid_grids is None:
-        # No mid torsions are specified. Check terminal torsions
-        if terminal_grids is None:
-            raise Warning("Are you sure you do not want to specify any crank jobs for fragment {}".format(
-                    fragment_data['canonical_isomeric_SMILES']))
-        elif isinstance(terminal_grids, int):
-            pass
-        elif any(isinstance(el, list) for el in terminal_grids):
-            crank_jobs = len(terminal_grids)
+        #if any(isinstance(el, list) for el in mid_grids):
+        crank_jobs += len(mid_grids)
+    if isinstance(term_grids, list):
+        #if any(isinstance(el, list) for el in term_grids):
+        crank_jobs += len(term_grids)
+    if isinstance(mid_grids, int) or isinstance(term_grids, int):
+        crank_jobs = 1
 
-    if crank_jobs == 1:
+    if crank_jobs == 1 and type(mid_grids) is not list and type(term_grids) is not list:
         fragment_data['crank_torsion_drives'] = {'crank_job_0': {'crank_specs': {'model': model, 'options': options},
                                                  'mid_torsions': {}, 'terminal_torsions': {}}}
-        if isinstance(mid_grids, int):
-            # All torsions are driven at the same resolution
+        if mid_grids is not None:
             torsions_to_drive = list(needed_torsion_drives['mid'].keys())
             torsions_to_drive.remove('grid_spacing')
-            fragment_data['crank_torsion_drives']['crank_job_0']['mid_torsions'] = {torsion: mid_grids for torsion in torsions_to_drive}
-        if isinstance(mid_grids, list):
-            # Only constrain torsions that have a corresponding interval
-            for i, interval in enumerate(mid_grids):
-                if interval is not None:
-                    fragment_data['crank_torsion_drives']['crank_job_0']['mid_torsions']['torsion_{}'.format(str(i))] = interval
-        if isinstance(terminal_grids, int):
+            fragment_data['crank_torsion_drives']['crank_job_0']['mid_torsions'] = {torsion: mid_grids for torsion
+                                                                                    in torsions_to_drive}
+        if term_grids is not None:
             torsions_to_drive = list(needed_torsion_drives['terminal'].keys())
             torsions_to_drive.remove('grid_spacing')
-            fragment_data['crank_torsion_drives']['crank_job_0']['terminal_torsions'] = {torsion: terminal_grids for torsion in torsions_to_drive}
-        if isinstance(terminal_grids, list):
-            for i, interval in enumerate(terminal_grids):
-                if interval is not None:
-                    fragment_data['crank_torsion_drives']['crank_job_0']['terminal_torsions']['torsion_{}'.format(str(i))] = interval
-
+            fragment_data['crank_torsion_drives']['crank_job_0']['terminal_torsions'] = {torsion: term_grids for torsion
+                                                                                         in torsions_to_drive}
     else:
-
-        for i in range(crank_jobs):
-            fragment_data['crank_torsion_drives']['crank_job_{}'.format(str(i))] = {'crank_specs': {
+        if mid_grids is not None and term_grids is not None:
+            all_grids = mid_grids + term_grids
+        elif mid_grids is not None:
+            all_grids = mid_grids
+        else:
+            all_grids = term_grids
+            #mid_dimension = 0
+        for job in range(crank_jobs):
+            fragment_data['crank_torsion_drives']['crank_job_{}'.format(str(job))] = {'crank_specs': {
                 'model': model, 'options': options}, 'mid_torsions': {}, 'terminal_torsions': {}}
-            mid_grid = mid_grids[i]
-            for e, interval in enumerate(mid_grid):
-                if interval is not None:
-                    fragment_data['crank_torsion_drives']['crank_job_{}'.format(str(i))]['mid_torsions']['torsion_{}'.format(str(e))] = interval
-            # Check terminal
-            if isinstance(terminal_grids, int):
-                # Terminal torsions are all driven at the same resolution
-                torsions_to_drive = list(needed_torsion_drives['terminal'].keys())
-                torsions_to_drive.remove('grid_spacing')
-                print(torsions_to_drive)
-                fragment_data['crank_torsion_drives']['crank_job_{}'.format(str(i))]['terminal_torsions'] = {torsion: terminal_grids for torsion in torsions_to_drive}
-            if isinstance(terminal_grids, list):
-                terminal_grid = terminal_grids[i]
-                for e, interval in enumerate(terminal_grid):
-                    if interval is not None:
-                        fragment_data['crank_torsion_drives']['crank_job_{}'.format(str(i))]['terminal_torsions']['torsion_{}'.format(str(e))] = interval
+            grid = all_grids[job]
+            for e, interval in enumerate(grid):
+                if interval is not None and e < mid_dimension:
+                    fragment_data['crank_torsion_drives']['crank_job_{}'.format(str(job))]['mid_torsions']['torsion_{}'.format(str(e))] = interval
+                if interval is not None and e >= mid_dimension:
+                    fragment_data['crank_torsion_drives']['crank_job_{}'.format(str(job))]['terminal_torsions']['torsion_{}'.format(str(e-mid_dimension))] = interval
 
     return fragment_data
-
-
-def get_initial_crank_state(fragment, fragment_name=None):
-    """
-    Generate initial crank state JSON for each crank job in fragment
-    Parameters
-    ----------
-    fragment: dict
-        A fragment from JSON crank jobs
-    fragment_name: str
-        Name for path and file for crank jsonstatefile. Default is None. If None the file does not get written
-
-    Returns
-    -------
-    crank_initial_states: dict
-        dictionary containing JSON specs for initial states for all crank jobs in a fragment.
-    """
-    crank_initial_states = {}
-    init_geometry = fragment['molecule']['geometry']
-    needed_torsions = fragment['needed_torsion_drives']
-    crank_jobs = fragment['crank_torsion_drives']
-    for i, job in enumerate(crank_jobs):
-        dihedrals = []
-        grid_spacing = []
-        needed_mid_torsions = needed_torsions['mid']
-        for mid_torsion in crank_jobs[job]['mid_torsions']:
-            dihedrals.append([j-1 for j in needed_mid_torsions[mid_torsion]])
-            grid_spacing.append(crank_jobs[job]['mid_torsions'][mid_torsion])
-        needed_terminal_torsions = needed_torsions['terminal']
-        for terminal_torsion in crank_jobs[job]['terminal_torsions']:
-            dihedrals.append([j-1 for j in needed_terminal_torsions[terminal_torsion]])
-            grid_spacing.append(crank_jobs[job]['terminal_torsions'][terminal_torsion])
-
-        crank_state = {}
-        crank_state['dihedrals'] = dihedrals
-        crank_state['grid_spacing'] = grid_spacing
-        crank_state['elements'] = fragment['molecule']['symbols']
-
-        #ToDo add ability to start with many geomotries
-        crank_state['init_coords'] = [init_geometry]
-        crank_state['grid_status'] = {}
-        if fragment_name:
-            # Make directory for job
-            current_path = os.getcwd()
-            path = os.path.join(current_path, fragment_name + '_{}'.format(job))
-            try:
-                os.mkdir(path)
-            except FileExistsError:
-                utils.logger().info('Warning: overwriting {}'.format(path))
-            # extend with job number because several jobs can exist in a fragment
-            jsonfilename = os.path.join(path, fragment_name + '_{}.json'.format(job))
-            outfile = open(jsonfilename, 'w')
-            json.dump(crank_state, outfile, indent=2, sort_keys=True, cls=utils.UUIDEncoder)
-            outfile.close()
-
-        crank_initial_states[job] = crank_state
-    return crank_initial_states
 
 
 def launch_crank(fragment, inputfile, dihedralfile, init_coords=None, grid=30, engine='psi4', native_opt=False,

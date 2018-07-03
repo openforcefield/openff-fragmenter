@@ -176,8 +176,8 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
     return states
 
 
-def generate_fragments(molecule, generate_visualization=False, strict_stereo=True, combinatorial=True, MAX_ROTORS=2, remove_map=True,
-                       json_filename=None, canonicalization=OPENEYE_VERSION):
+def generate_fragments(molecule, generate_visualization=False, strict_stereo=True, combinatorial=True, MAX_ROTORS=2,
+                       remove_map=True, json_filename=None):
     """
     This function generates fragments from molecules. The output is a dictionary that maps SMILES of molecules to SMILES
      for fragments. The default SMILES are generated with openeye.oechem.OEMolToSmiles. These SMILES strings are canonical
@@ -213,17 +213,7 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Tru
         provenance: record of the job that generated fragments
         fragments: mapping of SMILES from the parent molecule to the SMILES of the fragments
     """
-    #options = copy.deepcopy(locals())
     fragments = dict()
-
-    fragments['fragments'] = {}
-    #ifs = oechem.oemolistream()
-    #mol = oechem.OEMol()
-    #if ifs.open(inputf):
-    #    while oechem.OEReadMolecule(ifs, mol):
-    #        title = mol.GetTitle()
-    #        mol = normalize_molecule(mol, title=title)
-    #        logger().info('fragmenting {}...'.format(mol.GetTitle()))
 
     try:
         molecules = list(molecule)
@@ -238,7 +228,7 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Tru
                 a.SetMapIdx(0)
         frags = _generate_fragments(molecule, strict_stereo=strict_stereo)
         if not frags:
-            logger().warn('Skipping {}, SMILES: {}'.format(molecule.GetTitle(), oechem.OECreateSmiString(molecule)))
+            logger().warning('Skipping {}, SMILES: {}'.format(molecule.GetTitle(), oechem.OECreateSmiString(molecule)))
         charged = frags[0]
         frags = frags[-1]
         frag_list = list(frags.values())
@@ -248,7 +238,7 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Tru
             smiles = frag_to_smiles(frag_list, charged)
 
         parent_smiles = oechem.OEMolToSmiles(molecule)
-        fragments['fragments'][parent_smiles] = list(smiles.keys())
+        fragments[parent_smiles] = list(smiles.keys())
 
         if generate_visualization:
             oname = '{}.pdf'.format(molecule.GetTitle())
@@ -256,7 +246,7 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Tru
         del charged, frags
     if json_filename:
         f = open(json_filename, 'w')
-        j = json.dump(fragments, f, indent=4, sort_keys=True)
+        j = json.dump(fragments, f, indent=2, sort_keys=True)
         f.close()
 
     return fragments
@@ -286,7 +276,7 @@ def _generate_fragments(mol, strict_stereo=True):
         try:
             bond.GetData('WibergBondOrder')
         except ValueError:
-            logger().warn("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
+            logger().warning("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
             return False
 
     tagged_rings, tagged_fgroups = tag_molecule(charged)
@@ -295,7 +285,6 @@ def _generate_fragments(mol, strict_stereo=True):
     frags = {}
     for bond in charged.GetBonds():
         if bond.IsRotor():
-            print(bond)
             atoms, bonds = _build_frag(bond=bond, mol=charged, tagged_fgroups=tagged_fgroups, tagged_rings=tagged_rings)
             atom_bond_set = _to_AtomBondSet(charged, atoms, bonds)
             frags[bond.GetIdx()] = atom_bond_set
