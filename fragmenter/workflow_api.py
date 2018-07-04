@@ -7,7 +7,7 @@ import os
 import warnings
 
 import fragmenter
-from fragmenter import utils
+from fragmenter import fragment, torsions, chemi, utils
 import openeye as oe
 from openeye import oechem
 
@@ -17,6 +17,7 @@ _canonicalization_details = {'package': _OPENEYE_VERSION,
                              'canonical_isomeric_SMILES': {'Flags': ['ISOMERIC', 'Isotopes', 'AtomStereo',
                                                                     'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'],
                                                            'oe_function': 'openeye.oechem.OEMolToSmiles(molecule)'},
+
                              'canonical_SMILES': {'Flags': ['DEFAULT', 'Canonical', 'AtomMaps', 'RGroups'],
                                                   'oe_function': 'openeye.oechem.OECreateCanSmiString(molecule)'},
                              'canonical_isomeric_explicit_hydrogen_SMILES': {'Flags': ['Hydrogens', 'Isotopes', 'AtomStereo',
@@ -27,7 +28,7 @@ _canonicalization_details = {'package': _OPENEYE_VERSION,
                              'notes': 'All other available OESMIELSFlag are set to False'}
 
 _default_options = {}
-_default_options['expand_states'] = {'protonation': True,
+_default_options['enumerate_states'] = {'protonation': True,
                                      "tautomers":False,
                                      'stereoisomers':True,
                                      'max_states': 200,
@@ -35,96 +36,106 @@ _default_options['expand_states'] = {'protonation': True,
                                      'reasonable': True,
                                      'carbon_hybridization': True,
                                      'suppress_hydrogen': True}
-_default_options['generate_fragments'] = {'strict_stereo': True,
+_default_options['enumerate_fragments'] = {'strict_stereo': True,
                                           'combinatorial': True,
                                           'MAX_ROTORS': 2,
                                           'remove_map': True}
-_default_options['torsion_scan'] = {'mid_grid':30,
-                                    'terminal_grid':30,
-                                    '1D_scans': False,
+_default_options['generate_crank_jobs'] = {'max_conf': 1,
+                                    'terminal_torsion_resolution': 30,
+                                    'internal_torsion_resolution': 30,
+                                    'scan_internal_external_combination': 0,
+                                    'scan_dimension': 2,
                                     'options':{
                                     'qc_program': 'psi4',
                                     'method': 'B3LYP',
                                     'basis': 'aug-cc-pVDZ'}}
 
 
-def get_provenance():
-    provenance = {'job_id': str(uuid.uuid4()),
-                  'creator': fragmenter.__package__,
-                  'version': fragmenter.__version__,
-                  'canonicalization_details': _canonicalization_details,
-                  'hostname': socket.gethostname(),
+def get_provenance(routine, options=None):
+    provenance = {'creator': fragmenter.__package__,
+                  'routine': {
+                      routine: {
+                          'version': fragmenter.__version__,
+                          'keywords': {},
+                          'job_id': str(uuid.uuid4()),
+                          'hostname': socket.gethostname()}
+                  },
                   'username': getpass.getuser()}
+
+    if routine == 'enumerate_states':
+        package = _canonicalization_details['package']
+        can_is_smiles = _canonicalization_details['canonical_isomeric_SMILES']
+        canonicalization_details = {'package': package,
+                                    'canonical_isomeric_SMILES': can_is_smiles}
+        provenance['canonicalization_details'] = canonicalization_details
+    if routine == 'enumerate_fragments':
+        canonicalization_details = _canonicalization_details
+        provenance['canonicalization_details'] = canonicalization_details
+
+    provenance['routine'][routine]['keywords'] = load_options(routine, options)
 
     return provenance
 
 
-def load_options(load_path):
+def load_options(routine, load_path=None):
 
-    options = {}
-    options['config_path'] = load_path
+    if load_path:
+        with open(load_path) as stream:
+            user_config = yaml.load(stream)
 
-    with open(load_path) as stream:
-        user_config = yaml.load(stream)
+        options = {**_default_options[routine], **user_config[routine]}
+    else:
+        options = _default_options[routine]
+    return options
 
-        # override default
-        options = {}
-        for option in _default_options:
-            try:
-                if user_config[option] is False:
-                    options[option] = False
-                    continue
-            except KeyError:
-                options[option] = _default_options[option]
-            try:
-                options[option] = {**_default_options[option], **user_config[option]}
-            except KeyError:
-                options[option] = _default_options[option]
+def remove_extraneous_options(user_options, routine):
+
+    options = {option: user_options[option] for option in _default_options[routine]}
 
     return options
 
-def specify_1D_grid(molecule_data):
-    mid = molecule_data['needed_torsion_drives']['mid']
-    mid_grid = None
+def enumerate_states(molecule, options=None, json_filename=None):
+    """
 
-    terminal = molecule_data['needed_torsion_drives']['terminal']
-    terminal_grid = None
+    Parameters
+    ----------
+    molecule
+    options
+    json_filename
 
-    if not mid['grid_spacing'] and not terminal['grid_spacing']:
-        warnings.warn("No grid points are specified. Are you sure you do not want to drive any torsions?", Warning)
+    Returns
+    -------
 
-    mid_dimension = len(mid) -1
-    terminal_dimesion = len(terminal) -1
-    dimension = mid_dimension + terminal_dimesion
+    """
+    # Load options for enumerate states
+    provenance = get_provenance('enumerate_states', options=options)
+    options = provenance['routine']['enumerate_states']['keywords']
 
-    if mid['grid_spacing'] is not None:
-        mid_grid = [[None]*dimension for i in range(mid_dimension)]
-        for i, j in enumerate(mid_grid):
-            j[i] = mid['grid_spacing']
-    if terminal['grid_spacing'] is not None:
-        terminal_grid = [[None]*dimension for i in range(terminal_dimesion)]
-        for i, j in enumerate(terminal_grid):
-            j[i+mid_dimension] = terminal['grid_spacing']
+    molecule = utils.check_molecule(molecule)
+    can_iso_smiles = oechem.OEMolToSmiles(molecule)
+    states = fragment.expand_states(molecule, **options)
 
-    return mid_grid, terminal_grid
+    # Remove extraneous options
+    routine_options = remove_extraneous_options(user_options=options, routine='enumerate_states')
 
-def check_molecule(molecule):
+    provenance['routine']['enumerate_states']['keywords'] = routine_options
+    json_dict = {'provenance': provenance,
+                  can_iso_smiles: states}
+    if json_filename:
+        with open(json_filename, 'w') as f:
+            json.dump(json_dict, f, indent=2, sort_keys=True)
 
-    mol = oechem.OEMol()
-    # First try reading as smiles
-    if not oechem.OESmilesToMol(mol, molecule):
-        # Try reading as input file
-        ifs = oechem.oemolistream()
-        if not ifs.open(molecule):
-            raise Warning('Could not parse molecule.')
-
-    # normalize molecule
-    title = mol.GetTitle()
-    molecule = utils.normalize_molecule(mol, title=title)
-    return molecule
+    return json_dict
 
 
-def launch_fragmenter(molecule, options=None, json_filename=None):
+def enumerate_fragments(molecule, options=None, json_filename=None):
+    pass
+
+def generate_crank_jobs(molecule, options=None, json_filename=None):
+    pass
+
+
+def workflow(molecule, options=None, json_filename=None):
     """
     Launch fragmenter
 
@@ -207,7 +218,6 @@ def launch_fragmenter(molecule, options=None, json_filename=None):
                 # Customize scan grid
                 fragmenter.customize_grid_spacing(json_specs, scan_options['mid_grid'], scan_options['terminal_grid'])
             if scan_options['1D_scans']:
-                print('1D scan')
                 # create 1D torsion scans
                 mid_grid, term_grid = specify_1D_grid(json_specs)
                 json_specs['needed_torsion_drives']['mid']['grid_spacing'] = mid_grid
@@ -223,60 +233,6 @@ def launch_fragmenter(molecule, options=None, json_filename=None):
 
     return molecules
 
-def get_initial_crank_state(fragment, fragment_name=None):
-    """
-    Generate initial crank state JSON for each crank job in fragment
-    Parameters
-    ----------
-    fragment: dict
-        A fragment from JSON crank jobs
-    fragment_name: str
-        Name for path and file for crank jsonstatefile. Default is None. If None the file does not get written
 
-    Returns
-    -------
-    crank_initial_states: dict
-        dictionary containing JSON specs for initial states for all crank jobs in a fragment.
-    """
-    crank_initial_states = {}
-    init_geometry = fragment['molecule']['geometry']
-    needed_torsions = fragment['needed_torsion_drives']
-    crank_jobs = fragment['crank_torsion_drives']
-    for i, job in enumerate(crank_jobs):
-        dihedrals = []
-        grid_spacing = []
-        needed_mid_torsions = needed_torsions['mid']
-        for mid_torsion in crank_jobs[job]['mid_torsions']:
-            dihedrals.append([j-1 for j in needed_mid_torsions[mid_torsion]])
-            grid_spacing.append(crank_jobs[job]['mid_torsions'][mid_torsion])
-        needed_terminal_torsions = needed_torsions['terminal']
-        for terminal_torsion in crank_jobs[job]['terminal_torsions']:
-            dihedrals.append([j-1 for j in needed_terminal_torsions[terminal_torsion]])
-            grid_spacing.append(crank_jobs[job]['terminal_torsions'][terminal_torsion])
-
-        crank_state = {}
-        crank_state['dihedrals'] = dihedrals
-        crank_state['grid_spacing'] = grid_spacing
-        crank_state['elements'] = fragment['molecule']['symbols']
-
-        #ToDo add ability to start with many geomotries
-        crank_state['init_coords'] = [init_geometry]
-        crank_state['grid_status'] = {}
-        if fragment_name:
-            # Make directory for job
-            current_path = os.getcwd()
-            path = os.path.join(current_path, fragment_name + '_{}'.format(job))
-            try:
-                os.mkdir(path)
-            except FileExistsError:
-                utils.logger().info('Warning: overwriting {}'.format(path))
-            # extend with job number because several jobs can exist in a fragment
-            jsonfilename = os.path.join(path, fragment_name + '_{}.json'.format(job))
-            outfile = open(jsonfilename, 'w')
-            json.dump(crank_state, outfile, indent=2, sort_keys=True)
-            outfile.close()
-
-        crank_initial_states[job] = crank_state
-    return crank_initial_states
 
 
