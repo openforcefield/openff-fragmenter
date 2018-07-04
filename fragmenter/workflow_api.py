@@ -52,6 +52,22 @@ _default_options['generate_crank_jobs'] = {'max_conf': 1,
 
 
 def get_provenance(routine, options=None):
+    """
+    Get provenance with keywords for routine
+
+    Parameters
+    ----------
+    routine: str
+        routine to get provenance for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
+    options: str, optional. Default is None
+        path to yaml file containing user specified options.
+
+    Returns
+    -------
+    provenance: dict
+        dictionary with provenance and routine keywords.
+
+    """
     provenance = {'creator': fragmenter.__package__,
                   'routine': {
                       routine: {
@@ -78,6 +94,22 @@ def get_provenance(routine, options=None):
 
 
 def load_options(routine, load_path=None):
+    """
+    load user options
+
+    Parameters
+    ----------
+    routine: str
+        routine to load options for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
+    load_path: str, optional. Default None
+        path to user option yaml file. If none will use default options
+
+    Returns
+    -------
+    options: dict
+        keywords for routine
+
+    """
 
     if load_path:
         with open(load_path) as stream:
@@ -96,15 +128,21 @@ def remove_extraneous_options(user_options, routine):
 
 def enumerate_states(molecule, options=None, json_filename=None):
     """
+    enumerate protonation, tautomers and stereoisomers for molecule. Default does not enumerate tautomers, only
+    protonation/ionization states and stereoisomers
 
     Parameters
     ----------
-    molecule
-    options
-    json_filename
+    molecule: any format that OpenEye pareses. Can be path to file containing molecule or SMILES/Inchi string
+    options: str, optional. Default None
+        path to user options yaml file. If None will use default options
+    json_filename: str, optional. default None
+        path to json output file. If None, no file will be written
 
     Returns
     -------
+    json_dict: dict
+        dictoinary containing canonicla isomeric SMILES for states and provenane.
 
     """
     # Load options for enumerate states
