@@ -195,6 +195,21 @@ def normalize_molecule(molecule, title=''):
         oechem.OETriposAtomNames(molcopy)
     return molcopy
 
+def check_molecule(molecule):
+
+    mol = oechem.OEMol()
+    # First try reading as smiles
+    if not oechem.OESmilesToMol(mol, molecule):
+        # Try reading as input file
+        ifs = oechem.oemolistream()
+        if not ifs.open(molecule):
+            raise Warning('Could not parse molecule.')
+
+    # normalize molecule
+    title = mol.GetTitle()
+    molecule = normalize_molecule(mol, title=title)
+    return molecule
+
 
 def mol2_to_psi4json(infile):
     """
@@ -261,8 +276,11 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
 
     """
     #ToDo check if tags already exist raise warning about overwritting existing tags. Maybe also add an option to override existing tags
-    if not explicit_hydrogen and not tagged:
+    if not explicit_hydrogen and not tagged and isomeric:
         return oechem.OEMolToSmiles(molecule)
+    if not explicit_hydrogen and not tagged and not isomeric:
+         return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Canonical | oechem.OESMILESFlag_RGroups)
+
     oechem.OEAddExplicitHydrogens(molecule)
     if not tagged and explicit_hydrogen and isomeric:
         return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Isotopes | oechem.OESMILESFlag_AtomStereo

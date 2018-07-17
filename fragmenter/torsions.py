@@ -188,12 +188,16 @@ def define_crank_job(fragment_data, internal_torsion_resolution=15, terminal_tor
     crank_job = 0
     crank_jobs = dict()
 
-    # higher dimension scans
     if not scan_internal_terminal_combination:
         for comb in itertools.combinations(internal_torsions, scan_dimension):
             internal_grid = {torsion: internal_torsion_resolution for torsion in comb}
             crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
                                                             'internal_torsions': internal_grid, 'terminal_torsions': {}}
+            crank_job +=1
+        for comb in itertools.combinations(terminal_torsions, scan_dimension):
+            terminal_grid = {torsion: terminal_torsion_resolution for torsion in comb}
+            crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
+                                                            'internal_torsions': {}, 'terminal_torsions': terminal_grid}
             crank_job +=1
     else:
         # combine both internal and terminal torsions
@@ -210,7 +214,7 @@ def define_crank_job(fragment_data, internal_torsion_resolution=15, terminal_tor
     return fragment_data
 
 
-def get_initial_crank_state(fragment, fragment_name=None):
+def get_initial_crank_state(fragment, max_conf=1, fragment_name=None):
     """
     Generate initial crank state JSON for each crank job in fragment
     Parameters
@@ -232,10 +236,10 @@ def get_initial_crank_state(fragment, fragment_name=None):
     for i, job in enumerate(crank_jobs):
         dihedrals = []
         grid_spacing = []
-        needed_mid_torsions = needed_torsions['mid']
-        for mid_torsion in crank_jobs[job]['mid_torsions']:
+        needed_mid_torsions = needed_torsions['internal']
+        for mid_torsion in crank_jobs[job]['internal_torsions']:
             dihedrals.append([j-1 for j in needed_mid_torsions[mid_torsion]])
-            grid_spacing.append(crank_jobs[job]['mid_torsions'][mid_torsion])
+            grid_spacing.append(crank_jobs[job]['internal_torsions'][mid_torsion])
         needed_terminal_torsions = needed_torsions['terminal']
         for terminal_torsion in crank_jobs[job]['terminal_torsions']:
             dihedrals.append([j-1 for j in needed_terminal_torsions[terminal_torsion]])

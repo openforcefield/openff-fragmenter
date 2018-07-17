@@ -166,8 +166,59 @@ def enumerate_states(molecule, options=None, json_filename=None):
     return json_dict
 
 
-def enumerate_fragments(molecule, options=None, json_filename=None):
-    pass
+def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filename=None):
+    """
+
+    Parameters
+    ----------
+    molecule: str
+        SMILES string of molecule to fragment
+    options
+    json_filename
+
+    Returns
+    -------
+
+    """
+    provenance = get_provenance(routine='enumerate_fragments', options=options)
+    provenance['routine']['enumerate_fragments']['parent_molecule'] = molecule
+    options = provenance['routine']['enumerate_fragments']['keywords']
+
+    parent_molecule = utils.check_molecule(molecule)
+    fragments = fragmenter.generate_fragments(parent_molecule, **options)
+
+    routine_options = remove_extraneous_options(user_options=options, routine='enumerate_fragments')
+
+    if mol_provenance:
+        provenance['routine'] = mol_provenance['routine']
+    provenance['routine']['enumerate_fragments']['keywords'] = routine_options
+
+    # Generate SMILES
+    fragment_smiles = {fragment: {} for fragment in fragments}
+    for fragment in fragments:
+        SMILES = {}
+        fragment_mol = utils.smiles_to_oemol(fragment)
+        SMILES['canonical_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False,
+                                                                explicit_hydrogen=False)
+        SMILES['canonical_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False)
+        SMILES['canonical_isomeric_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False)
+        SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(fragment_mol)
+
+        fragment_smiles[fragment] = SMILES
+
+    json_dict = {'provenance': provenance,
+                  molecule: fragment_smiles}
+    if json_filename:
+        with open(json_filename, 'w') as f:
+            json.dump(json_dict, f, indent=2, sort_keys=True)
+
+    return json_dict
+
+
+
+
+
+
 
 def generate_crank_jobs(molecule, options=None, json_filename=None):
     pass
