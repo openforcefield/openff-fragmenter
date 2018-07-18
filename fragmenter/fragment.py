@@ -21,7 +21,7 @@ OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=True, max_states=200, level=0, reasonable=True,
                   carbon_hybridization=True, suppress_hydrogen=True, verbose=True, filename=None,
-                  return_smiles_list=False, return_molecules=True):
+                  return_smiles_list=False, return_molecules=False):
     """
     Expand molecule states (choice of protonation, tautomers and/or stereoisomers).
     Protonation states expands molecules to protonation of protonation sites (Some states might only be reasonable in
@@ -176,7 +176,7 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
     return states
 
 
-def generate_fragments(molecule, generate_visualization=False, strict_stereo=True, combinatorial=True, MAX_ROTORS=2,
+def generate_fragments(molecule, generate_visualization=False, strict_stereo=False, combinatorial=True, MAX_ROTORS=2,
                        remove_map=True, json_filename=None):
     """
     This function generates fragments from molecules. The output is a dictionary that maps SMILES of molecules to SMILES
@@ -186,8 +186,7 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Tru
 
     Parameters
     ----------
-    inputf: str
-        absolute path to input molecule file - any molecule file that OpenEye can read
+    molecule: OEMol to fragment
     generate_visualization: bool
         If true, visualization of the fragments will be written to pdf files. The pdf will be writtten in the directory
         where this function is run from.
@@ -202,16 +201,11 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Tru
         If True, the index tags will be removed. This will remove duplicate fragments. Defualt True
     json_filename: str
         filenmae for JSON. If provided, will save the returned dictionary to a JSON file. Default is None
-    canonicalization: str
-        Program used to canonicalize SMILES string. Different chemiinformatics programs have different canonicalization
-        algorithms. Therefore it's important to specify the program used and version
-        Default: Openeye with version
 
     Returns
     -------
-    fragments: a dict of 2 dictionaries
-        provenance: record of the job that generated fragments
-        fragments: mapping of SMILES from the parent molecule to the SMILES of the fragments
+    fragments: dict
+        mapping of SMILES from the parent molecule to the SMILES of the fragments
     """
     fragments = dict()
 

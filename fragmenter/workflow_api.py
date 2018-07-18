@@ -51,81 +51,6 @@ _default_options['generate_crank_jobs'] = {'max_conf': 1,
                                     'basis': 'aug-cc-pVDZ'}}
 
 
-def get_provenance(routine, options=None):
-    """
-    Get provenance with keywords for routine
-
-    Parameters
-    ----------
-    routine: str
-        routine to get provenance for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
-    options: str, optional. Default is None
-        path to yaml file containing user specified options.
-
-    Returns
-    -------
-    provenance: dict
-        dictionary with provenance and routine keywords.
-
-    """
-    provenance = {'creator': fragmenter.__package__,
-                  'routine': {
-                      routine: {
-                          'version': fragmenter.__version__,
-                          'keywords': {},
-                          'job_id': str(uuid.uuid4()),
-                          'hostname': socket.gethostname()}
-                  },
-                  'username': getpass.getuser()}
-
-    if routine == 'enumerate_states':
-        package = _canonicalization_details['package']
-        can_is_smiles = _canonicalization_details['canonical_isomeric_SMILES']
-        canonicalization_details = {'package': package,
-                                    'canonical_isomeric_SMILES': can_is_smiles}
-        provenance['canonicalization_details'] = canonicalization_details
-    if routine == 'enumerate_fragments':
-        canonicalization_details = _canonicalization_details
-        provenance['canonicalization_details'] = canonicalization_details
-
-    provenance['routine'][routine]['keywords'] = load_options(routine, options)
-
-    return provenance
-
-
-def load_options(routine, load_path=None):
-    """
-    load user options
-
-    Parameters
-    ----------
-    routine: str
-        routine to load options for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
-    load_path: str, optional. Default None
-        path to user option yaml file. If none will use default options
-
-    Returns
-    -------
-    options: dict
-        keywords for routine
-
-    """
-
-    if load_path:
-        with open(load_path) as stream:
-            user_config = yaml.load(stream)
-
-        options = {**_default_options[routine], **user_config[routine]}
-    else:
-        options = _default_options[routine]
-    return options
-
-def remove_extraneous_options(user_options, routine):
-
-    options = {option: user_options[option] for option in _default_options[routine]}
-
-    return options
-
 def enumerate_states(molecule, options=None, json_filename=None):
     """
     enumerate protonation, tautomers and stereoisomers for molecule. Default does not enumerate tautomers, only
@@ -146,7 +71,7 @@ def enumerate_states(molecule, options=None, json_filename=None):
 
     """
     # Load options for enumerate states
-    provenance = get_provenance('enumerate_states', options=options)
+    provenance = _get_provenance('enumerate_states', options=options)
     options = provenance['routine']['enumerate_states']['keywords']
 
     molecule = utils.check_molecule(molecule)
@@ -154,7 +79,7 @@ def enumerate_states(molecule, options=None, json_filename=None):
     states = fragment.expand_states(molecule, **options)
 
     # Remove extraneous options
-    routine_options = remove_extraneous_options(user_options=options, routine='enumerate_states')
+    routine_options = _remove_extraneous_options(user_options=options, routine='enumerate_states')
 
     provenance['routine']['enumerate_states']['keywords'] = routine_options
     json_dict = {'provenance': provenance,
@@ -188,32 +113,33 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
         dictionary containing provenance and fragments.
 
     """
-    provenance = get_provenance(routine='enumerate_fragments', options=options)
+    provenance = _get_provenance(routine='enumerate_fragments', options=options)
     provenance['routine']['enumerate_fragments']['parent_molecule'] = molecule
     options = provenance['routine']['enumerate_fragments']['keywords']
 
     parent_molecule = utils.check_molecule(molecule)
     fragments = fragmenter.generate_fragments(parent_molecule, **options)
 
-    routine_options = remove_extraneous_options(user_options=options, routine='enumerate_fragments')
+    routine_options = _remove_extraneous_options(user_options=options, routine='enumerate_fragments')
 
     if mol_provenance:
         provenance['routine'] = mol_provenance['routine']
     provenance['routine']['enumerate_fragments']['keywords'] = routine_options
 
     # Generate SMILES
-    fragment_smiles = {}
+    fragments_json_dict = {}
     for fragment in fragments:
         for frag in fragments[fragment]:
             SMILES = {}
             fragment_mol = utils.smiles_to_oemol(frag)
             SMILES['canonical_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False,
                                                                     explicit_hydrogen=False)
+            SMILES['canonical_isomeric_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, explicit_hydrogen=False)
             SMILES['canonical_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False)
             SMILES['canonical_isomeric_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False)
             SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(fragment_mol)
 
-            fragment_smiles[frag] = SMILES
+            fragments_json_dict[frag] = SMILES
 
             # Generate QM molecule
             mol, atom_map = utils.get_atom_map(tagged_smiles=SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'],
@@ -221,16 +147,14 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
 
             charge = utils.get_charge(mol)
             qm_mol = utils.to_mapped_QC_JSON_geometry(mol, atom_map, charge=charge)
-            fragment_smiles[frag]['molecule'] = qm_mol
-
-    json_dict = {molecule: {'provenance': provenance, 'fragments': fragment_smiles}}
+            fragments_json_dict[frag]['molecule'] = qm_mol
+            fragments_json_dict[frag]['provenance'] = provenance
 
     if json_filename:
         with open(json_filename, 'w') as f:
-            json.dump(json_dict, f, indent=2, sort_keys=True)
+            json.dump(fragments_json_dict, f, indent=2, sort_keys=True)
 
-    return json_dict
-
+    return fragments_json_dict
 
 def generate_crank_jobs(molecule, options=None, json_filename=None):
     pass
@@ -335,5 +259,108 @@ def workflow(molecule, options=None, json_filename=None):
     return molecules
 
 
+def _get_provenance(routine, options=None):
+    """
+    Get provenance with keywords for routine
+
+    Parameters
+    ----------
+    routine: str
+        routine to get provenance for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
+    options: str, optional. Default is None
+        path to yaml file containing user specified options.
+
+    Returns
+    -------
+    provenance: dict
+        dictionary with provenance and routine keywords.
+
+    """
+    provenance = {'creator': fragmenter.__package__,
+                  'routine': {
+                      routine: {
+                          'version': fragmenter.__version__,
+                          'keywords': {},
+                          'job_id': str(uuid.uuid4()),
+                          'hostname': socket.gethostname()}
+                  },
+                  'username': getpass.getuser()}
+
+    if routine == 'enumerate_states':
+        package = _canonicalization_details['package']
+        can_is_smiles = _canonicalization_details['canonical_isomeric_SMILES']
+        canonicalization_details = {'package': package,
+                                    'canonical_isomeric_SMILES': can_is_smiles}
+        provenance['canonicalization_details'] = canonicalization_details
+    if routine == 'enumerate_fragments':
+        canonicalization_details = _canonicalization_details
+        provenance['canonicalization_details'] = canonicalization_details
+
+    provenance['routine'][routine]['keywords'] = _load_options(routine, options)
+
+    return provenance
+
+
+def _load_options(routine, load_path=None):
+    """
+    load user options
+
+    Parameters
+    ----------
+    routine: str
+        routine to load options for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
+    load_path: str, optional. Default None
+        path to user option yaml file. If none will use default options
+
+    Returns
+    -------
+    options: dict
+        keywords for routine
+
+    """
+
+    if load_path:
+        with open(load_path) as stream:
+            user_config = yaml.load(stream)
+
+        options = {**_default_options[routine], **user_config[routine]}
+    else:
+        options = _default_options[routine]
+    return options
+
+def _remove_extraneous_options(user_options, routine):
+
+    options = {option: user_options[option] for option in _default_options[routine]}
+
+    return options
+
+def combine_json_fragments(json_inputs, json_output=None):
+    """
+    This function takes a list of json input fragment files and returns a dictionary with redundant fragments removed.
+
+    Parameters
+    ----------
+    json_inputs: list of json fragments input files
+    json_output: str, optional, Default None
+        If not none, the new json fragment dictionary will be written to json file
+
+    Returns
+    -------
+    fragments: dict
+        A dictionary containing all fragments without redundant fragments removed.
+    """
+    if not isinstance(json_inputs, list):
+        json_inputs = [json_inputs]
+
+    fragments = {}
+    for json_file in json_inputs:
+        with open(json_file, 'r') as f:
+            fragments.update(json.load(f))
+
+    if json_output:
+        with open(json_output, 'r') as f:
+            json.dump(fragments, f, indent=2, sort_keys=True)
+
+    return fragments
 
 

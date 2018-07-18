@@ -10,7 +10,7 @@ class TestWorkflow(unittest.TestCase):
 
     def test_get_provenance(self):
         """Test get provenance"""
-        provenance = workflow_api.get_provenance(routine='enumerate_states')
+        provenance = workflow_api._get_provenance(routine='enumerate_states')
         canonicalization_details = {'canonical_isomeric_SMILES': {'Flags': ['ISOMERIC',
                                                                             'Isotopes',
                                                                             'AtomStereo',
@@ -33,14 +33,14 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(provenance['routine']['enumerate_states']['version'], fragmenter.__version__)
 
         options = get_fn('options.yaml')
-        provenance = workflow_api.get_provenance(routine='enumerate_states', options=options)
+        provenance = workflow_api._get_provenance(routine='enumerate_states', options=options)
         self.assertEqual(provenance['canonicalization_details'], canonicalization_details)
         self.assertTrue(provenance['routine']['enumerate_states']['keywords']['tautomers'])
         self.assertFalse(provenance['routine']['enumerate_states']['keywords']['stereoisomers'])
 
     def test_load_options(self):
         """Test load options"""
-        options = workflow_api.load_options('enumerate_states')
+        options = workflow_api._load_options('enumerate_states')
         default_options_wf = workflow_api._default_options['enumerate_states']
         default_options = {'carbon_hybridization': True,
                             'level': 0,
@@ -55,11 +55,11 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(options, default_options)
 
         user_options = get_fn('options.yaml')
-        options = workflow_api.load_options(routine='enumerate_states', load_path=user_options)
+        options = workflow_api._load_options(routine='enumerate_states', load_path=user_options)
         self.assertTrue(options['tautomers'])
         self.assertFalse(options['stereoisomers'])
 
-        options = workflow_api.load_options('enumerate_fragments')
+        options = workflow_api._load_options('enumerate_fragments')
         default_options_wf = workflow_api._default_options['enumerate_fragments']
         default_options = {'strict_stereo': True,
                             'combinatorial': True,
@@ -70,7 +70,7 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(default_options_wf, default_options)
         self.assertEqual(options, default_options)
 
-        user_options = workflow_api.load_options(routine='enumerate_fragments', load_path=user_options)
+        user_options = workflow_api._load_options(routine='enumerate_fragments', load_path=user_options)
         self.assertFalse(user_options['strict_stereo'])
         self.assertTrue(user_options['generate_visualization'])
 
@@ -79,8 +79,8 @@ class TestWorkflow(unittest.TestCase):
 
         default_options = workflow_api._default_options
         options = get_fn('options.yaml')
-        user_options = workflow_api.load_options(routine='enumerate_states', load_path=options)
-        needed_options = workflow_api.remove_extraneous_options(user_options, 'enumerate_states')
+        user_options = workflow_api._load_options(routine='enumerate_states', load_path=options)
+        needed_options = workflow_api._remove_extraneous_options(user_options, 'enumerate_states')
 
         with self.assertRaises(KeyError):
             self.assertTrue(needed_options['verbose'])
@@ -88,8 +88,8 @@ class TestWorkflow(unittest.TestCase):
 
         self.assertFalse(user_options['verbose'])
 
-        user_options = workflow_api.load_options(routine='enumerate_fragments', load_path=options)
-        needed_options = workflow_api.remove_extraneous_options(user_options, 'enumerate_fragments')
+        user_options = workflow_api._load_options(routine='enumerate_fragments', load_path=options)
+        needed_options = workflow_api._remove_extraneous_options(user_options, 'enumerate_fragments')
         with self.assertRaises(KeyError):
             self.assertTrue(needed_options['generate_visualization'])
 
@@ -110,8 +110,7 @@ class TestWorkflow(unittest.TestCase):
 
         mol_smiles = 'CCCCC'
         fragments = workflow_api.enumerate_fragments(mol_smiles)
-        self.assertEqual(len(fragments[mol_smiles]['fragments'].keys()), 1)
-        self.assertEqual(list(fragments[mol_smiles]['fragments'].keys())[0], 'CCCC')
+        self.assertEqual(len(fragments), 1)
 
         molecule = {'geometry': [0.31914281845092773,
                                   -1.093637466430664,
@@ -171,17 +170,19 @@ class TestWorkflow(unittest.TestCase):
                                   'H',
                                   'H',
                                   'H']}
-        self.assertEqual(fragments[mol_smiles]['fragments']['CCCC']['molecule'],
+        self.assertEqual(fragments['CCCC']['molecule'],
                          molecule)
 
         mol_smiles_iso = 'N[C@H](C)CCF'
         frags_iso = fragmenter.workflow_api.enumerate_fragments(mol_smiles_iso)
 
-        self.assertEqual(len(frags_iso[mol_smiles_iso]['fragments'].keys()), 2)
-        iso_frag = frags_iso[mol_smiles_iso]['fragments']['CC[C@@H](C)N']
+        self.assertEqual(len(frags_iso.keys()), 2)
+        iso_frag = frags_iso['CC[C@@H](C)N']
         self.assertEqual(iso_frag['canonical_SMILES'], 'CCC(C)N')
         self.assertEqual(iso_frag['canonical_isomeric_explicit_hydrogen_SMILES'],
                          '[H][C@@](C([H])([H])[H])(C([H])([H])C([H])([H])[H])N([H])[H]')
+        self.assertEqual(iso_frag['canonical_explicit_hydrogen_SMILES'],
+                         '[H]C([H])([H])C([H])([H])C([H])(C([H])([H])[H])N([H])[H]')
 
     # def test_launch_default(self):
     #     """Test default launch fragmenter"""
