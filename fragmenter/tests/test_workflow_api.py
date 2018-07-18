@@ -59,6 +59,21 @@ class TestWorkflow(unittest.TestCase):
         self.assertTrue(options['tautomers'])
         self.assertFalse(options['stereoisomers'])
 
+        options = workflow_api.load_options('enumerate_fragments')
+        default_options_wf = workflow_api._default_options['enumerate_fragments']
+        default_options = {'strict_stereo': True,
+                            'combinatorial': True,
+                            'MAX_ROTORS': 2,
+                            'remove_map': True}
+
+        self.assertEqual(options, default_options_wf)
+        self.assertEqual(default_options_wf, default_options)
+        self.assertEqual(options, default_options)
+
+        user_options = workflow_api.load_options(routine='enumerate_fragments', load_path=user_options)
+        self.assertFalse(user_options['strict_stereo'])
+        self.assertTrue(user_options['generate_visualization'])
+
     def test_remove_extraneous_options(self):
         """Test remove extraneous options"""
 
@@ -73,6 +88,11 @@ class TestWorkflow(unittest.TestCase):
 
         self.assertFalse(user_options['verbose'])
 
+        user_options = workflow_api.load_options(routine='enumerate_fragments', load_path=options)
+        needed_options = workflow_api.remove_extraneous_options(user_options, 'enumerate_fragments')
+        with self.assertRaises(KeyError):
+            self.assertTrue(needed_options['generate_visualization'])
+
     def test_enumerate_states(self):
         """Test enumerate states"""
 
@@ -85,8 +105,83 @@ class TestWorkflow(unittest.TestCase):
         states.pop('provenance')
         self.assertEqual(states, smiles)
 
-        pass
+    def test_enumerate_fragents(self):
+        """Test enumerate fragments"""
 
+        mol_smiles = 'CCCCC'
+        fragments = workflow_api.enumerate_fragments(mol_smiles)
+        self.assertEqual(len(fragments[mol_smiles]['fragments'].keys()), 1)
+        self.assertEqual(list(fragments[mol_smiles]['fragments'].keys())[0], 'CCCC')
+
+        molecule = {'geometry': [0.31914281845092773,
+                                  -1.093637466430664,
+                                  -1.5644147396087646,
+                                  0.09283685684204102,
+                                  -0.7512494325637817,
+                                  -0.10052239894866943,
+                                  -0.09279406070709229,
+                                  0.7513599395751953,
+                                  0.1004934310913086,
+                                  -0.3191012144088745,
+                                  1.0937272310256958,
+                                  1.564411997795105,
+                                  0.4511583745479584,
+                                  -2.172018527984619,
+                                  -1.699379324913025,
+                                  -0.5405434370040894,
+                                  -0.7790045738220215,
+                                  -2.1644840240478516,
+                                  1.208341360092163,
+                                  -0.5867938995361328,
+                                  -1.9529553651809692,
+                                  0.9486593008041382,
+                                  -1.1027858257293701,
+                                  0.48745453357696533,
+                                  -0.7917245626449585,
+                                  -1.287994146347046,
+                                  0.26173627376556396,
+                                  -0.9482856392860413,
+                                  1.1030991077423096,
+                                  -0.48761388659477234,
+                                  0.7921697497367859,
+                                  1.287682056427002,
+                                  -0.26162096858024597,
+                                  -0.4494825005531311,
+                                  2.173631429672241,
+                                  1.6855350732803345,
+                                  0.5340865850448608,
+                                  0.7838987112045288,
+                                  2.176231622695923,
+                                  -1.2162054777145386,
+                                  0.5980985760688782,
+                                  1.9490993022918701],
+                                 'molecular_charge': 0,
+                                 'molecular_multiplicity': 1,
+                                 'symbols': ['C',
+                                  'C',
+                                  'C',
+                                  'C',
+                                  'H',
+                                  'H',
+                                  'H',
+                                  'H',
+                                  'H',
+                                  'H',
+                                  'H',
+                                  'H',
+                                  'H',
+                                  'H']}
+        self.assertEqual(fragments[mol_smiles]['fragments']['CCCC']['molecule'],
+                         molecule)
+
+        mol_smiles_iso = 'N[C@H](C)CCF'
+        frags_iso = fragmenter.workflow_api.enumerate_fragments(mol_smiles_iso)
+
+        self.assertEqual(len(frags_iso[mol_smiles_iso]['fragments'].keys()), 2)
+        iso_frag = frags_iso[mol_smiles_iso]['fragments']['CC[C@@H](C)N']
+        self.assertEqual(iso_frag['canonical_SMILES'], 'CCC(C)N')
+        self.assertEqual(iso_frag['canonical_isomeric_explicit_hydrogen_SMILES'],
+                         '[H][C@@](C([H])([H])[H])(C([H])([H])C([H])([H])[H])N([H])[H]')
 
     # def test_launch_default(self):
     #     """Test default launch fragmenter"""

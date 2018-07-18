@@ -168,16 +168,24 @@ def enumerate_states(molecule, options=None, json_filename=None):
 
 def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filename=None):
     """
+    Fragment molecule
 
     Parameters
     ----------
     molecule: str
         SMILES string of molecule to fragment
-    options
-    json_filename
+    mol_provenance: dict, optional. Default is None
+        provenance for molecule. If the molecule is a state from enumerate_states, the provenance from enumerate_states
+        should be used
+    options: str, optional, Default None
+        path to yaml file with user options. If None will use default options
+    json_filename: str, optional. Default None
+        If a filename is provided, will write output to json file.
 
     Returns
     -------
+    json_dict: dict
+        dictionary containing provenance and fragments.
 
     """
     provenance = get_provenance(routine='enumerate_fragments', options=options)
@@ -194,30 +202,34 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
     provenance['routine']['enumerate_fragments']['keywords'] = routine_options
 
     # Generate SMILES
-    fragment_smiles = {fragment: {} for fragment in fragments}
+    fragment_smiles = {}
     for fragment in fragments:
-        SMILES = {}
-        fragment_mol = utils.smiles_to_oemol(fragment)
-        SMILES['canonical_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False,
-                                                                explicit_hydrogen=False)
-        SMILES['canonical_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False)
-        SMILES['canonical_isomeric_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False)
-        SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(fragment_mol)
+        for frag in fragments[fragment]:
+            SMILES = {}
+            fragment_mol = utils.smiles_to_oemol(frag)
+            SMILES['canonical_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False,
+                                                                    explicit_hydrogen=False)
+            SMILES['canonical_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False)
+            SMILES['canonical_isomeric_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False)
+            SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(fragment_mol)
 
-        fragment_smiles[fragment] = SMILES
+            fragment_smiles[frag] = SMILES
 
-    json_dict = {'provenance': provenance,
-                  molecule: fragment_smiles}
+            # Generate QM molecule
+            mol, atom_map = utils.get_atom_map(tagged_smiles=SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'],
+                                               molecule=fragment_mol, is_mapped=True)
+
+            charge = utils.get_charge(mol)
+            qm_mol = utils.to_mapped_QC_JSON_geometry(mol, atom_map, charge=charge)
+            fragment_smiles[frag]['molecule'] = qm_mol
+
+    json_dict = {molecule: {'provenance': provenance, 'fragments': fragment_smiles}}
+
     if json_filename:
         with open(json_filename, 'w') as f:
             json.dump(json_dict, f, indent=2, sort_keys=True)
 
     return json_dict
-
-
-
-
-
 
 
 def generate_crank_jobs(molecule, options=None, json_filename=None):
