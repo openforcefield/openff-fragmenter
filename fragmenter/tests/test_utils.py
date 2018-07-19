@@ -23,3 +23,24 @@ class TesTorsions(unittest.TestCase):
         tagged_smiles = utils.create_mapped_smiles(molecule)
         self.assertTrue(utils.is_mapped(molecule))
 
+    def test_check_molecule(self):
+        """Test check moelcule"""
+        pass
+
+    def test_formal_charge(self):
+        """Test formal charge"""
+
+        mol_1 = utils.smiles_to_oemol('c1cc(c[nH+]c1)c2ccncn2')
+        charge = utils.get_charge(mol_1)
+        self.assertEqual(charge, 1)
+
+        mol_2 = utils.smiles_to_oemol('C[NH+]1CC[NH+](CC1)Cc2ccccc2')
+        charge = utils.get_charge(mol_2)
+        self.assertEqual(charge, 2)
+
+        mol_3 = utils.smiles_to_oemol('CCC(C)(C)C(=O)[O-]')
+        charge = utils.get_charge(mol_3)
+        self.assertEqual(charge, -1)
+
+
+

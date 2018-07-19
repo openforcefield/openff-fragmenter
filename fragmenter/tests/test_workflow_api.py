@@ -39,6 +39,11 @@ class TestWorkflow(unittest.TestCase):
         self.assertTrue(provenance['routine']['enumerate_states']['keywords']['tautomers'])
         self.assertFalse(provenance['routine']['enumerate_states']['keywords']['stereoisomers'])
 
+        provenance = workflow_api._get_provenance(routine='enumerate_fragments', options=options)
+        self.assertEqual(provenance['canonicalization_details'], workflow_api._canonicalization_details)
+        self.assertTrue(provenance['routine']['enumerate_fragments']['keywords']['generate_visualization'])
+        self.assertFalse(provenance['routine']['enumerate_fragments']['keywords']['strict_stereo'])
+
     def test_load_options(self):
         """Test load options"""
         options = workflow_api._load_options('enumerate_states')
@@ -71,9 +76,29 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(default_options_wf, default_options)
         self.assertEqual(options, default_options)
 
-        user_options = workflow_api._load_options(routine='enumerate_fragments', load_path=user_options)
-        self.assertFalse(user_options['strict_stereo'])
-        self.assertTrue(user_options['generate_visualization'])
+        options = workflow_api._load_options(routine='enumerate_fragments', load_path=user_options)
+        self.assertFalse(options['strict_stereo'])
+        self.assertTrue(options['generate_visualization'])
+
+        options = workflow_api._load_options('generate_crank_jobs')
+        default_options_wf = workflow_api._default_options['generate_crank_jobs']
+        default_options = {'max_conf': 1,
+                            'terminal_torsion_resolution': 30,
+                            'internal_torsion_resolution': 30,
+                            'scan_internal_external_combination': 0,
+                            'scan_dimension': 2,
+                            'options':{
+                            'qc_program': 'psi4',
+                            'method': 'B3LYP',
+                            'basis': 'aug-cc-pVDZ'}}
+
+        self.assertEqual(options, default_options_wf)
+        self.assertEqual(default_options_wf, default_options)
+        self.assertEqual(options, default_options)
+
+        options = workflow_api._load_options(routine='generate_crank_jobs', load_path=user_options)
+        self.assertEqual(options['terminal_torsion_resolution'], 0)
+        self.assertEqual(options['internal_torsion_resolution'], 15)
 
     def test_remove_extraneous_options(self):
         """Test remove extraneous options"""
@@ -98,8 +123,8 @@ class TestWorkflow(unittest.TestCase):
         """Test enumerate states"""
 
         states = workflow_api.enumerate_states('CCC(C)(C)C(=O)O')
-        smiles = {'CCC(C)(C)C(=O)O': {'CCC(C)(C)C(=O)O', 'CCC(C)(C)C(=O)[O-]'}}
-        self.assertEqual(len(states), 2)
+        smiles = {'states': {'CCC(C)(C)C(=O)O', 'CCC(C)(C)C(=O)[O-]'}}
+        self.assertEqual(len(states['states']), 2)
         self.assertEqual(states['provenance']['routine']['enumerate_states']['keywords'], workflow_api._default_options['enumerate_states'])
         self.assertEqual(states['provenance']['routine']['enumerate_states']['version'], fragmenter.__version__)
 
@@ -179,10 +204,10 @@ class TestWorkflow(unittest.TestCase):
 
         self.assertEqual(len(frags_iso.keys()), 2)
         iso_frag = frags_iso['CC[C@@H](C)N']
-        self.assertEqual(iso_frag['canonical_SMILES'], 'CCC(C)N')
-        self.assertEqual(iso_frag['canonical_isomeric_explicit_hydrogen_SMILES'],
+        self.assertEqual(iso_frag['SMILES']['canonical_SMILES'], 'CCC(C)N')
+        self.assertEqual(iso_frag['SMILES']['canonical_isomeric_explicit_hydrogen_SMILES'],
                          '[H][C@@](C([H])([H])[H])(C([H])([H])C([H])([H])[H])N([H])[H]')
-        self.assertEqual(iso_frag['canonical_explicit_hydrogen_SMILES'],
+        self.assertEqual(iso_frag['SMILES']['canonical_explicit_hydrogen_SMILES'],
                          '[H]C([H])([H])C([H])([H])C([H])(C([H])([H])[H])N([H])[H]')
 
     def test_generate_crank_jobs(self):
@@ -198,68 +223,26 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(crank_jobs['crank_job_1']['dihedrals'], [[2, 1, 0, 4], [1, 2, 3, 11]])
         self.assertEqual(crank_jobs['crank_job_1']['grid_spacing'], [30, 30])
 
+        with self.assertRaises(Warning):
+            workflow_api.generate_crank_jobs(fragment['CCCC'], options=get_fn('options.yaml'))
 
-    # def test_launch_default(self):
-    #     """Test default launch fragmenter"""
-    #     fragments = launch.launch_fragmenter('CCC(C)(C)C(=O)O')
-    #     self.assertEqual(len(fragments), 4)
-    #     for frag in fragments:
-    #         self.assertEqual(fragments[frag]['provenance']['routine_options'], launch._default_options)
-    #         dimension = 0
-    #         crank_dimension = 0
-    #         torsion_type = ['mid', 'terminal']
-    #         for torsion in torsion_type:
-    #             dimension += len(fragments[frag]['needed_torsion_drives'][torsion]) - 1
-    #             crank_dimension += len(fragments[frag]['crank_torsion_drives']['crank_job_0']['{}_torsions'.format(torsion)])
-    #         self.assertEqual(dimension, crank_dimension)
-    #
-    # def test_omit_terminal_torsions(self):
-    #     """Test skip terminal torions"""
-    #     options = get_fn('options.yaml')
-    #     fragments = launch.launch_fragmenter(molecule='CCC(C)(C)C(=O)O', options=options)
-    #     self.assertEqual(len(fragments), 2)
-    #     for frag in fragments:
-    #         dimension = 0
-    #         crank_dimension = 0
-    #         torsion_type = ['mid', 'terminal']
-    #         mid_d = len(fragments[frag]['needed_torsion_drives']['mid']) - 1
-    #         term_d = len(fragments[frag]['needed_torsion_drives']['terminal']) - 1
-    #         for torsion in torsion_type:
-    #             dimension += len(fragments[frag]['needed_torsion_drives'][torsion]) - 1
-    #             crank_dimension += len(fragments[frag]['crank_torsion_drives']['crank_job_0']['{}_torsions'.format(torsion)])
-    #         self.assertEqual(dimension-term_d, crank_dimension)
-    #         self.assertEqual(crank_dimension, mid_d)
-    #         self.assertEqual(fragments[frag]['needed_torsion_drives']['mid']['grid_spacing'], 15)
-    #         self.assertIsNone(fragments[frag]['needed_torsion_drives']['terminal']['grid_spacing'])
-    #
-    # def test_1D_scans(self):
-    #     """Test 1D torsion scan grid"""
-    #     options = get_fn('options2.yaml')
-    #     fragments = launch.launch_fragmenter(molecule='CCC(C)(C)C(=O)O', options=options)
-    #     self.assertEqual(len(fragments), 2)
-    #     for frag in fragments:
-    #         needed_t = fragments[frag]['needed_torsion_drives']
-    #         jobs = len(needed_t['mid']['grid_spacing'])
-    #         self.assertIsNone(needed_t['terminal']['grid_spacing'])
-    #         crank_jobs = fragments[frag]['crank_torsion_drives']
-    #         self.assertEqual(jobs, len(crank_jobs))
-    #         for i, job in enumerate(crank_jobs):
-    #             self.assertEqual(crank_jobs[job]['terminal_torsions'], {})
-    #             print(job)
-    #             print(crank_jobs[job]['mid_torsions']['torsion_{}'.format(str(i))])
-    #             self.assertEqual(crank_jobs[job]['mid_torsions']['torsion_{}'.format(str(i))], 15)
-    #
-    # def test_crank_initial_state(self):
-    #     """ Test generate crank initial state"""
-    #     jsonfile = open(get_fn('butane_crankjob.json'), 'r')
-    #     test_crank_job = json.load(jsonfile)
-    #     jsonfile.close()
-    #
-    #     crank_initial_state = launch.get_initial_crank_state(test_crank_job['CCCC'])
-    #     for dihedral in crank_initial_state['crank_job_0']['dihedrals']:
-    #         self.assertTrue(dihedral in [[2, 1, 0, 4], [0, 1, 2, 3], [1, 2, 3, 11]])
-    #     self.assertEqual(crank_initial_state['crank_job_0']['grid_spacing'], [30, 30, 30])
-    #     self.assertFalse(crank_initial_state['crank_job_0']['grid_status'])
+    def test_workflow(self):
+        """Test workflow"""
+
+        smiles_list = ['CCCC', 'CCCCCC']
+        crank_jobs = workflow_api.workflow(smiles_list, write_json_crank_job=False)
+
+        self.assertEqual(len(crank_jobs.keys()), 1)
+        self.assertEqual(list(crank_jobs.keys())[0], 'CCCC')
+        self.assertEqual(len(crank_jobs['CCCC'].keys()), 2)
+        self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['dihedrals']), 1)
+        self.assertEqual(len(crank_jobs['CCCC']['crank_job_1']['dihedrals']), 2)
+        self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance'], crank_jobs['CCCC']['crank_job_1']['provenance'])
+        self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']), 5)
+        self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_SMILES'],
+                         crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_explicit_hydrogen_SMILES'])
+
+
 
 
 

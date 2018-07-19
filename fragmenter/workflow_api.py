@@ -7,7 +7,7 @@ import os
 import warnings
 
 import fragmenter
-from fragmenter import fragment, torsions, chemi, utils
+from fragmenter import fragment, torsions, utils
 import openeye as oe
 from openeye import oechem
 
@@ -82,9 +82,11 @@ def enumerate_states(molecule, options=None, json_filename=None):
     routine_options = _remove_extraneous_options(user_options=options, routine='enumerate_states')
 
     provenance['routine']['enumerate_states']['keywords'] = routine_options
-    json_dict = {'provenance': provenance,
-                  can_iso_smiles: states}
+    provenance['routine']['enumerate_states']['parent_molecule'] = can_iso_smiles
+    json_dict = {'provenance': provenance, 'states': states}
+
     if json_filename:
+        json_dict['states'] = list(json_dict['states'])
         with open(json_filename, 'w') as f:
             json.dump(json_dict, f, indent=2, sort_keys=True)
 
@@ -123,7 +125,7 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
     routine_options = _remove_extraneous_options(user_options=options, routine='enumerate_fragments')
 
     if mol_provenance:
-        provenance['routine'] = mol_provenance['routine']
+        provenance['routine']['enumerate_states'] = mol_provenance['routine']['enumerate_states']
     provenance['routine']['enumerate_fragments']['keywords'] = routine_options
 
     # Generate SMILES
@@ -139,7 +141,7 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
             SMILES['canonical_isomeric_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False)
             SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(fragment_mol)
 
-            fragments_json_dict[frag] = SMILES
+            fragments_json_dict[frag] = {'SMILES': SMILES}
 
             # Generate QM molecule
             mol, atom_map = utils.get_atom_map(tagged_smiles=SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'],
@@ -149,6 +151,7 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
             qm_mol = utils.to_mapped_QC_JSON_geometry(mol, atom_map, charge=charge)
             fragments_json_dict[frag]['molecule'] = qm_mol
             fragments_json_dict[frag]['provenance'] = provenance
+
 
     if json_filename:
         with open(json_filename, 'w') as f:
@@ -179,42 +182,46 @@ def generate_crank_jobs(fragment_dict, options=None, fragment_name=None):
     provenance = _get_provenance(routine='generate_crank_jobs', options=options)
     options = provenance['routine']['generate_crank_jobs']['keywords']
 
-    mapped_smiles = fragment_dict['canonical_isomeric_explicit_hydrogen_mapped_SMILES']
+    mapped_smiles = fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_SMILES']
     OEMol = utils.smiles_to_oemol(mapped_smiles)
 
     # Check if molecule is mapped
     if not utils.is_mapped(OEMol):
         warnings.warn("OEMol is not mapped. Creating a new mapped SMILES")
-        fragment_dict['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(OEMol)
+        fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(OEMol)
 
-    needed_torsion_scans = torsions.find_torsions(OEMol)
-    fragment_dict['needed_torsion_drives'] = needed_torsion_scans
+    needed_torsion_drives = torsions.find_torsions(OEMol)
+    fragment_dict['needed_torsion_drives'] = needed_torsion_drives
 
     crank_job_specs = torsions.define_crank_job(fragment_dict, **options)
-    crank_initial_states = torsions.get_initial_crank_state(crank_job_specs, fragment_name=fragment_name)
+    crank_initial_states = torsions.get_initial_crank_state(crank_job_specs)
 
     routine_options = _remove_extraneous_options(user_options=options, routine='generate_crank_jobs')
 
     for crank_job in crank_initial_states:
         crank_initial_states[crank_job]['provenance'] = fragment_dict['provenance']
+        crank_initial_states[crank_job]['provenance']['SMILES'] = fragment_dict['SMILES']
         crank_initial_states[crank_job]['provenance']['routine']['generate_crank_jobs'] = provenance['routine']['generate_crank_jobs']
         crank_initial_states[crank_job]['provenance']['routine']['generate_crank_jobs']['keywords'] = routine_options
 
     return crank_initial_states
 
 
-def workflow(molecule, options=None, json_filename=None):
+def workflow(molecules_smiles, options=None, write_json_intermediate=False, write_json_crank_job=True):
     """
-    Launch fragmenter
+    Convenience function to run Fragmenter workflow.
 
     Parameters
     ----------
-    molecule: molecule to fragment.
-        Can be in any format that OpenEye accepts (file or string)
+    molecules_smiles: list of str
+        list of SMILES
     options: str, optional. Default is None
         path to yaml file with options.
-    json_filename: str, optional, Default is None
-        name of json output file. If given will write crank JSON specs to file
+    write_json_intermediate: bool, optional. Default False
+        If True will write JSON files for intermediate steps (enumerating states and fragments)
+    write_json_crank_job: bool, optional. Default Tre
+        If True, will create a directory for crank job with crank initial state. The name of the directory and file will
+        be the canonical SMILES of the fragment.
 
     Returns
     -------
@@ -223,83 +230,42 @@ def workflow(molecule, options=None, json_filename=None):
 
     """
 
-    provenance = get_provenance()
+    # Check input
+    if not isinstance(molecules_smiles, list):
+        molecules_smiles = [molecules_smiles]
 
-    if options is not None:
-        user_options = load_options(options)
-        expand_state_options = user_options['expand_states']
-        fragment_options = user_options['generate_fragments']
-        scan_options = user_options['torsion_scan']
-        if not expand_state_options:
-            routine_options = {}
-            routine_options['expand_states'] = False
-            user_options.pop('expand_states')
-        # remove options not needed for reproducibility from provenance
-        routine_options = {routine: {option: user_options[routine][option] for option in _default_options[routine]} for routine in user_options}
-    else:
-        # Use default options
-        expand_state_options = _default_options['expand_states']
-        fragment_options = _default_options['generate_fragments']
-        scan_options = _default_options['torsion_scan']
+    all_frags = {}
+    all_crank_jobs = {}
+    for i, molecule in enumerate(molecules_smiles):
+        json_filename = None
+        if write_json_intermediate:
+            json_filename = molecule  + '_states.json'
+        states = enumerate_states(molecule, options=options, json_filename=json_filename)
+        for state in states['states']:
+            if write_json_intermediate:
+                json_filename = state  + '_fragments.json'
+            fragments = enumerate_fragments(state, mol_provenance=states['provenance'], options=options,
+                                            json_filename=json_filename)
+            all_frags.update(**fragments)
+    for frag in all_frags:
+        crank_jobs = generate_crank_jobs(all_frags[frag], options=options)
+        all_crank_jobs[frag] = crank_jobs
+        if write_json_crank_job:
+            for job in crank_jobs:
+                # Make directory for job
+                current_path = os.getcwd()
+                path = os.path.join(current_path, frag + '_{}'.format(job))
+                try:
+                    os.mkdir(path)
+                except FileExistsError:
+                    utils.logger().info('Warning: overwriting {}'.format(path))
+                # extend with job number because several jobs can exist in a fragment
+                jsonfilename = os.path.join(path, frag + '_{}.json'.format(job))
+                outfile = open(jsonfilename, 'w')
+                json.dump(crank_jobs[job], outfile, indent=2, sort_keys=True)
+                outfile.close()
 
-        routine_options = _default_options
-
-    provenance['routine_options'] = routine_options
-
-    molecule = check_molecule(molecule)
-
-    utils.logger().info('fragmenting {}...'.format(molecule.GetTitle()))
-
-    if expand_state_options:
-        states = fragmenter.expand_states(molecule, **expand_state_options)
-        fragments = fragmenter.generate_fragments(states, **fragment_options)
-    else:
-        fragments = fragmenter.generate_fragments(molecule, **fragment_options)
-
-    # Find torsions
-    molecules = {}
-    for parent in fragments:
-        for frag in fragments[parent]:
-            json_specs = dict()
-            json_specs['provenance'] = provenance
-            json_specs['provenance']['parent_molecule'] = parent
-            json_specs['canonical_isomeric_SMILES'] = frag
-            molecule = utils.smiles_to_oemol(frag)
-            json_specs['canonical_SMILES'] = oechem.OECreateCanSmiString(molecule)
-            explicit_h_isomeric = utils.create_mapped_smiles(molecule, tagged=False)
-            json_specs['explicit_hydrogen_canonical_isomeric_SMILES'] = explicit_h_isomeric
-            explicit_h = utils.create_mapped_smiles(molecule, tagged=False, isomeric=False)
-            json_specs['explicit_hydrogen_canonical_SMILES'] = explicit_h
-            tagged_SMARTS = utils.create_mapped_smiles(molecule)
-            json_specs['tagged_SMARTS'] = tagged_SMARTS
-            molecule, atom_map = utils.get_atom_map(tagged_SMARTS, is_mapped=True)
-            # Find formal charge
-            charge = 0
-            for atom in molecule.GetAtoms():
-                charge += atom.GetFormalCharge()
-            QC_JSON_molecule = utils.to_mapped_QC_JSON_geometry(molecule, atom_map, charge=charge)
-            json_specs['molecule'] = QC_JSON_molecule
-            needed_torsion_drives = fragmenter.find_torsions(molecule)
-            json_specs['needed_torsion_drives'] = needed_torsion_drives
-
-            if scan_options['mid_grid'] != 30 or scan_options['terminal_grid'] != 30:
-                # Customize scan grid
-                fragmenter.customize_grid_spacing(json_specs, scan_options['mid_grid'], scan_options['terminal_grid'])
-            if scan_options['1D_scans']:
-                # create 1D torsion scans
-                mid_grid, term_grid = specify_1D_grid(json_specs)
-                json_specs['needed_torsion_drives']['mid']['grid_spacing'] = mid_grid
-                json_specs['needed_torsion_drives']['terminal']['grid_spacing'] = term_grid
-
-            fragmenter.define_crank_job(json_specs, **scan_options['options'])
-            molecules[frag] = json_specs
-
-    if json_filename:
-        f = open(json_filename, 'w')
-        j = json.dump(molecules, f, indent=2, sort_keys=True)
-        f.close()
-
-    return molecules
+    return all_crank_jobs
 
 
 def _get_provenance(routine, options=None):

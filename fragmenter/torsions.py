@@ -138,7 +138,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
     return tors
 
 
-def define_crank_job(fragment_data, internal_torsion_resolution=15, terminal_torsion_resolution=0,
+def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_torsion_resolution=0,
                      scan_internal_terminal_combination=0, scan_dimension=2, qc_program='Psi4', method='B3LYP',
                      basis='aug-cc-pVDZ', **kwargs):
     """
@@ -172,6 +172,10 @@ def define_crank_job(fragment_data, internal_torsion_resolution=15, terminal_tor
     if not internal_torsion_resolution and not terminal_torsion_resolution:
         warnings.warn("Resolution for internal and terminal torsions are 0. No torsions will be driven", Warning)
 
+    if scan_internal_terminal_combination and (not internal_torsion_resolution or not terminal_torsion_resolution):
+        raise Warning("If you are not scanning internal or terminal torsions, you must set scan_internal_terminal_"
+                      "combinations to 0")
+
     needed_torsion_drives = fragment_data['needed_torsion_drives']
 
     internal_torsions = needed_torsion_drives['internal']
@@ -189,16 +193,33 @@ def define_crank_job(fragment_data, internal_torsion_resolution=15, terminal_tor
     crank_jobs = dict()
 
     if not scan_internal_terminal_combination:
-        for comb in itertools.combinations(internal_torsions, scan_dimension):
-            internal_grid = {torsion: internal_torsion_resolution for torsion in comb}
-            crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                            'internal_torsions': internal_grid, 'terminal_torsions': {}}
-            crank_job +=1
-        for comb in itertools.combinations(terminal_torsions, scan_dimension):
-            terminal_grid = {torsion: terminal_torsion_resolution for torsion in comb}
-            crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                            'internal_torsions': {}, 'terminal_torsions': terminal_grid}
-            crank_job +=1
+        if internal_torsion_resolution:
+            for comb in itertools.combinations(internal_torsions, scan_dimension):
+                internal_grid = {torsion: internal_torsion_resolution for torsion in comb}
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
+                                                                'internal_torsions': internal_grid,
+                                                                'terminal_torsions': {}}
+                crank_job +=1
+            if internal_dimension < scan_dimension:
+                internal_grid = {torsion: internal_torsion_resolution for torsion in internal_torsions}
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
+                                                                'internal_torsions': internal_grid,
+                                                                'terminal_torsions': {}}
+                crank_job +=1
+
+        if terminal_torsion_resolution:
+            for comb in itertools.combinations(terminal_torsions, scan_dimension):
+                terminal_grid = {torsion: terminal_torsion_resolution for torsion in comb}
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
+                                                                'internal_torsions': {},
+                                                                'terminal_torsions': terminal_grid}
+                crank_job +=1
+            if terminal_dimension < scan_dimension:
+                terminal_grid = {torsion: internal_torsion_resolution for torsion in terminal_torsions}
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
+                                                                'internal_torsions': {},
+                                                                'terminal_torsions': terminal_grid}
+                crank_job +=1
     else:
         # combine both internal and terminal torsions
         all_torsion_idx = np.arange(0, torsion_dimension)
@@ -208,21 +229,25 @@ def define_crank_job(fragment_data, internal_torsion_resolution=15, terminal_tor
             crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
                                                             'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
             crank_job += 1
+        if torsion_dimension < scan_dimension:
+            internal_grid = {'torsion_{}'.format(i): internal_torsion_resolution for i in all_torsion_idx if i < internal_dimension}
+            terminal_grid = {'torsion_{}'.format(i-internal_dimension): terminal_torsion_resolution for i in all_torsion_idx if i >= internal_dimension}
+            crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
+                                                            'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
+            crank_job += 1
 
     fragment_data['crank_torsion_drives'] = crank_jobs
 
     return fragment_data
 
 
-def get_initial_crank_state(fragment, max_conf=1, fragment_name=None):
+def get_initial_crank_state(fragment):
     """
     Generate initial crank state JSON for each crank job in fragment
     Parameters
     ----------
     fragment: dict
         A fragment from JSON crank jobs
-    fragment_name: str
-        Name for path and file for crank jsonstatefile. Default is None. If None the file does not get written
 
     Returns
     -------
@@ -238,10 +263,12 @@ def get_initial_crank_state(fragment, max_conf=1, fragment_name=None):
         grid_spacing = []
         needed_mid_torsions = needed_torsions['internal']
         for mid_torsion in crank_jobs[job]['internal_torsions']:
+            # convert 1-based indexing to 0-based indexing
             dihedrals.append([j-1 for j in needed_mid_torsions[mid_torsion]])
             grid_spacing.append(crank_jobs[job]['internal_torsions'][mid_torsion])
         needed_terminal_torsions = needed_torsions['terminal']
         for terminal_torsion in crank_jobs[job]['terminal_torsions']:
+            # convert 1-based indexing to 0-based indexing
             dihedrals.append([j-1 for j in needed_terminal_torsions[terminal_torsion]])
             grid_spacing.append(crank_jobs[job]['terminal_torsions'][terminal_torsion])
 
@@ -253,19 +280,6 @@ def get_initial_crank_state(fragment, max_conf=1, fragment_name=None):
         #ToDo add ability to start with many geomotries
         crank_state['init_coords'] = [init_geometry]
         crank_state['grid_status'] = {}
-        if fragment_name:
-            # Make directory for job
-            current_path = os.getcwd()
-            path = os.path.join(current_path, fragment_name + '_{}'.format(job))
-            try:
-                os.mkdir(path)
-            except FileExistsError:
-                utils.logger().info('Warning: overwriting {}'.format(path))
-            # extend with job number because several jobs can exist in a fragment
-            jsonfilename = os.path.join(path, fragment_name + '_{}.json'.format(job))
-            outfile = open(jsonfilename, 'w')
-            json.dump(crank_state, outfile, indent=2, sort_keys=True)
-            outfile.close()
 
         crank_initial_states[job] = crank_state
     return crank_initial_states

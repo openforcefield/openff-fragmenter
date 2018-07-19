@@ -1,4 +1,12 @@
-expand_states: False
-torsion_scan:
-  terminal_grid:
-  mid_grid: 15
+enumerate_states:
+  stereoisomers: False
+  tautomers: True
+  verbose: False
+  max_states: 10
+enumerate_fragments:
+  strict_stereo: False
+  generate_visualization: True
+generate_crank_jobs:
+  terminal_torsion_resolution: 0
+  internal_torsion_resolution: 15
+  scan_internal_terminal_combination: 1
