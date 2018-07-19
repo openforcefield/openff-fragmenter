@@ -4,6 +4,7 @@ import unittest
 import fragmenter
 from fragmenter import workflow_api
 from fragmenter.tests.utils import get_fn
+import json
 
 
 class TestWorkflow(unittest.TestCase):
@@ -183,6 +184,20 @@ class TestWorkflow(unittest.TestCase):
                          '[H][C@@](C([H])([H])[H])(C([H])([H])C([H])([H])[H])N([H])[H]')
         self.assertEqual(iso_frag['canonical_explicit_hydrogen_SMILES'],
                          '[H]C([H])([H])C([H])([H])C([H])(C([H])([H])[H])N([H])[H]')
+
+    def test_generate_crank_jobs(self):
+        """Test generate crank jobs"""
+
+        fragment = json.load(open(get_fn('CCCC.json'), 'r'))
+
+        crank_jobs = workflow_api.generate_crank_jobs(fragment['CCCC'])
+
+        self.assertEqual(len(crank_jobs), 2)
+        self.assertEqual(crank_jobs['crank_job_0']['dihedrals'][0], [0, 1, 2, 3])
+        self.assertEqual(crank_jobs['crank_job_0']['grid_spacing'], [30])
+        self.assertEqual(crank_jobs['crank_job_1']['dihedrals'], [[2, 1, 0, 4], [1, 2, 3, 11]])
+        self.assertEqual(crank_jobs['crank_job_1']['grid_spacing'], [30, 30])
+
 
     # def test_launch_default(self):
     #     """Test default launch fragmenter"""

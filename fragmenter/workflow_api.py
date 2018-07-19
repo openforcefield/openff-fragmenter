@@ -118,7 +118,7 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
     options = provenance['routine']['enumerate_fragments']['keywords']
 
     parent_molecule = utils.check_molecule(molecule)
-    fragments = fragmenter.generate_fragments(parent_molecule, **options)
+    fragments = fragment.generate_fragments(parent_molecule, **options)
 
     routine_options = _remove_extraneous_options(user_options=options, routine='enumerate_fragments')
 
@@ -128,8 +128,8 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
 
     # Generate SMILES
     fragments_json_dict = {}
-    for fragment in fragments:
-        for frag in fragments[fragment]:
+    for fragm in fragments:
+        for frag in fragments[fragm]:
             SMILES = {}
             fragment_mol = utils.smiles_to_oemol(frag)
             SMILES['canonical_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False,
@@ -156,8 +156,51 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
 
     return fragments_json_dict
 
-def generate_crank_jobs(molecule, options=None, json_filename=None):
-    pass
+def generate_crank_jobs(fragment_dict, options=None, fragment_name=None):
+    """
+    Generate crank initial state from fragment json specs
+
+    Parameters
+    ----------
+    fragment_dict: dict
+        JSON spec for fragment
+    options: str, Optional. Default None
+        path to yaml file with options. If None will use default options
+    fragment_name: str, optional. Default None
+        The base name for crank job names. If name is given, each crank job will be written to its own directory with the
+        initial state json file
+    Returns
+    -------
+    crank_initial_states: dict
+        dictionary of crank jobs
+
+    """
+
+    provenance = _get_provenance(routine='generate_crank_jobs', options=options)
+    options = provenance['routine']['generate_crank_jobs']['keywords']
+
+    mapped_smiles = fragment_dict['canonical_isomeric_explicit_hydrogen_mapped_SMILES']
+    OEMol = utils.smiles_to_oemol(mapped_smiles)
+
+    # Check if molecule is mapped
+    if not utils.is_mapped(OEMol):
+        warnings.warn("OEMol is not mapped. Creating a new mapped SMILES")
+        fragment_dict['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(OEMol)
+
+    needed_torsion_scans = torsions.find_torsions(OEMol)
+    fragment_dict['needed_torsion_drives'] = needed_torsion_scans
+
+    crank_job_specs = torsions.define_crank_job(fragment_dict, **options)
+    crank_initial_states = torsions.get_initial_crank_state(crank_job_specs, fragment_name=fragment_name)
+
+    routine_options = _remove_extraneous_options(user_options=options, routine='generate_crank_jobs')
+
+    for crank_job in crank_initial_states:
+        crank_initial_states[crank_job]['provenance'] = fragment_dict['provenance']
+        crank_initial_states[crank_job]['provenance']['routine']['generate_crank_jobs'] = provenance['routine']['generate_crank_jobs']
+        crank_initial_states[crank_job]['provenance']['routine']['generate_crank_jobs']['keywords'] = routine_options
+
+    return crank_initial_states
 
 
 def workflow(molecule, options=None, json_filename=None):
