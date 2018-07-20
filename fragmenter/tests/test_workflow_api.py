@@ -220,7 +220,8 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(len(crank_jobs), 2)
         self.assertEqual(crank_jobs['crank_job_0']['dihedrals'][0], [0, 1, 2, 3])
         self.assertEqual(crank_jobs['crank_job_0']['grid_spacing'], [30])
-        self.assertEqual(crank_jobs['crank_job_1']['dihedrals'], [[2, 1, 0, 4], [1, 2, 3, 11]])
+        terminal_dihs = {tuple(crank_jobs['crank_job_1']['dihedrals'][0]), tuple( crank_jobs['crank_job_1']['dihedrals'][1])}
+        self.assertCountEqual(terminal_dihs, {(2, 1, 0, 4), (1, 2, 3, 11)})
         self.assertEqual(crank_jobs['crank_job_1']['grid_spacing'], [30, 30])
 
         with self.assertRaises(Warning):
