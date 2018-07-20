@@ -623,7 +623,8 @@ def iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, i
             a_idx = a.GetIdx()
             next_bond = mol.GetBond(a, atom)
             nb_idx = next_bond.GetIdx()
-            atoms_2.add(a_idx)
+            # atoms_2.add(a_idx)
+            # bonds_2.add(nb_idx)
             if nb_idx in bonds_2:
                 FGROUP_RING = False
                 try:
@@ -652,8 +653,10 @@ def iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, i
             if i > 0:
                 wiberg = next_bond.GetData('WibergBondOrder')
                 if wiberg < 1.2:
+                    #atoms_2.remove(a_idx)
                     continue
 
+            atoms_2.add(a_idx)
             bonds_2.add(nb_idx)
             if a.IsInRing():
                 ring_idx = a.GetData('ringsystem')
@@ -751,7 +754,7 @@ def _ring_substiuents(mol, bond, rotor_bond, tagged_rings, ring_idx, fgroup_tagg
     return rs_atoms, rs_bonds
 
 
-def frag_to_smiles(frags, mol, OESMILESFlag):
+def frag_to_smiles(frags, mol):
     """
     Convert fragments (AtomBondSet) to canonical isomeric SMILES string
     Parameters
@@ -775,7 +778,16 @@ def frag_to_smiles(frags, mol, OESMILESFlag):
         fragment = oechem.OEGraphMol()
         adjustHCount = True
         oechem.OESubsetMol(fragment, mol, fragatompred, fragbondpred, adjustHCount)
+
+        oechem.OEPerceiveChiral(fragment)
+        # sanity check that all atoms are bonded
+        for atom in fragment.GetAtoms():
+            if not list(atom.GetBonds()):
+                raise Warning("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
+                              "You probably ran into a bug. Please report the input molecule to the issue tracker")
         s = oechem.OEMolToSmiles(fragment)
+        #s2 = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=False)
+        #s = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=True)
 
         if s not in smiles:
             smiles[s] = []
@@ -812,7 +824,7 @@ def _sort_by_rotbond(ifs, outdir):
         write_oedatabase(moldb, ofs, nrotors_map[nrotor], size)
 
 
-def smiles_with_combined(frag_list, mol, MAX_ROTORS=2, OESMILESFlag='ISOMERIC'):
+def smiles_with_combined(frag_list, mol, MAX_ROTORS=2):
     """
     Generates Smiles:frags mapping for fragments and fragment combinations with less than MAX_ROTORS rotatable bonds
 
@@ -832,7 +844,7 @@ def smiles_with_combined(frag_list, mol, MAX_ROTORS=2, OESMILESFlag='ISOMERIC'):
 
     combined_list = comb_list + frag_list
 
-    smiles = frag_to_smiles(combined_list, mol, OESMILESFlag)
+    smiles = frag_to_smiles(combined_list, mol)
 
     return smiles
 

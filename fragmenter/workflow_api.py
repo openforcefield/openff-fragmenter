@@ -141,7 +141,9 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
             SMILES['canonical_isomeric_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False)
             SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(fragment_mol)
 
+            frag = SMILES['canonical_isomeric_SMILES']
             fragments_json_dict[frag] = {'SMILES': SMILES}
+
 
             # Generate QM molecule
             mol, atom_map = utils.get_atom_map(tagged_smiles=SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'],
@@ -239,11 +241,11 @@ def workflow(molecules_smiles, options=None, write_json_intermediate=False, writ
     for i, molecule in enumerate(molecules_smiles):
         json_filename = None
         if write_json_intermediate:
-            json_filename = molecule  + '_states.json'
+            json_filename = 'states_{}.json'.format(i)
         states = enumerate_states(molecule, options=options, json_filename=json_filename)
-        for state in states['states']:
+        for j, state in enumerate(states['states']):
             if write_json_intermediate:
-                json_filename = state  + '_fragments.json'
+                json_filename =  'fragments_{}_{}.json'.format(i, j)
             fragments = enumerate_fragments(state, mol_provenance=states['provenance'], options=options,
                                             json_filename=json_filename)
             all_frags.update(**fragments)
