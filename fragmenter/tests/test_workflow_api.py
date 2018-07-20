@@ -20,7 +20,7 @@ class TestWorkflow(unittest.TestCase):
                                                                             'AtomMaps',
                                                                             'RGroups'],
                                     'oe_function': 'openeye.oechem.OEMolToSmiles(molecule)'},
-                                    'package': 'openeye-v2017.Oct.1'}
+                                    'package': 'openeye-v2018.Feb.1'}
         self.assertEqual(provenance['canonicalization_details'], canonicalization_details)
         default_kewyords = {'carbon_hybridization': True,
                             'level': 0,
