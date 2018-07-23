@@ -34,10 +34,10 @@ def find_torsions(molecule):
     # Check if molecule has map
     is_mapped = utils.is_mapped(molecule)
     if not is_mapped:
-        warnings.warn('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
+        utils.logger().warning('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
         tagged_smiles = utils.create_mapped_smiles(molecule)
-        utils.logger().info('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
-        utils.logger().info('The new tagged SMARTS is: {}'.format(tagged_smiles))
+        utils.logger().warning('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
+        utils.logger().warning('The new tagged SMARTS is: {}'.format(tagged_smiles))
         # ToDo: save the new tagged SMILES somewhere. Maybe return it?
 
     mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
@@ -47,7 +47,7 @@ def find_torsions(molecule):
     smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
     qmol=oechem.OEQMol()
     if not oechem.OEParseSmarts(qmol, smarts):
-        warnings.warn('OEParseSmarts failed')
+        utils.logger().warning('OEParseSmarts failed')
     ss = oechem.OESubSearch(qmol)
     mol = oechem.OEMol(molecule)
     h_tors = []
@@ -110,24 +110,24 @@ def one_torsion_per_rotatable_bond(torsion_list):
     best_tor = [sorted_tors[0][0], sorted_tors[0][0], sorted_tors[0][0], sorted_tors[0][0]]
     first_pass = True
     for tor in sorted_tors:
-        utils.logger().info("Map Idxs: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
-        utils.logger().info("Atom Numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
+        utils.logger().debug("Map Idxs: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
+        utils.logger().debug("Atom Numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
         if tor[1].GetMapIdx() != best_tor[1].GetMapIdx() or tor[2].GetMapIdx() != best_tor[2].GetMapIdx():
             new_tor = True
             if not first_pass:
-                utils.logger().info("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
+                utils.logger().debug("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
                 tors.append(best_tor)
             first_pass = False
             best_tor = tor
             best_tor_order = tor[0].GetAtomicNum() + tor[3].GetAtomicNum()
-            utils.logger().info("new_tor with central bond across atoms: {} {}".format(tor[1].GetMapIdx(), tor[2].GetMapIdx()))
+            utils.logger().debug("new_tor with central bond across atoms: {} {}".format(tor[1].GetMapIdx(), tor[2].GetMapIdx()))
         else:
-            utils.logger().info("Not a new_tor but now with end atoms: {} {}".format(tor[0].GetMapIdx(), tor[3].GetMapIdx()))
+            utils.logger().debug("Not a new_tor but now with end atoms: {} {}".format(tor[0].GetMapIdx(), tor[3].GetMapIdx()))
             tor_order = tor[0].GetAtomicNum() + tor[3].GetAtomicNum()
             if tor_order > best_tor_order:
                 best_tor = tor
                 best_tor_order = tor_order
-    utils.logger().info("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
+    utils.logger().debug("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
     tors.append(best_tor)
 
     utils.logger().info("List of torsion to drive:")
@@ -170,7 +170,7 @@ def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_tor
     """
 
     if not internal_torsion_resolution and not terminal_torsion_resolution:
-        warnings.warn("Resolution for internal and terminal torsions are 0. No torsions will be driven", Warning)
+        utils.logger().warning("Resolution for internal and terminal torsions are 0. No torsions will be driven", Warning)
 
     if scan_internal_terminal_combination and (not internal_torsion_resolution or not terminal_torsion_resolution):
         raise Warning("If you are not scanning internal or terminal torsions, you must set scan_internal_terminal_"
@@ -325,7 +325,7 @@ def to_crank_input(fragment, mol_name=None, path=None, crank_job='crank_job_1', 
     try:
         os.mkdir(path)
     except FileExistsError:
-        warnings.warn("Overwriting {}".format(path))
+        utils.logger().warning("Overwriting {}".format(path))
 
     # Write out input files
     inputfile = os.path.join(path, mol_name + '_{}.dat'.format(crank_job))

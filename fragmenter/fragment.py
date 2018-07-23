@@ -73,17 +73,22 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
     if verbose:
         logger().info("Enumerating states for {}".format(title))
     if protonation:
+        logger().info("Enumerating protonation states for {}".format(title))
         molecules.extend(_expand_states(molecules, enumerate='protonation', max_states=max_states, verbose=verbose,
                                         level=level, suppress_hydrogen=suppress_hydrogen))
     if tautomers:
+        logger().info("Enumerating tautomers for {}".format(title))
         molecules.extend(_expand_states(molecules, enumerate='tautomers', max_states=max_states, reasonable=reasonable,
                                         carbon_hybridization=carbon_hybridization, verbose=verbose, level=level,
                                         suppress_hydrogen=suppress_hydrogen))
     if stereoisomers:
+        logger().info("Enumerating stereoisomers for {}".format(title))
         molecules.extend(_expand_states(molecules, enumerate='stereoisomers', max_states=max_states, verbose=verbose))
 
     for molecule in molecules:
         states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
+
+    logger().info("{} states were generated for {}".format(len(states), molecule.GetTitle()))
 
     if filename:
         count = 0
@@ -145,7 +150,7 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
             formal_charge_options.SetMaxCount(max_states)
             formal_charge_options.SetVerbose(verbose)
             if verbose:
-                logger().info("Enumerating protonation states...")
+                logger().debug("Enumerating protonation states...")
             for protonation_state in oequacpac.OEEnumerateFormalCharges(molecule, formal_charge_options):
                 states_enumerated += 1
                 oechem.OEWriteMolecule(ostream, protonation_state)
@@ -160,14 +165,14 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
             #tautomer_options.SetMaxZoneSize(max_zone_size)
             tautomer_options.SetApplyWarts(True)
             if verbose:
-                logger().info("Enumerating tautomers...")
+                logger().debug("Enumerating tautomers...")
             for tautomer in oequacpac.OEEnumerateTautomers(molecule, tautomer_options):
                 states_enumerated += 1
                 states.append(tautomer)
         if enumerate == 'stereoisomers':
             if verbose:
-                logger().info("Enumerating stereoisomers...")
-            for enantiomer in oeomega.OEFlipper(molecule, 12, True):
+                logger().debug("Enumerating stereoisomers...")
+            for enantiomer in oeomega.OEFlipper(molecule, max_states, True):
                 states_enumerated += 1
                 enantiomer = oechem.OEMol(enantiomer)
                 oechem.OEWriteMolecule(ostream, enantiomer)
@@ -223,6 +228,7 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Fal
         frags = _generate_fragments(molecule, strict_stereo=strict_stereo)
         if not frags:
             logger().warning('Skipping {}, SMILES: {}'.format(molecule.GetTitle(), oechem.OECreateSmiString(molecule)))
+            continue
         charged = frags[0]
         frags = frags[-1]
         frag_list = list(frags.values())
@@ -262,7 +268,12 @@ def _generate_fragments(mol, strict_stereo=True):
     frags: dict of AtomBondSet mapped to rotatable bond index the fragment was built up from.
     """
 
-    charged = openeye.get_charges(mol, keep_confs=1, strictStereo=strict_stereo)
+    try:
+        charged = openeye.get_charges(mol, keep_confs=1, strictStereo=strict_stereo)
+    except RuntimeError:
+        logger().warning("Could not charge molecule {} so no WBO were calculated. Cannot fragment molecule {}".format(mol.GetTitle(),
+                                                                                                                      mol.GetTitle()))
+        return False
 
     # Check if WBO were calculated
     bonds = [bond for bond in charged.GetBonds()]
@@ -785,9 +796,9 @@ def frag_to_smiles(frags, mol):
             if not list(atom.GetBonds()):
                 raise Warning("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
-        s = oechem.OEMolToSmiles(fragment)
+        #s = oechem.OEMolToSmiles(fragment)
         #s2 = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=False)
-        #s = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=True)
+        s = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=True)
 
         if s not in smiles:
             smiles[s] = []

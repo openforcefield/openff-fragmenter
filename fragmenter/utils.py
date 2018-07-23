@@ -5,8 +5,10 @@ import sys
 import numpy as np
 import itertools
 import re
+import warnings
+import copy
 
-
+from fragmenter import chemi
 from openeye import oechem, oeiupac, oedepict
 from openmoltools import openeye
 
@@ -169,11 +171,21 @@ def oemols_to_smiles_list(OEMols):
     return SMILES
 
 
-def file_to_smiles_list(filename):
+def file_to_smiles_list(filename, return_titles=True):
 
     oemols = file_to_oemols(filename)
+    # Check if oemols have names
+    if return_titles:
+        names = []
+        for mol in oemols:
+            title = mol.GetTitle()
+            if not title:
+                logger().warning("an oemol does not have a name. Adding an empty str to the titles list")
+            names.append(title)
     smiles_list = oemols_to_smiles_list(oemols)
 
+    if return_titles:
+        return smiles_list, names
     return smiles_list
 
 
@@ -214,7 +226,10 @@ def normalize_molecule(molecule, title=''):
     return molcopy
 
 
-def check_molecule(molecule):
+def check_molecule(molecule, title=''):
+
+    if isinstance(molecule, oechem.OEMol):
+        return molecule
 
     mol = oechem.OEMol()
     # First try reading as smiles
@@ -225,7 +240,8 @@ def check_molecule(molecule):
             raise Warning('Could not parse molecule.')
 
     # normalize molecule
-    title = mol.GetTitle()
+    if not title:
+        title = mol.GetTitle()
     molecule = normalize_molecule(mol, title=title)
     return molecule
 
@@ -264,6 +280,10 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
     With index-tagged explicit hydrogen SMILES this becomes
     '[H:3][C:1]([H:4])([H:5])[O:2][H:6]'
 
+    **Warning**
+    The map that is added to the SMILES is not guaranteed to correspond to the indices to the molecule provided since a
+    new conformer is generated to ensure explicit stereochemistry in the SMILES.
+
     Parameters
     ----------
     molecule: OEMOl
@@ -280,7 +300,31 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
     index-tagged explicit hydrogen SMILES str
 
     """
-    #ToDo check if tags already exist raise warning about overwritting existing tags. Maybe also add an option to override existing tags
+
+    # Generate conformer to ensure SMILES has stereochemistry
+    molcopy = copy.deepcopy(molecule)
+    try:
+        molecule = chemi.generate_conformers(molcopy, max_confs=1, strict_stereo=False)
+    except RuntimeError:
+                logger().warning("Omega failed to generate a conformer for {}. Steroechemistry might not be specified"
+                              "in tagged SMILES".format(molecule.GetTitle()))
+    iso_smiles = oechem.OEMolToSmiles(molecule)
+    # Create a new molecule with isomeric SMILES
+    molecule = oechem.OEMol()
+    oechem.OESmilesToMol(molecule, iso_smiles)
+    # if molecule.GetMaxConfIdx() <= 1:
+    #     for conf in molecule.GetConfs():
+    #         values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+    #                             range(conf.GetCoords().__len__())])
+    #     if values.all():
+    #         # No conformers were generated so generate one
+    #         molcopy = copy.deepcopy(molecule)
+    #         molecule = chemi.generate_conformers(molcopy, max_confs=1, strict_stereo=False)
+    #         iso_smiles = oechem.OEMolToSmiles(molecule)
+    #
+    #         molecule = oechem.OEMol()
+    #         oechem.OESmilesToMol(molecule, iso_smiles)
+
     if not explicit_hydrogen and not tagged and isomeric:
         return oechem.OEMolToSmiles(molecule)
     if not explicit_hydrogen and not tagged and not isomeric:
@@ -288,16 +332,20 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
 
     oechem.OEAddExplicitHydrogens(molecule)
     if not tagged and explicit_hydrogen and isomeric:
-        return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Isotopes | oechem.OESMILESFlag_AtomStereo
-                                        | oechem.OESMILESFlag_BondStereo | oechem.OESMILESFlag_Canonical | oechem.OESMILESFlag_RGroups)
+        return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_ISOMERIC)
+
     if not tagged and explicit_hydrogen and not isomeric:
         return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Canonical |
                                         oechem.OESMILESFlag_RGroups)
+
     if tagged and not explicit_hydrogen:
         raise Warning("Tagged SMILES must include hydrogens to retain order")
 
     for atom in molecule.GetAtoms():
         atom.SetMapIdx(atom.GetIdx() + 1)
+
+    if tagged and not isomeric:
+        raise Warning("Tagged SMILES must include stereochemistry ")
 
     # add tag to data
     tag = oechem.OEGetTag("has_map")
@@ -324,7 +372,7 @@ def is_mapped(molecule):
     return IS_MAPPED
 
 
-def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=True):
+def get_atom_map(tagged_smiles, molecule=None, StrictStereo=True, verbose=True):
     """
     Returns a dictionary that maps tag on SMILES to atom index in molecule.
     Parameters
@@ -352,7 +400,6 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=Tru
     if molecule is None:
         molecule = openeye.smiles_to_oemol(tagged_smiles)
         # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
-        is_mapped = True
 
     # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
     # map won't be correct
@@ -361,11 +408,17 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=Tru
             values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
                                 range(conf.GetCoords().__len__())])
         if values.all():
-            # Generate on Omega conformer
-            molecule = openeye.generate_conformers(molecule, max_confs=1, strictStereo=StrictStereo)
-            # Omega can change the ordering so whatever map existed is not there anymore
+            # Generate an Omega conformer
+            try:
+                molecule = openeye.generate_conformers(molecule, max_confs=1, strictStereo=StrictStereo)
+                # Omega can change the ordering so whatever map existed is not there anymore
+            except RuntimeError:
+                logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
+                              "generated".format(molecule.GetTitle()))
 
-    if is_mapped:
+    # Check if molecule is mapped
+    mapped = is_mapped(molecule)
+    if mapped:
         atom_map = {}
         for atom in molecule.GetAtoms():
             atom_map[atom.GetMapIdx()] = atom.GetIdx()
@@ -380,7 +433,7 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=Tru
     matches = [m for m in ss.Match(molecule)]
     t2 = time.time()
     seconds = t2-t1
-    logger().info("Substructure search took {} seconds".format(seconds))
+    logger().debug("Substructure search took {} seconds".format(seconds))
     if not matches:
         logger().info("MCSS failed for {}, smiles: {}".format(molecule.GetTitle(), tagged_smiles))
         return False
@@ -391,7 +444,7 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=Tru
     # sanity check
     mol = oechem.OEGraphMol()
     oechem.OESubsetMol(mol, match, True)
-    logger().info("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
+    logger().debug("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
 
     return molecule, atom_map
 
@@ -437,7 +490,7 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
                                                                            coords[idx * 3 + 2])
 
     if filename:
-        file = open("{}.xyz".format(filename, 'w'))
+        file = open("{}.xyz".format(filename), 'w')
         file.write(xyz)
         file.close()
     return xyz
@@ -576,11 +629,20 @@ def to_mapped_QC_JSON_geometry(molecule, atom_map, charge=0, multiplicity=1):
     if molecule.GetMaxConfIdx() != 1:
         raise Warning("The molecule must have at least and at most 1 conformation")
 
+    # Check if coordinates are missing
+    for conf in molecule.GetConfs():
+        values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+                                range(conf.GetCoords().__len__())])
+
+        if sum(bool(x) for x in values) > 1:
+            raise RuntimeError("Some xyz coordinates for molecule {} are all zero".format(molecule.GetTitle()))
+
     for mapping in range(1, len(atom_map)+1):
         idx = atom_map[mapping]
         atom = molecule.GetAtom(oechem.OEHasAtomIdx(idx))
         syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
         symbols.append(syb)
+        #geometry.append(list(molecule.GetCoords()[idx]))
         for i in range(3):
             geometry.append(molecule.GetCoords()[idx][i])
 
