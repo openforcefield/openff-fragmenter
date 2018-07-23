@@ -5,6 +5,7 @@ import json
 from fragmenter.tests.utils import get_fn, has_openeye
 from fragmenter import utils
 from openmoltools import openeye
+from openeye import oechem
 
 class TesTorsions(unittest.TestCase):
 
@@ -21,7 +22,10 @@ class TesTorsions(unittest.TestCase):
 
         # Add tags
         tagged_smiles = utils.create_mapped_smiles(molecule)
-        self.assertTrue(utils.is_mapped(molecule))
+
+        self.assertFalse(utils.is_mapped(molecule))
+        tagged_mol = utils.smiles_to_oemol(tagged_smiles)
+        self.assertTrue(utils.is_mapped(tagged_mol))
 
     def test_check_molecule(self):
         """Test check moelcule"""
@@ -41,6 +45,25 @@ class TesTorsions(unittest.TestCase):
         mol_3 = utils.smiles_to_oemol('CCC(C)(C)C(=O)[O-]')
         charge = utils.get_charge(mol_3)
         self.assertEqual(charge, -1)
+
+    def test_create_mapped_smiles(self):
+        """Test mapped SMILES"""
+        smiles = 'CC(c1c(ccc(c1Cl)F)Cl)OC'
+        mol = oechem.OEMol()
+        oechem.OESmilesToMol(mol, smiles)
+
+        canonical_smiles = utils.create_mapped_smiles(mol, tagged=False, explicit_hydrogen=False, isomeric=False)
+        self.assertEqual(canonical_smiles, 'CC(c1c(ccc(c1Cl)F)Cl)OC')
+        canonical_isomeric_smiles = utils.create_mapped_smiles(mol, tagged=False, explicit_hydrogen=False, isomeric=True)
+        self.assertEqual(canonical_isomeric_smiles, 'C[C@@H](c1c(ccc(c1Cl)F)Cl)OC')
+        canonical_explicit_h_smiles = utils.create_mapped_smiles(mol, tagged=False, explicit_hydrogen=True, isomeric=False)
+        self.assertEqual(canonical_explicit_h_smiles, '[H]c1c(c(c(c(c1F)Cl)C([H])(C([H])([H])[H])OC([H])([H])[H])Cl)[H]')
+        canonical_isomeric_explicit_h_smiles = utils.create_mapped_smiles(mol, tagged=False, explicit_hydrogen=True, isomeric=True)
+        self.assertEqual(canonical_isomeric_explicit_h_smiles,
+                         '[H]c1c(c(c(c(c1F)Cl)[C@]([H])(C([H])([H])[H])OC([H])([H])[H])Cl)[H]')
+
+
+
 
 
 

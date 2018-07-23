@@ -125,7 +125,7 @@ class TestTorsions(unittest.TestCase):
         molecule = oechem.OEMol()
         oechem.OEReadMolecule(ifs, molecule)
         tagged_smiles = utils.create_mapped_smiles(molecule)
-        molecule, atom_map = utils.get_atom_map(tagged_smiles, molecule, is_mapped=True)
+        molecule, atom_map = utils.get_atom_map(tagged_smiles, molecule)
         mapped_geometry = utils.to_mapped_QC_JSON_geometry(molecule, atom_map)
 
         f = open(infile)
