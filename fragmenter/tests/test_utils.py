@@ -7,6 +7,7 @@ from fragmenter import utils
 from openmoltools import openeye
 from openeye import oechem
 
+
 class TesTorsions(unittest.TestCase):
 
     @unittest.skipUnless(has_openeye, 'Cannot test without openeye')
@@ -23,7 +24,7 @@ class TesTorsions(unittest.TestCase):
         # Add tags
         tagged_smiles = utils.create_mapped_smiles(molecule)
 
-        self.assertFalse(utils.is_mapped(molecule))
+        self.assertTrue(utils.is_mapped(molecule))
         tagged_mol = utils.smiles_to_oemol(tagged_smiles)
         self.assertTrue(utils.is_mapped(tagged_mol))
 
@@ -62,6 +63,17 @@ class TesTorsions(unittest.TestCase):
         self.assertEqual(canonical_isomeric_explicit_h_smiles,
                          '[H]c1c(c(c(c(c1F)Cl)[C@]([H])(C([H])([H])[H])OC([H])([H])[H])Cl)[H]')
 
+    def test_has_conformer(self):
+        """Test has conformer"""
+        infile = get_fn('butane.pdb')
+        ifs = oechem.oemolistream(infile)
+        molecule_with_conf = oechem.OEMol()
+        oechem.OEReadMolecule(ifs, molecule_with_conf)
+
+        self.assertTrue(utils.has_conformer(molecule_with_conf))
+
+        molecule_without_conf = utils.smiles_to_oemol('CCCC')
+        self.assertFalse(utils.has_conformer(molecule_without_conf))
 
 
 

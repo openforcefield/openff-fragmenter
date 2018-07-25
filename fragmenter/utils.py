@@ -301,17 +301,27 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
 
     """
 
-    # Generate conformer to ensure SMILES has stereochemistry
-    molcopy = copy.deepcopy(molecule)
-    try:
-        molecule = chemi.generate_conformers(molcopy, max_confs=1, strict_stereo=False)
-    except RuntimeError:
-                logger().warning("Omega failed to generate a conformer for {}. Steroechemistry might not be specified"
-                              "in tagged SMILES".format(molecule.GetTitle()))
-    iso_smiles = oechem.OEMolToSmiles(molecule)
+    # Generate conformer if not conformers exist
+    if not has_conformer(molecule):
+        # Check if conformer already exists
+        try:
+            # Set strict_stereo so that we get a conformer to perceive chirality for isomeric SMILES
+            # Set strict type to False so conformer will be generated even if exact MMFF atom type does not exist for
+            # those atoms. This is probably a bigger problem for charging than conformer generation ?
+            # Set copy to False so that input molecule gets tagged and mapped consistent with SMILES
+            molecule = chemi.generate_conformers(molecule, max_confs=1, strict_stereo=False, strict_types=False, copy=False)
+        except RuntimeError:
+                    logger().warning("Omega failed to generate a conformer for {}. Steroechemistry might not be specified"
+                                  "in tagged SMILES".format(molecule.GetTitle()))
+
+    oechem.OEPerceiveChiral(molecule)
+    oechem.OE3DToAtomStereo(molecule)
+    oechem.OE3DToBondStereo(molecule)
+
+    #iso_smiles = oechem.OEMolToSmiles(molecule)
     # Create a new molecule with isomeric SMILES
-    molecule = oechem.OEMol()
-    oechem.OESmilesToMol(molecule, iso_smiles)
+    # molecule = oechem.OEMol()
+    # oechem.OESmilesToMol(molecule, iso_smiles)
     # if molecule.GetMaxConfIdx() <= 1:
     #     for conf in molecule.GetConfs():
     #         values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
@@ -338,6 +348,10 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
         return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Canonical |
                                         oechem.OESMILESFlag_RGroups)
 
+    # Add tags to molecule
+    for atom in molecule.GetAtoms():
+        atom.SetMapIdx(atom.GetIdx() + 1)
+
     if tagged and not explicit_hydrogen:
         raise Warning("Tagged SMILES must include hydrogens to retain order")
 
@@ -352,6 +366,31 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
     molecule.SetData(tag, bool(True))
 
     return oechem.OEMolToSmiles(molecule)
+
+
+def has_conformer(molecule):
+    """
+    Check if conformer exists for molecule. Return True or False
+    Parameters
+    ----------
+    molecule
+
+    Returns
+    -------
+
+    """
+    conformer_bool = True
+    try:
+        if molecule.NumConfs() <= 1:
+            # Check if xyz coordinates are not zero
+            for conf in molecule.GetConfs():
+                values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+                                    range(conf.GetCoords().__len__())])
+            if values.all():
+                conformer_bool = False
+    except AttributeError:
+        conformer_bool = False
+    return conformer_bool
 
 
 def is_mapped(molecule):
