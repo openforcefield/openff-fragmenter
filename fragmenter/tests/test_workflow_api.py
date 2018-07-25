@@ -3,7 +3,7 @@
 import unittest
 import fragmenter
 from fragmenter import workflow_api
-from fragmenter.tests.utils import get_fn, has_crank
+from fragmenter.tests.utils import get_fn, has_crank, has_openeye
 import json
 import copy
 
@@ -259,6 +259,26 @@ class TestWorkflow(unittest.TestCase):
 
                 self.assertEqual(crank_jobs[mol][job]['dihedrals'], state['dihedrals'])
                 self.assertEqual(state['grid_status'], next_job)
+
+    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
+    def test_dihedral_numbering(self):
+        """Test dihedral indices correspond to attached atoms"""
+
+        from openeye import oechem
+        crank_jobs = workflow_api.workflow(['CCCC'], write_json_crank_job=False)
+
+        mol_with_map = fragmenter.utils.smiles_to_oemol(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_SMILES'])
+
+        for job in crank_jobs['CCCC']:
+            dihedrals = crank_jobs['CCCC'][job]['dihedrals']
+            for dihedral in dihedrals:
+                prev_atom = mol_with_map.GetAtom(oechem.OEHasMapIdx(dihedral[0]+1))
+                for d in dihedral[1:]:
+                    atom = mol_with_map.GetAtom(oechem.OEHasMapIdx(d+1))
+                    bond = mol_with_map.GetBond(prev_atom, atom)
+                    self.assertIsNotNone(bond)
+                    prev_atom = atom
+
 
 
 
