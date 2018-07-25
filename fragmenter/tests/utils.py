@@ -8,6 +8,12 @@ try:
 except ImportError:
     has_openeye = False
 
+try:
+    import crank
+    has_crank = True
+except ImportError:
+    has_crank = False
+
 
 class FileIOTestCase(unittest.TestCase):
 

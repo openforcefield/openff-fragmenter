@@ -3,10 +3,9 @@
 import unittest
 import fragmenter
 from fragmenter import workflow_api
-from fragmenter.tests.utils import get_fn
+from fragmenter.tests.utils import get_fn, has_crank
 import json
 import copy
-from crank import crankAPI
 
 
 class TestWorkflow(unittest.TestCase):
@@ -245,8 +244,11 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_SMILES'],
                          crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_explicit_hydrogen_SMILES'])
 
+    @unittest.skipUnless(has_crank, 'Cannot test without crank')
     def test_crank(self):
         """Test fragmenter interfacing with crank"""
+
+        from crank import crankAPI
         crank_jobs = workflow_api.workflow(['CCCC'], write_json_crank_job=False)
 
         for mol in crank_jobs:
