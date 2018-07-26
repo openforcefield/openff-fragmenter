@@ -255,34 +255,43 @@ def workflow(molecules_smiles, molecule_titles=None, options=None, write_json_in
 
     all_frags = {}
     all_crank_jobs = {}
-    for i, molecule in enumerate(molecules_smiles):
+    for i, molecule_smile in enumerate(molecules_smiles):
         json_filename = None
         title = ''
         if molecule_titles:
             title = molecule_titles[i]
-        if write_json_intermediate:
-            json_filename = 'states_{}_{}.json'.format(title, i)
-        states = enumerate_states(molecule, title=title, options=options, json_filename=json_filename)
+        if write_json_intermediate and title:
+            json_filename = 'states_{}.json'.format(title)
+        if write_json_intermediate and not title:
+            json_filename = 'states_{}.json'.format(utils.make_python_identifier(molecule_smile)[0])
+        states = enumerate_states(molecule_smile, title=title, options=options, json_filename=json_filename)
         for j, state in enumerate(states['states']):
-            if write_json_intermediate:
-                json_filename =  'fragments_{}_{}_{}.json'.format(title, i, j)
+            if write_json_intermediate and title:
+                json_filename =  'fragments_{}_{}.json'.format(title, j)
+            if write_json_intermediate and not title:
+                json_filename = 'fragment_{}_{}.json'.format(utils.make_python_identifier(state)[0], j)
             fragments = enumerate_fragments(state, title=title, mol_provenance=states['provenance'], options=options,
                                             json_filename=json_filename)
             all_frags.update(**fragments)
+    namespaces = {}
     for frag in all_frags:
         crank_jobs = generate_crank_jobs(all_frags[frag], options=options)
         all_crank_jobs[frag] = crank_jobs
+
+
         if write_json_crank_job:
+            name, namespace = utils.make_python_identifier(frag, namespace=namespaces, convert='hex', handle='force')
+            namespaces.update(namespace)
             for job in crank_jobs:
                 # Make directory for job
                 current_path = os.getcwd()
-                path = os.path.join(current_path, frag + '_{}'.format(job))
+                path = os.path.join(current_path, name + '_{}'.format(job))
                 try:
                     os.mkdir(path)
                 except FileExistsError:
                     utils.logger().warning('Warning: overwriting {}'.format(path))
                 # extend with job number because several jobs can exist in a fragment
-                jsonfilename = os.path.join(path, frag + '_{}.json'.format(job))
+                jsonfilename = os.path.join(path, name + '_{}.json'.format(job))
                 outfile = open(jsonfilename, 'w')
                 json.dump(crank_jobs[job], outfile, indent=2, sort_keys=True)
                 outfile.close()

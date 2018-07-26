@@ -1,6 +1,6 @@
 from itertools import combinations
 import openeye as oe
-from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega
+from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
 
 from openmoltools import openeye
 
@@ -86,9 +86,11 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
         molecules.extend(_expand_states(molecules, enumerate='stereoisomers', max_states=max_states, verbose=verbose))
 
     for molecule in molecules:
-        states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
+        #states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
+        # Not using create mapped SMILES because OEMol is needed but state is OEMolBase.
+        states.add(oechem.OEMolToSmiles(molecule))
 
-    logger().info("{} states were generated for {}".format(len(states), molecule.GetTitle()))
+    logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 
     if filename:
         count = 0
@@ -241,7 +243,12 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Fal
         fragments[parent_smiles] = list(smiles.keys())
 
         if generate_visualization:
-            oname = '{}.pdf'.format(molecule.GetTitle())
+            IUPAC = oeiupac.OECreateIUPACName(molecule)
+            name = molecule.GetTitle()
+            if IUPAC == name:
+                name = fragmenter.utils.make_python_identifier(oechem.OEMolToSmiles(molecule))[0]
+            oname = '{}.pdf'.format(name)
+            print(oname)
             ToPdf(charged, oname, frags)
         del charged, frags
     if json_filename:
@@ -786,7 +793,8 @@ def frag_to_smiles(frags, mol):
         fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
         fragbondpred = oechem.OEIsBondMember(frag.GetBonds())
 
-        fragment = oechem.OEGraphMol()
+        #fragment = oechem.OEGraphMol()
+        fragment = oechem.OEMol()
         adjustHCount = True
         oechem.OESubsetMol(fragment, mol, fragatompred, fragbondpred, adjustHCount)
 

@@ -75,6 +75,17 @@ class TesTorsions(unittest.TestCase):
         molecule_without_conf = utils.smiles_to_oemol('CCCC')
         self.assertFalse(utils.has_conformer(molecule_without_conf))
 
+    def test_2D_conformation(self):
+        """Test checking for 2D conformation"""
+        from fragmenter import fragment, chemi
+        mol = utils.smiles_to_oemol('CCCC')
+        states = fragment.expand_states(mol, return_molecules=True)
+        for state in states:
+            self.assertFalse(utils.has_conformer(state, check_two_dimension=True))
+
+        conf = chemi.generate_conformers(mol, max_confs=1)
+        self.assertTrue(utils.has_conformer(conf, check_two_dimension=True))
+
 
 
 
