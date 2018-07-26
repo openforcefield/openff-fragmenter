@@ -49,6 +49,14 @@ _default_options['generate_crank_jobs'] = {'max_conf': 1,
                                     'method': 'B3LYP',
                                     'basis': 'aug-cc-pVDZ'}}
 
+_allowed_options = {'enumerate_states': ['protonation', 'tautomers', 'stereoisomers', 'max_states', 'level', 'reasonable',
+                  'carbon_hybridization', 'suppress_hydrogen', 'verbose', 'filename','return_smiles_list', 'return_molecules'],
+                    'enumerate_fragments': ['generate_visualization', 'strict_stereo', 'combinatorial', 'MAX_ROTOR',
+                       'remove_map', 'json_filename'],
+                    'generate_crank_jobs': ['internal_torsion_resolution', 'terminal_torsion_resolution',
+                     'scan_internal_terminal_combination', 'scan_dimension', 'qc_program', 'method',
+                     'basis']}
+
 
 def enumerate_states(molecule, title='', options=None, json_filename=None):
     """
@@ -362,6 +370,20 @@ def _load_options(routine, load_path=None):
     if load_path:
         with open(load_path) as stream:
             user_config = yaml.load(stream)
+            # Check options
+            functions = list(user_config.keys())
+            allowed_functions = list(_default_options.keys())
+            for f in functions:
+                if f not in allowed_functions:
+                    raise KeyError("{} is not a function. Only function names allowed are {}".format(f, allowed_functions))
+                user_options = user_config[f].keys()
+                allowed_options = _allowed_options[f]
+                for option in user_options:
+                    if option not in allowed_options:
+                        if f == 'generate_crank_jobs':
+                            utils.logger().warning("Is {} an allowed keyword for {}? Please double check".format(option, f))
+                            continue
+                        raise KeyError("{} is not an allowed option for {}. Allowed options are {}".format(option, f, allowed_options))
 
         options = {**_default_options[routine], **user_config[routine]}
     else:
