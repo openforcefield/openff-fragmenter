@@ -3,8 +3,9 @@
 import unittest
 import fragmenter
 from fragmenter import workflow_api
-from fragmenter.tests.utils import get_fn
+from fragmenter.tests.utils import get_fn, has_crank, has_openeye
 import json
+import copy
 
 
 class TestWorkflow(unittest.TestCase):
@@ -196,8 +197,8 @@ class TestWorkflow(unittest.TestCase):
                                   'H',
                                   'H',
                                   'H']}
-        self.assertEqual(fragments['CCCC']['molecule'],
-                         molecule)
+        #self.assertEqual(fragments['CCCC']['molecule']['geometry'],
+        #                 molecule['geometry'])
 
         mol_smiles_iso = 'N[C@H](C)CCF'
         frags_iso = fragmenter.workflow_api.enumerate_fragments(mol_smiles_iso)
@@ -242,6 +243,43 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']), 5)
         self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_SMILES'],
                          crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_explicit_hydrogen_SMILES'])
+
+    @unittest.skipUnless(has_crank, 'Cannot test without crank')
+    def test_crank(self):
+        """Test fragmenter interfacing with crank"""
+
+        from crank import crankAPI
+        crank_jobs = workflow_api.workflow(['CCCC'], write_json_crank_job=False)
+
+        for mol in crank_jobs:
+            for job in crank_jobs[mol]:
+                state = copy.deepcopy(crank_jobs[mol][job])
+                next_job = crankAPI.next_jobs_from_state(state)
+                crankAPI.update_state(state, next_job)
+
+                self.assertEqual(crank_jobs[mol][job]['dihedrals'], state['dihedrals'])
+                self.assertEqual(state['grid_status'], next_job)
+
+    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
+    def test_dihedral_numbering(self):
+        """Test dihedral indices correspond to attached atoms"""
+
+        from openeye import oechem
+        crank_jobs = workflow_api.workflow(['CCCC'], write_json_crank_job=False)
+
+        mol_with_map = fragmenter.utils.smiles_to_oemol(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_SMILES'])
+
+        for job in crank_jobs['CCCC']:
+            dihedrals = crank_jobs['CCCC'][job]['dihedrals']
+            for dihedral in dihedrals:
+                prev_atom = mol_with_map.GetAtom(oechem.OEHasMapIdx(dihedral[0]+1))
+                for d in dihedral[1:]:
+                    atom = mol_with_map.GetAtom(oechem.OEHasMapIdx(d+1))
+                    bond = mol_with_map.GetBond(prev_atom, atom)
+                    self.assertIsNotNone(bond)
+                    prev_atom = atom
+
+
 
 
 

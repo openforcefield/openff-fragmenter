@@ -4,7 +4,6 @@ import getpass
 import yaml
 import json
 import os
-import warnings
 
 import fragmenter
 from fragmenter import fragment, torsions, utils
@@ -50,8 +49,16 @@ _default_options['generate_crank_jobs'] = {'max_conf': 1,
                                     'method': 'B3LYP',
                                     'basis': 'aug-cc-pVDZ'}}
 
+_allowed_options = {'enumerate_states': ['protonation', 'tautomers', 'stereoisomers', 'max_states', 'level', 'reasonable',
+                  'carbon_hybridization', 'suppress_hydrogen', 'verbose', 'filename','return_smiles_list', 'return_molecules'],
+                    'enumerate_fragments': ['generate_visualization', 'strict_stereo', 'combinatorial', 'MAX_ROTOR',
+                       'remove_map', 'json_filename'],
+                    'generate_crank_jobs': ['internal_torsion_resolution', 'terminal_torsion_resolution',
+                     'scan_internal_terminal_combination', 'scan_dimension', 'qc_program', 'method',
+                     'basis']}
 
-def enumerate_states(molecule, options=None, json_filename=None):
+
+def enumerate_states(molecule, title='', options=None, json_filename=None):
     """
     enumerate protonation, tautomers and stereoisomers for molecule. Default does not enumerate tautomers, only
     protonation/ionization states and stereoisomers
@@ -74,7 +81,7 @@ def enumerate_states(molecule, options=None, json_filename=None):
     provenance = _get_provenance('enumerate_states', options=options)
     options = provenance['routine']['enumerate_states']['keywords']
 
-    molecule = utils.check_molecule(molecule)
+    molecule = utils.check_molecule(molecule, title=title)
     can_iso_smiles = oechem.OEMolToSmiles(molecule)
     states = fragment.expand_states(molecule, **options)
 
@@ -83,6 +90,7 @@ def enumerate_states(molecule, options=None, json_filename=None):
 
     provenance['routine']['enumerate_states']['keywords'] = routine_options
     provenance['routine']['enumerate_states']['parent_molecule'] = can_iso_smiles
+    provenance['routine']['enumerate_states']['parent_molecule_name'] = molecule.GetTitle()
     json_dict = {'provenance': provenance, 'states': states}
 
     if json_filename:
@@ -93,7 +101,7 @@ def enumerate_states(molecule, options=None, json_filename=None):
     return json_dict
 
 
-def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filename=None):
+def enumerate_fragments(molecule, title='', mol_provenance=None, options=None, json_filename=None):
     """
     Fragment molecule
 
@@ -101,6 +109,8 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
     ----------
     molecule: str
         SMILES string of molecule to fragment
+    title: str, optional. Default empty str
+        The title or name of the molecule. If empty stirng will use the IUPAC name for molecule title.
     mol_provenance: dict, optional. Default is None
         provenance for molecule. If the molecule is a state from enumerate_states, the provenance from enumerate_states
         should be used
@@ -119,7 +129,9 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
     provenance['routine']['enumerate_fragments']['parent_molecule'] = molecule
     options = provenance['routine']['enumerate_fragments']['keywords']
 
-    parent_molecule = utils.check_molecule(molecule)
+    parent_molecule = utils.check_molecule(molecule, title)
+    provenance['routine']['enumerate_fragments']['parent_molecule_name'] = parent_molecule.GetTitle()
+
     fragments = fragment.generate_fragments(parent_molecule, **options)
 
     routine_options = _remove_extraneous_options(user_options=options, routine='enumerate_fragments')
@@ -131,7 +143,7 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
     # Generate SMILES
     fragments_json_dict = {}
     for fragm in fragments:
-        for frag in fragments[fragm]:
+        for i, frag in enumerate(fragments[fragm]):
             SMILES = {}
             fragment_mol = utils.smiles_to_oemol(frag)
             SMILES['canonical_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False,
@@ -141,14 +153,27 @@ def enumerate_fragments(molecule, mol_provenance=None, options=None, json_filena
             SMILES['canonical_isomeric_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False)
             SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(fragment_mol)
 
+            frag = SMILES['canonical_isomeric_SMILES']
             fragments_json_dict[frag] = {'SMILES': SMILES}
+
 
             # Generate QM molecule
             mol, atom_map = utils.get_atom_map(tagged_smiles=SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'],
-                                               molecule=fragment_mol, is_mapped=True)
+                                               molecule=fragment_mol)
+
+            # Generate xyz coordinates for debugging
+            utils.to_mapped_xyz(mol, atom_map)
 
             charge = utils.get_charge(mol)
-            qm_mol = utils.to_mapped_QC_JSON_geometry(mol, atom_map, charge=charge)
+            try:
+                qm_mol = utils.to_mapped_QC_JSON_geometry(mol, atom_map, charge=charge)
+            except RuntimeError:
+                utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
+                              "{} will not be included in fragments dictionary".format(
+                        SMILES['canonical_isomeric_SMILES'], SMILES['canonical_isomeric_SMILES']))
+                fragments_json_dict.pop(frag)
+                continue
+
             fragments_json_dict[frag]['molecule'] = qm_mol
             fragments_json_dict[frag]['provenance'] = provenance
 
@@ -187,7 +212,7 @@ def generate_crank_jobs(fragment_dict, options=None, fragment_name=None):
 
     # Check if molecule is mapped
     if not utils.is_mapped(OEMol):
-        warnings.warn("OEMol is not mapped. Creating a new mapped SMILES")
+        utils.logger().warning("OEMol is not mapped. Creating a new mapped SMILES")
         fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(OEMol)
 
     needed_torsion_drives = torsions.find_torsions(OEMol)
@@ -207,7 +232,7 @@ def generate_crank_jobs(fragment_dict, options=None, fragment_name=None):
     return crank_initial_states
 
 
-def workflow(molecules_smiles, options=None, write_json_intermediate=False, write_json_crank_job=True):
+def workflow(molecules_smiles, molecule_titles=None, options=None, write_json_intermediate=False, write_json_crank_job=True):
     """
     Convenience function to run Fragmenter workflow.
 
@@ -215,6 +240,8 @@ def workflow(molecules_smiles, options=None, write_json_intermediate=False, writ
     ----------
     molecules_smiles: list of str
         list of SMILES
+    molecule_titles: list of molecule names, optional. Default None
+        If list of molecule names is provided, the name will be added to provenance and used for filenames
     options: str, optional. Default is None
         path to yaml file with options.
     write_json_intermediate: bool, optional. Default False
@@ -236,31 +263,43 @@ def workflow(molecules_smiles, options=None, write_json_intermediate=False, writ
 
     all_frags = {}
     all_crank_jobs = {}
-    for i, molecule in enumerate(molecules_smiles):
+    for i, molecule_smile in enumerate(molecules_smiles):
         json_filename = None
-        if write_json_intermediate:
-            json_filename = molecule  + '_states.json'
-        states = enumerate_states(molecule, options=options, json_filename=json_filename)
-        for state in states['states']:
-            if write_json_intermediate:
-                json_filename = state  + '_fragments.json'
-            fragments = enumerate_fragments(state, mol_provenance=states['provenance'], options=options,
+        title = ''
+        if molecule_titles:
+            title = molecule_titles[i]
+        if write_json_intermediate and title:
+            json_filename = 'states_{}.json'.format(title)
+        if write_json_intermediate and not title:
+            json_filename = 'states_{}.json'.format(utils.make_python_identifier(molecule_smile)[0])
+        states = enumerate_states(molecule_smile, title=title, options=options, json_filename=json_filename)
+        for j, state in enumerate(states['states']):
+            if write_json_intermediate and title:
+                json_filename =  'fragments_{}_{}.json'.format(title, j)
+            if write_json_intermediate and not title:
+                json_filename = 'fragment_{}_{}.json'.format(utils.make_python_identifier(state)[0], j)
+            fragments = enumerate_fragments(state, title=title, mol_provenance=states['provenance'], options=options,
                                             json_filename=json_filename)
             all_frags.update(**fragments)
+    namespaces = {}
     for frag in all_frags:
         crank_jobs = generate_crank_jobs(all_frags[frag], options=options)
         all_crank_jobs[frag] = crank_jobs
+
+
         if write_json_crank_job:
+            name, namespace = utils.make_python_identifier(frag, namespace=namespaces, convert='hex', handle='force')
+            namespaces.update(namespace)
             for job in crank_jobs:
                 # Make directory for job
                 current_path = os.getcwd()
-                path = os.path.join(current_path, frag + '_{}'.format(job))
+                path = os.path.join(current_path, name + '_{}'.format(job))
                 try:
                     os.mkdir(path)
                 except FileExistsError:
-                    utils.logger().info('Warning: overwriting {}'.format(path))
+                    utils.logger().warning('Warning: overwriting {}'.format(path))
                 # extend with job number because several jobs can exist in a fragment
-                jsonfilename = os.path.join(path, frag + '_{}.json'.format(job))
+                jsonfilename = os.path.join(path, name + '_{}.json'.format(job))
                 outfile = open(jsonfilename, 'w')
                 json.dump(crank_jobs[job], outfile, indent=2, sort_keys=True)
                 outfile.close()
@@ -331,6 +370,20 @@ def _load_options(routine, load_path=None):
     if load_path:
         with open(load_path) as stream:
             user_config = yaml.load(stream)
+            # Check options
+            functions = list(user_config.keys())
+            allowed_functions = list(_default_options.keys())
+            for f in functions:
+                if f not in allowed_functions:
+                    raise KeyError("{} is not a function. Only function names allowed are {}".format(f, allowed_functions))
+                user_options = user_config[f].keys()
+                allowed_options = _allowed_options[f]
+                for option in user_options:
+                    if option not in allowed_options:
+                        if f == 'generate_crank_jobs':
+                            utils.logger().warning("Is {} an allowed keyword for {}? Please double check".format(option, f))
+                            continue
+                        raise KeyError("{} is not an allowed option for {}. Allowed options are {}".format(option, f, allowed_options))
 
         options = {**_default_options[routine], **user_config[routine]}
     else:

@@ -17,7 +17,6 @@ def test_fragmenter_imported():
 
 class TestFragment(unittest.TestCase):
 
-
     def test_stereo_parent(self):
         """Test non isomeric and isomeric parent molecule SMILES"""
         smiles = 'NC(C)(F)C(=O)O'
@@ -27,8 +26,8 @@ class TestFragment(unittest.TestCase):
         mol_2 = openeye.smiles_to_oemol(isomeric_smiles_r)
         mol_3 = openeye.smiles_to_oemol(isomeric_smiles_s)
 
-        with self.assertRaises(RuntimeError):
-            fragmenter.fragment._generate_fragments(mol_1)
+
+        self.assertFalse(fragmenter.fragment._generate_fragments(mol_1))
         fragmenter.fragment._generate_fragments(mol_1, strict_stereo=False)
         fragmenter.fragment._generate_fragments(mol_2)
         fragmenter.fragment._generate_fragments(mol_3)

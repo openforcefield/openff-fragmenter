@@ -5,8 +5,11 @@ import sys
 import numpy as np
 import itertools
 import re
+import codecs
+import warnings
+import copy
 
-
+from fragmenter import chemi
 from openeye import oechem, oeiupac, oedepict
 from openmoltools import openeye
 
@@ -157,23 +160,33 @@ def smiles_to_oemol(smiles, name='', normalize=True):
     return molecule
 
 
-def oemols_to_smiles_list(OEMols):
+def oemols_to_smiles_list(OEMols, isomeric=True):
 
     if not isinstance(OEMols, list):
         OEMols = [OEMols]
 
     SMILES = []
     for mol in OEMols:
-        SMILES.append(create_mapped_smiles(mol, tagged=False, explicit_hydrogen=False))
+        SMILES.append(create_mapped_smiles(mol, tagged=False, explicit_hydrogen=False, isomeric=isomeric))
 
     return SMILES
 
 
-def file_to_smiles_list(filename):
+def file_to_smiles_list(filename, return_titles=True, isomeric=True):
 
     oemols = file_to_oemols(filename)
-    smiles_list = oemols_to_smiles_list(oemols)
+    # Check if oemols have names
+    if return_titles:
+        names = []
+        for mol in oemols:
+            title = mol.GetTitle()
+            if not title:
+                logger().warning("an oemol does not have a name. Adding an empty str to the titles list")
+            names.append(title)
+    smiles_list = oemols_to_smiles_list(oemols, isomeric=isomeric)
 
+    if return_titles:
+        return smiles_list, names
     return smiles_list
 
 
@@ -214,7 +227,10 @@ def normalize_molecule(molecule, title=''):
     return molcopy
 
 
-def check_molecule(molecule):
+def check_molecule(molecule, title=''):
+
+    if isinstance(molecule, oechem.OEMol):
+        return molecule
 
     mol = oechem.OEMol()
     # First try reading as smiles
@@ -225,7 +241,8 @@ def check_molecule(molecule):
             raise Warning('Could not parse molecule.')
 
     # normalize molecule
-    title = mol.GetTitle()
+    if not title:
+        title = mol.GetTitle()
     molecule = normalize_molecule(mol, title=title)
     return molecule
 
@@ -264,6 +281,10 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
     With index-tagged explicit hydrogen SMILES this becomes
     '[H:3][C:1]([H:4])([H:5])[O:2][H:6]'
 
+    **Warning**
+    The map that is added to the SMILES is not guaranteed to correspond to the indices to the molecule provided since a
+    new conformer is generated to ensure explicit stereochemistry in the SMILES.
+
     Parameters
     ----------
     molecule: OEMOl
@@ -280,7 +301,42 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
     index-tagged explicit hydrogen SMILES str
 
     """
-    #ToDo check if tags already exist raise warning about overwritting existing tags. Maybe also add an option to override existing tags
+
+    # Generate conformer if not conformers exist
+    if isomeric:
+        if not has_conformer(molecule):
+            # Check if conformer already exists
+            try:
+                # Set strict_stereo so that we get a conformer to perceive chirality for isomeric SMILES
+                # Set strict type to False so conformer will be generated even if exact MMFF atom type does not exist for
+                # those atoms. This is probably a bigger problem for charging than conformer generation ?
+                # Set copy to False so that input molecule gets tagged and mapped consistent with SMILES
+                molecule = chemi.generate_conformers(molecule, max_confs=1, strict_stereo=False, strict_types=False, copy=False)
+            except RuntimeError:
+                        logger().warning("Omega failed to generate a conformer for {}. Steroechemistry might not be specified"
+                                      "in tagged SMILES".format(oechem.OEMolToSmiles(molecule)))
+
+        oechem.OEPerceiveChiral(molecule)
+        oechem.OE3DToAtomStereo(molecule)
+        oechem.OE3DToBondStereo(molecule)
+
+    #iso_smiles = oechem.OEMolToSmiles(molecule)
+    # Create a new molecule with isomeric SMILES
+    # molecule = oechem.OEMol()
+    # oechem.OESmilesToMol(molecule, iso_smiles)
+    # if molecule.GetMaxConfIdx() <= 1:
+    #     for conf in molecule.GetConfs():
+    #         values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+    #                             range(conf.GetCoords().__len__())])
+    #     if values.all():
+    #         # No conformers were generated so generate one
+    #         molcopy = copy.deepcopy(molecule)
+    #         molecule = chemi.generate_conformers(molcopy, max_confs=1, strict_stereo=False)
+    #         iso_smiles = oechem.OEMolToSmiles(molecule)
+    #
+    #         molecule = oechem.OEMol()
+    #         oechem.OESmilesToMol(molecule, iso_smiles)
+
     if not explicit_hydrogen and not tagged and isomeric:
         return oechem.OEMolToSmiles(molecule)
     if not explicit_hydrogen and not tagged and not isomeric:
@@ -288,22 +344,72 @@ def create_mapped_smiles(molecule, tagged=True, explicit_hydrogen=True, isomeric
 
     oechem.OEAddExplicitHydrogens(molecule)
     if not tagged and explicit_hydrogen and isomeric:
-        return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Isotopes | oechem.OESMILESFlag_AtomStereo
-                                        | oechem.OESMILESFlag_BondStereo | oechem.OESMILESFlag_Canonical | oechem.OESMILESFlag_RGroups)
+        return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_ISOMERIC)
+
     if not tagged and explicit_hydrogen and not isomeric:
         return oechem.OECreateSmiString(molecule, oechem.OESMILESFlag_Hydrogens | oechem.OESMILESFlag_Canonical |
                                         oechem.OESMILESFlag_RGroups)
+
+    # Add tags to molecule
+    for atom in molecule.GetAtoms():
+        atom.SetMapIdx(atom.GetIdx() + 1)
+
     if tagged and not explicit_hydrogen:
         raise Warning("Tagged SMILES must include hydrogens to retain order")
 
     for atom in molecule.GetAtoms():
         atom.SetMapIdx(atom.GetIdx() + 1)
 
+    if tagged and not isomeric:
+        raise Warning("Tagged SMILES must include stereochemistry ")
+
     # add tag to data
     tag = oechem.OEGetTag("has_map")
     molecule.SetData(tag, bool(True))
 
     return oechem.OEMolToSmiles(molecule)
+
+
+def has_conformer(molecule, check_two_dimension=False):
+    """
+    Check if conformer exists for molecule. Return True or False
+    Parameters
+    ----------
+    molecule
+    check_two_dimension: bool, optional. Default False
+        If True, will also check if conformation is a 2D conformation (all z coordinates are zero) and return False if
+        conformation is 2D
+
+    Returns
+    -------
+
+    """
+    conformer_bool = True
+    try:
+        if molecule.NumConfs() <= 1:
+            # Check if xyz coordinates are not zero
+            for conf in molecule.GetConfs():
+                # print(conf.GetCoords().__len__())
+                # coords = molecule.GetCoords()
+                # values = np.asarray(list(coords.values()))
+                # print(values)
+                # print(values.all())
+                # if not values.all():
+                #     conformer_bool = False
+                #for i in range(conf.GetCoords().__len__()):
+                values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+                                    conf.GetCoords()])
+            if values.all():
+                conformer_bool = False
+    except AttributeError:
+        conformer_bool = False
+
+    if conformer_bool and check_two_dimension:
+        for conf in molecule.GetConfs():
+            values = np.asarray([conf.GetCoords().__getitem__(i)[-1] == 0.0 for i in conf.GetCoords()])
+            if values.all():
+                conformer_bool = False
+    return conformer_bool
 
 
 def is_mapped(molecule):
@@ -324,7 +430,7 @@ def is_mapped(molecule):
     return IS_MAPPED
 
 
-def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=True):
+def get_atom_map(tagged_smiles, molecule=None, StrictStereo=True, verbose=True):
     """
     Returns a dictionary that maps tag on SMILES to atom index in molecule.
     Parameters
@@ -352,20 +458,26 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=Tru
     if molecule is None:
         molecule = openeye.smiles_to_oemol(tagged_smiles)
         # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
-        is_mapped = True
 
     # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
     # map won't be correct
-    if molecule.GetMaxConfIdx() <= 1:
-        for conf in molecule.GetConfs():
-            values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
-                                range(conf.GetCoords().__len__())])
-        if values.all():
-            # Generate on Omega conformer
-            molecule = openeye.generate_conformers(molecule, max_confs=1, strictStereo=StrictStereo)
+    if not has_conformer(molecule):
+    # if molecule.GetMaxConfIdx() <= 1:
+    #     for conf in molecule.GetConfs():
+    #         values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+    #                             range(conf.GetCoords().__len__())])
+    #     if values.all():
+        # Generate an Omega conformer
+        try:
+            molecule = openeye.generate_conformers(molecule, max_confs=1, strictStereo=StrictStereo, strictTypes=False)
             # Omega can change the ordering so whatever map existed is not there anymore
+        except RuntimeError:
+            logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
+                          "generated".format(molecule.GetTitle()))
 
-    if is_mapped:
+    # Check if molecule is mapped
+    mapped = is_mapped(molecule)
+    if mapped:
         atom_map = {}
         for atom in molecule.GetAtoms():
             atom_map[atom.GetMapIdx()] = atom.GetIdx()
@@ -380,7 +492,7 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=Tru
     matches = [m for m in ss.Match(molecule)]
     t2 = time.time()
     seconds = t2-t1
-    logger().info("Substructure search took {} seconds".format(seconds))
+    logger().debug("Substructure search took {} seconds".format(seconds))
     if not matches:
         logger().info("MCSS failed for {}, smiles: {}".format(molecule.GetTitle(), tagged_smiles))
         return False
@@ -391,7 +503,7 @@ def get_atom_map(tagged_smiles, molecule=None, is_mapped=False, StrictStereo=Tru
     # sanity check
     mol = oechem.OEGraphMol()
     oechem.OESubsetMol(mol, match, True)
-    logger().info("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
+    logger().debug("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
 
     return molecule, atom_map
 
@@ -437,7 +549,7 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
                                                                            coords[idx * 3 + 2])
 
     if filename:
-        file = open("{}.xyz".format(filename, 'w'))
+        file = open("{}.xyz".format(filename), 'w')
         file.write(xyz)
         file.close()
     return xyz
@@ -575,6 +687,10 @@ def to_mapped_QC_JSON_geometry(molecule, atom_map, charge=0, multiplicity=1):
     geometry = []
     if molecule.GetMaxConfIdx() != 1:
         raise Warning("The molecule must have at least and at most 1 conformation")
+
+    # Check if coordinates are missing
+    if not has_conformer(molecule, check_two_dimension=True):
+        raise RuntimeError("molecule {} does not have a 3D conformation".format(oechem.OEMolToSmiles(molecule)))
 
     for mapping in range(1, len(atom_map)+1):
         idx = atom_map[mapping]
@@ -1052,3 +1168,127 @@ def flatten(l, ltypes=(list, tuple)):
                 l[i:i + 1] = l[i]
         i += 1
     return ltype(l)
+
+
+def make_python_identifier(string, namespace=None, reserved_words=None,
+                           convert='hex', handle='force'):
+    """
+    Taken from https://gist.github.com/JamesPHoughton
+    Takes an arbitrary string and creates a valid Python identifier.
+    If the python identifier created is already in the namespace,
+    or if the identifier is a reserved word in the reserved_words
+    list, or is a python default reserved word,
+    adds _1, or if _1 is in the namespace, _2, etc.
+    Parameters
+    ----------
+    string : <basestring>
+        The text to be converted into a valid python identifier
+    namespace : <dictionary>
+        Map of existing translations into python safe identifiers.
+        This is to ensure that two strings are not translated into
+        the same python identifier
+    reserved_words : <list of strings>
+        List of words that are reserved (because they have other meanings
+        in this particular program, such as also being the names of
+        libraries, etc.
+    convert : <string>
+        Tells the function what to do with characters that are not
+        valid in python identifiers
+        - 'hex' implies that they will be converted to their hexidecimal
+                representation. This is handy if you have variables that
+                have a lot of reserved characters
+        - 'drop' implies that they will just be dropped altogether
+    handle : <string>
+        Tells the function how to deal with namespace conflicts
+        - 'force' will create a representation which is not in conflict
+                  by appending _n to the resulting variable where n is
+                  the lowest number necessary to avoid a conflict
+        - 'throw' will raise an exception
+    Returns
+    -------
+    identifier : <string>
+        A vaild python identifier based on the input string
+    namespace : <dictionary>
+        An updated map of the translations of words to python identifiers,
+        including the passed in 'string'.
+    Examples
+    --------
+    >>> make_python_identifier('Capital')
+    ('capital', {'Capital': 'capital'})
+    >>> make_python_identifier('multiple words')
+    ('multiple_words', {'multiple words': 'multiple_words'})
+    >>> make_python_identifier('multiple     spaces')
+    ('multiple_spaces', {'multiple     spaces': 'multiple_spaces'})
+    When the name is a python keyword, add '_1' to differentiate it
+    >>> make_python_identifier('for')
+    ('for_1', {'for': 'for_1'})
+    Remove leading and trailing whitespace
+    >>> make_python_identifier('  whitespace  ')
+    ('whitespace', {'  whitespace  ': 'whitespace'})
+    Remove most special characters outright:
+    >>> make_python_identifier('H@t tr!ck')
+    ('ht_trck', {'H@t tr!ck': 'ht_trck'})
+    Replace special characters with their hex representations
+    >>> make_python_identifier('H@t tr!ck', convert='hex')
+    ('h40t_tr21ck', {'H@t tr!ck': 'h40t_tr21ck'})
+    remove leading digits
+    >>> make_python_identifier('123abc')
+    ('abc', {'123abc': 'abc'})
+    namespace conflicts
+    >>> make_python_identifier('Variable$', namespace={'Variable@':'variable'})
+    ('variable_1', {'Variable@': 'variable', 'Variable$': 'variable_1'})
+    >>> make_python_identifier('Variable$', namespace={'Variable@':'variable', 'Variable%':'variable_1'})
+    ('variable_2', {'Variable@': 'variable', 'Variable%': 'variable_1', 'Variable$': 'variable_2'})
+    throw exception instead
+    >>> make_python_identifier('Variable$', namespace={'Variable@':'variable'}, handle='throw')
+    Traceback (most recent call last):
+     ...
+    NameError: variable already exists in namespace or is a reserved word
+    References
+    ----------
+    Identifiers must follow the convention outlined here:
+        https://docs.python.org/2/reference/lexical_analysis.html#identifiers
+    """
+    if namespace is None:
+        namespace = {}
+
+    if reserved_words is None:
+        reserved_words = []
+
+    s = copy.deepcopy(string)
+
+    # remove leading and trailing whitespace
+    s = s.strip()
+
+    # Make spaces into underscores
+    s = re.sub('[\\s\\t\\n]+', '_', s)
+
+    if convert == 'hex':
+        # Convert invalid characters to hex
+        hexlify = codecs.getencoder('hex')
+        s = ''.join(['_' + (hexlify(c.encode('utf-8'))[0]).decode('utf-8') + '_'
+                     if re.findall('[^0-9a-zA-Z_]', c) else c for c in s])
+
+    elif convert == 'drop':
+        # Remove invalid characters
+        s = re.sub('[^0-9a-zA-Z_]', '', s)
+
+    # Remove leading characters until we find a letter or underscore
+    s = re.sub('^[^a-zA-Z_]+', '', s)
+
+    # Check that the string is not a python identifier
+    while (#s in keyword.kwlist or
+           s in namespace.values() or
+           s in reserved_words):
+        if handle == 'throw':
+            raise NameError(s + ' already exists in namespace or is a reserved word')
+        if handle == 'force':
+            if re.match(".*?_\d+$", s):
+                i = re.match(".*?_(\d+)$", s).groups()[0]
+                s = s.strip('_'+i) + '_'+str(int(i)+1)
+            else:
+                s += '_1'
+
+    namespace[string] = s
+
+    return s, namespace
