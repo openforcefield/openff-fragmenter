@@ -17,22 +17,6 @@ def test_fragmenter_imported():
 
 class TestFragment(unittest.TestCase):
 
-    @unittest.skipUnless(has_openeye, "Cannot test without openeye")
-    def test_canoicalization_details(self):
-        """ test canonicalization detail"""
-        input_smi = get_fn('butane.smi')
-        fragments = fragmenter.generate_fragments(inputf=input_smi)
-
-        provenance = fragments['provenance']
-        canon_detail = provenance['canonicalization_details']
-        isomeric_smiles = canon_detail['canonical_isomeric_SMILES']
-        for flag in isomeric_smiles['Flags']:
-            self.assertTrue(flag in ['ISOMERIC', 'Isotopes', 'AtomStereo', 'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'])
-        canonical_smiles = canon_detail['canonical_SMILES']
-        for flag in canonical_smiles['Flags']:
-            print(flag)
-            self.assertTrue(flag in ['DEFAULT', 'AtomMaps', 'Canonical', 'RGroups'])
-
     def test_stereo_parent(self):
         """Test non isomeric and isomeric parent molecule SMILES"""
         smiles = 'NC(C)(F)C(=O)O'
@@ -42,8 +26,8 @@ class TestFragment(unittest.TestCase):
         mol_2 = openeye.smiles_to_oemol(isomeric_smiles_r)
         mol_3 = openeye.smiles_to_oemol(isomeric_smiles_s)
 
-        with self.assertRaises(RuntimeError):
-            fragmenter.fragment._generate_fragments(mol_1)
+
+        self.assertFalse(fragmenter.fragment._generate_fragments(mol_1))
         fragmenter.fragment._generate_fragments(mol_1, strict_stereo=False)
         fragmenter.fragment._generate_fragments(mol_2)
         fragmenter.fragment._generate_fragments(mol_3)

@@ -1,6 +1,6 @@
 from itertools import combinations
 import openeye as oe
-from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega
+from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
 
 from openmoltools import openeye
 
@@ -13,7 +13,7 @@ import itertools
 import uuid
 import json
 
-from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase
+from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase, smiles_to_oemol
 import fragmenter
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
@@ -73,17 +73,24 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
     if verbose:
         logger().info("Enumerating states for {}".format(title))
     if protonation:
+        logger().info("Enumerating protonation states for {}".format(title))
         molecules.extend(_expand_states(molecules, enumerate='protonation', max_states=max_states, verbose=verbose,
                                         level=level, suppress_hydrogen=suppress_hydrogen))
     if tautomers:
+        logger().info("Enumerating tautomers for {}".format(title))
         molecules.extend(_expand_states(molecules, enumerate='tautomers', max_states=max_states, reasonable=reasonable,
                                         carbon_hybridization=carbon_hybridization, verbose=verbose, level=level,
                                         suppress_hydrogen=suppress_hydrogen))
     if stereoisomers:
+        logger().info("Enumerating stereoisomers for {}".format(title))
         molecules.extend(_expand_states(molecules, enumerate='stereoisomers', max_states=max_states, verbose=verbose))
 
     for molecule in molecules:
-        states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
+        #states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
+        # Not using create mapped SMILES because OEMol is needed but state is OEMolBase.
+        states.add(oechem.OEMolToSmiles(molecule))
+
+    logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 
     if filename:
         count = 0
@@ -145,7 +152,7 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
             formal_charge_options.SetMaxCount(max_states)
             formal_charge_options.SetVerbose(verbose)
             if verbose:
-                logger().info("Enumerating protonation states...")
+                logger().debug("Enumerating protonation states...")
             for protonation_state in oequacpac.OEEnumerateFormalCharges(molecule, formal_charge_options):
                 states_enumerated += 1
                 oechem.OEWriteMolecule(ostream, protonation_state)
@@ -160,14 +167,14 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
             #tautomer_options.SetMaxZoneSize(max_zone_size)
             tautomer_options.SetApplyWarts(True)
             if verbose:
-                logger().info("Enumerating tautomers...")
+                logger().debug("Enumerating tautomers...")
             for tautomer in oequacpac.OEEnumerateTautomers(molecule, tautomer_options):
                 states_enumerated += 1
                 states.append(tautomer)
         if enumerate == 'stereoisomers':
             if verbose:
-                logger().info("Enumerating stereoisomers...")
-            for enantiomer in oeomega.OEFlipper(molecule, 12, True):
+                logger().debug("Enumerating stereoisomers...")
+            for enantiomer in oeomega.OEFlipper(molecule, max_states, True):
                 states_enumerated += 1
                 enantiomer = oechem.OEMol(enantiomer)
                 oechem.OEWriteMolecule(ostream, enantiomer)
@@ -176,8 +183,8 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
     return states
 
 
-def generate_fragments(inputf, generate_visualization=False, strict_stereo=True, combinatorial=True, MAX_ROTORS=2, remove_map=True,
-                       json_filename=None, canonicalization=OPENEYE_VERSION):
+def generate_fragments(molecule, generate_visualization=False, strict_stereo=False, combinatorial=True, MAX_ROTORS=2,
+                       remove_map=True, json_filename=None):
     """
     This function generates fragments from molecules. The output is a dictionary that maps SMILES of molecules to SMILES
      for fragments. The default SMILES are generated with openeye.oechem.OEMolToSmiles. These SMILES strings are canonical
@@ -186,8 +193,7 @@ def generate_fragments(inputf, generate_visualization=False, strict_stereo=True,
 
     Parameters
     ----------
-    inputf: str
-        absolute path to input molecule file - any molecule file that OpenEye can read
+    molecule: OEMol to fragment
     generate_visualization: bool
         If true, visualization of the fragments will be written to pdf files. The pdf will be writtten in the directory
         where this function is run from.
@@ -202,71 +208,52 @@ def generate_fragments(inputf, generate_visualization=False, strict_stereo=True,
         If True, the index tags will be removed. This will remove duplicate fragments. Defualt True
     json_filename: str
         filenmae for JSON. If provided, will save the returned dictionary to a JSON file. Default is None
-    canonicalization: str
-        Program used to canonicalize SMILES string. Different chemiinformatics programs have different canonicalization
-        algorithms. Therefore it's important to specify the program used and version
-        Default: Openeye with version
 
     Returns
     -------
-    fragments: a dict of 2 dictionaries
-        provenance: record of the job that generated fragments
-        fragments: mapping of SMILES from the parent molecule to the SMILES of the fragments
+    fragments: dict
+        mapping of SMILES from the parent molecule to the SMILES of the fragments
     """
-    options = copy.deepcopy(locals())
     fragments = dict()
-    canonicalization_details = {'package': OPENEYE_VERSION,
-                                'canonical_isomeric_SMILES': {'Flags': ['ISOMERIC', 'Isotopes', 'AtomStereo',
-                                                                        'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'],
-                                                               'oe_function': 'openeye.oechem.OEMolToSmiles(molecule)'},
-                                'canonical_SMILES': {'Flags': ['DEFAULT', 'Canonical', 'AtomMaps', 'RGroups'],
-                                                      'oe_function': 'openeye.oechem.OECreateCanSmiString(molecule)'},
-                                'canonical_isomeric_explicit_hydrogen_SMILES': {'Flags': ['Hydrogens', 'Isotopes', 'AtomStereo',
-                                                                                          'BondStereo', 'Canonical', 'RGroups'],
-                                                                                'oe_function': 'openeye.oechem.OECreateSmiString()'},
-                                'canonical_explicit_hydrogen_SMILES': {'Flags': ['Hydrogens', 'Canonical', 'RGroups'],
-                                                                       'oe_function': 'openeye.oechem.OECreateSmiString()'},
-                                'notes': 'All other available OESMIELSFlag are set to False'}
 
+    try:
+        molecules = list(molecule)
+    except TypeError:
+        molecules = [molecule]
+    for molecule in molecules:
+        # normalize molecule
+        molecule = normalize_molecule(molecule, molecule.GetTitle())
+        if remove_map:
+            # Remove tags from smiles. This is done to make it easier to find duplicate fragments
+            for a in molecule.GetAtoms():
+                a.SetMapIdx(0)
+        frags = _generate_fragments(molecule, strict_stereo=strict_stereo)
+        if not frags:
+            logger().warning('Skipping {}, SMILES: {}'.format(molecule.GetTitle(), oechem.OECreateSmiString(molecule)))
+            continue
+        charged = frags[0]
+        frags = frags[-1]
+        frag_list = list(frags.values())
+        if combinatorial:
+            smiles = smiles_with_combined(frag_list, charged, MAX_ROTORS)
+        else:
+            smiles = frag_to_smiles(frag_list, charged)
 
-    fragments['fragments'] = {}
-    fragments['provenance'] = {'job_id': str(uuid.uuid4()), 'package': fragmenter.__package__, 'version': fragmenter.__version__,
-                               'routine': generate_fragments.__module__ + '.' + generate_fragments.__name__,
-                               'canonicalization_details': canonicalization_details,
-                               'user': pwd.getpwuid(os.getuid()).pw_name, 'routine_options': options}
-    ifs = oechem.oemolistream()
-    mol = oechem.OEMol()
-    if ifs.open(inputf):
-        while oechem.OEReadMolecule(ifs, mol):
-            title = mol.GetTitle()
-            mol = normalize_molecule(mol, title=title)
-            logger().info('fragmenting {}...'.format(mol.GetTitle()))
-            if remove_map:
-                # Remove tags from smiles. This is done to make it easier to find duplicate fragments
-                for a in mol.GetAtoms():
-                    a.SetMapIdx(0)
-            frags = _generate_fragments(mol, strict_stereo=strict_stereo)
-            if not frags:
-                logger().warn('Skipping {}, SMILES: {}'.format(mol.GetTitle(), oechem.OECreateSmiString(mol)))
-                continue
-            charged = frags[0]
-            frags = frags[-1]
-            frag_list = list(frags.values())
-            if combinatorial:
-                smiles = smiles_with_combined(frag_list, charged, MAX_ROTORS)
-            else:
-                smiles = frag_to_smiles(frag_list, charged)
+        parent_smiles = oechem.OEMolToSmiles(molecule)
+        fragments[parent_smiles] = list(smiles.keys())
 
-            parent_smiles = oechem.OEMolToSmiles(mol)
-            fragments['fragments'][parent_smiles] = list(smiles.keys())
-
-            if generate_visualization:
-                oname = '{}.pdf'.format(mol.GetTitle())
-                ToPdf(charged, oname, frags)
-            del charged, frags
+        if generate_visualization:
+            IUPAC = oeiupac.OECreateIUPACName(molecule)
+            name = molecule.GetTitle()
+            if IUPAC == name:
+                name = fragmenter.utils.make_python_identifier(oechem.OEMolToSmiles(molecule))[0]
+            oname = '{}.pdf'.format(name)
+            print(oname)
+            ToPdf(charged, oname, frags)
+        del charged, frags
     if json_filename:
         f = open(json_filename, 'w')
-        j = json.dump(fragments, f, indent=4, sort_keys=True)
+        j = json.dump(fragments, f, indent=2, sort_keys=True)
         f.close()
 
     return fragments
@@ -288,7 +275,12 @@ def _generate_fragments(mol, strict_stereo=True):
     frags: dict of AtomBondSet mapped to rotatable bond index the fragment was built up from.
     """
 
-    charged = openeye.get_charges(mol, keep_confs=1, strictStereo=strict_stereo)
+    try:
+        charged = openeye.get_charges(mol, keep_confs=1, strictStereo=strict_stereo)
+    except RuntimeError:
+        logger().warning("Could not charge molecule {} so no WBO were calculated. Cannot fragment molecule {}".format(mol.GetTitle(),
+                                                                                                                      mol.GetTitle()))
+        return False
 
     # Check if WBO were calculated
     bonds = [bond for bond in charged.GetBonds()]
@@ -296,7 +288,7 @@ def _generate_fragments(mol, strict_stereo=True):
         try:
             bond.GetData('WibergBondOrder')
         except ValueError:
-            logger().warn("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
+            logger().warning("WBO were not calculate. Cannot fragment molecule {}".format(charged.GetTitle()))
             return False
 
     tagged_rings, tagged_fgroups = tag_molecule(charged)
@@ -649,7 +641,8 @@ def iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, i
             a_idx = a.GetIdx()
             next_bond = mol.GetBond(a, atom)
             nb_idx = next_bond.GetIdx()
-            atoms_2.add(a_idx)
+            # atoms_2.add(a_idx)
+            # bonds_2.add(nb_idx)
             if nb_idx in bonds_2:
                 FGROUP_RING = False
                 try:
@@ -678,8 +671,10 @@ def iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, i
             if i > 0:
                 wiberg = next_bond.GetData('WibergBondOrder')
                 if wiberg < 1.2:
+                    #atoms_2.remove(a_idx)
                     continue
 
+            atoms_2.add(a_idx)
             bonds_2.add(nb_idx)
             if a.IsInRing():
                 ring_idx = a.GetData('ringsystem')
@@ -777,7 +772,7 @@ def _ring_substiuents(mol, bond, rotor_bond, tagged_rings, ring_idx, fgroup_tagg
     return rs_atoms, rs_bonds
 
 
-def frag_to_smiles(frags, mol, OESMILESFlag):
+def frag_to_smiles(frags, mol):
     """
     Convert fragments (AtomBondSet) to canonical isomeric SMILES string
     Parameters
@@ -798,10 +793,20 @@ def frag_to_smiles(frags, mol, OESMILESFlag):
         fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
         fragbondpred = oechem.OEIsBondMember(frag.GetBonds())
 
-        fragment = oechem.OEGraphMol()
+        #fragment = oechem.OEGraphMol()
+        fragment = oechem.OEMol()
         adjustHCount = True
         oechem.OESubsetMol(fragment, mol, fragatompred, fragbondpred, adjustHCount)
-        s = oechem.OEMolToSmiles(fragment)
+
+        oechem.OEPerceiveChiral(fragment)
+        # sanity check that all atoms are bonded
+        for atom in fragment.GetAtoms():
+            if not list(atom.GetBonds()):
+                raise Warning("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
+                              "You probably ran into a bug. Please report the input molecule to the issue tracker")
+        #s = oechem.OEMolToSmiles(fragment)
+        #s2 = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=False)
+        s = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=True)
 
         if s not in smiles:
             smiles[s] = []
@@ -838,7 +843,7 @@ def _sort_by_rotbond(ifs, outdir):
         write_oedatabase(moldb, ofs, nrotors_map[nrotor], size)
 
 
-def smiles_with_combined(frag_list, mol, MAX_ROTORS=2, OESMILESFlag='ISOMERIC'):
+def smiles_with_combined(frag_list, mol, MAX_ROTORS=2):
     """
     Generates Smiles:frags mapping for fragments and fragment combinations with less than MAX_ROTORS rotatable bonds
 
@@ -858,7 +863,7 @@ def smiles_with_combined(frag_list, mol, MAX_ROTORS=2, OESMILESFlag='ISOMERIC'):
 
     combined_list = comb_list + frag_list
 
-    smiles = frag_to_smiles(combined_list, mol, OESMILESFlag)
+    smiles = frag_to_smiles(combined_list, mol)
 
     return smiles
 
