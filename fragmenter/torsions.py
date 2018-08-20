@@ -10,7 +10,8 @@ import os
 import json
 import itertools
 
-from . import utils
+from . import utils, chemi
+from cmiles import to_canonical_smiles_oe
 
 warnings.simplefilter('always')
 
@@ -32,10 +33,10 @@ def find_torsions(molecule):
 
     """
     # Check if molecule has map
-    is_mapped = utils.is_mapped(molecule)
+    is_mapped = chemi.is_mapped(molecule)
     if not is_mapped:
         utils.logger().warning('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
-        tagged_smiles = utils.create_mapped_smiles(molecule)
+        tagged_smiles = to_canonical_smiles_oe(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
         utils.logger().warning('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
         utils.logger().warning('The new tagged SMARTS is: {}'.format(tagged_smiles))
         # ToDo: save the new tagged SMILES somewhere. Maybe return it?

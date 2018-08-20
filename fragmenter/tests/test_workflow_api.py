@@ -2,7 +2,7 @@
 
 import unittest
 import fragmenter
-from fragmenter import workflow_api
+from fragmenter import workflow_api, chemi
 from fragmenter.tests.utils import get_fn, has_crank, has_openeye
 import json
 import copy
@@ -255,7 +255,7 @@ class TestWorkflow(unittest.TestCase):
         from openeye import oechem
         crank_jobs = workflow_api.workflow(['CCCC'], write_json_crank_job=False)
 
-        mol_with_map = fragmenter.utils.smiles_to_oemol(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_smiles'])
+        mol_with_map = chemi.smiles_to_oemol(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_smiles'])
 
         for job in crank_jobs['CCCC']:
             dihedrals = crank_jobs['CCCC'][job]['dihedrals']
