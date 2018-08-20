@@ -1,6 +1,7 @@
 from itertools import combinations
 import openeye as oe
 from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
+from cmiles import to_canonical_smiles_oe
 
 from openmoltools import openeye
 
@@ -13,7 +14,7 @@ import itertools
 import uuid
 import json
 
-from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase, smiles_to_oemol
+from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase
 import fragmenter
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
@@ -88,7 +89,8 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
     for molecule in molecules:
         #states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
         # Not using create mapped SMILES because OEMol is needed but state is OEMolBase.
-        states.add(oechem.OEMolToSmiles(molecule))
+        #states.add(oechem.OEMolToSmiles(molecule))
+        states.add(to_canonical_smiles_oe(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
 
     logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 

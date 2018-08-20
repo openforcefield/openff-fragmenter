@@ -17,9 +17,9 @@ requirements:
   run:
     - python
     - setuptools
-    - openmoltools
     - openeye-toolkits
     - pyyaml
+    - openmoltools
 
 test:
   requires:
