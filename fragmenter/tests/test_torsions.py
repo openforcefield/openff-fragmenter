@@ -22,9 +22,9 @@ class TestTorsions(unittest.TestCase):
         needed_torsion_scans = torsions.find_torsions(molecule=inp_mol)
         self.assertEqual(len(needed_torsion_scans['internal']), 1)
         self.assertEqual(len(needed_torsion_scans['terminal']), 2)
-        self.assertEqual(needed_torsion_scans['internal']['torsion_0'], (14, 10, 7, 4))
-        self.assertEqual(needed_torsion_scans['terminal']['torsion_0'], (10, 7, 4, 3))
-        self.assertEqual(needed_torsion_scans['terminal']['torsion_1'], (7, 10, 14, 13))
+        self.assertEqual(needed_torsion_scans['internal']['torsion_0'], (1, 3, 4, 2))
+        self.assertEqual(needed_torsion_scans['terminal']['torsion_0'], (4, 3, 1, 5))
+        self.assertEqual(needed_torsion_scans['terminal']['torsion_1'], (3, 4, 2, 8))
 
     @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_tagged_smiles(self):
@@ -120,7 +120,7 @@ class TestTorsions(unittest.TestCase):
         """Test mapped geometry"""
         from openeye import oechem
 
-        infile = get_fn('butane.pdb')
+        infile = get_fn('butane.xyz')
         ifs = oechem.oemolistream(infile)
         molecule = oechem.OEMol()
         oechem.OEReadMolecule(ifs, molecule)
@@ -132,11 +132,11 @@ class TestTorsions(unittest.TestCase):
         line = f.readline()
         symbols = []
         geometry = []
-        while line.strip():
-            if line.startswith('ATOM'):
+        while line:
+            if line.startswith('  '):
                 line = line.split()
-                symbols.append(line[2][0])
-                geometry.append(line[5:8])
+                symbols.append(line[0])
+                geometry.append(line[1:])
             line = f.readline()
         f.close()
         geometry = sum(geometry, [])

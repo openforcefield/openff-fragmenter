@@ -297,7 +297,7 @@ def get_atom_map(tagged_smiles, molecule=None, strict_stereo=True, verbose=True)
     #     if values.all():
         # Generate an Omega conformer
         try:
-            molecule = generate_conformers(molecule, max_confs=1, strict_stereo=strict_stereo, strict_types=False)
+            molecule = generate_conformers(molecule, max_confs=1, strict_stereo=strict_stereo, strict_types=False, copy=False)
             # Omega can change the ordering so whatever map existed is not there anymore
         except RuntimeError:
             logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "

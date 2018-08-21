@@ -4,7 +4,6 @@ import unittest
 import json
 from fragmenter.tests.utils import get_fn, has_openeye
 from fragmenter import utils, chemi
-from openmoltools import openeye
 from openeye import oechem
 from cmiles import to_canonical_smiles_oe
 
@@ -16,8 +15,8 @@ class TesTorsions(unittest.TestCase):
         """Test checking if atom map exists"""
         smiles = 'CCCC'
         tagged_smiles = '[H:5][C:1]([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])[H:14]'
-        molecule = openeye.smiles_to_oemol(smiles)
-        tagged_molecule = openeye.smiles_to_oemol(tagged_smiles)
+        molecule = chemi.smiles_to_oemol(smiles)
+        tagged_molecule = chemi.smiles_to_oemol(tagged_smiles)
 
         self.assertTrue(chemi.is_mapped(tagged_molecule))
         self.assertFalse(chemi.is_mapped(molecule))
@@ -25,7 +24,7 @@ class TesTorsions(unittest.TestCase):
         # Add tags
         tagged_smiles = to_canonical_smiles_oe(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
 
-        self.assertTrue(chemi.is_mapped(molecule))
+        self.assertFalse(chemi.is_mapped(molecule))
         tagged_mol = chemi.smiles_to_oemol(tagged_smiles)
         self.assertTrue(chemi.is_mapped(tagged_mol))
 
