@@ -4,6 +4,7 @@ try:
     from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac
 except ImportError:
     raise Warning("Need license for OpenEye!")
+from rdkit import Chem
 
 import cmiles
 from .utils import logger
@@ -582,6 +583,48 @@ def file_to_oemols(filename, title=True, verbose=True):
     ifs.close()
 
     return mollist
+
+
+def smifile_to_rdmols(filename):
+    """
+    Read SMILES file and return list of RDmols
+
+    Parameters
+    ----------
+    filename: str. Path to file
+
+    Returns
+    -------
+    rd_mols: list
+        list of RDKit molecules
+
+    """
+    smiles_txt = open(filename, 'r').read()
+    # Check first line
+    first_line = smiles_txt.split('\n')[0]
+    if first_line != 'SMILES':
+        smiles_txt = 'SMILES\n' + smiles_txt
+
+    rd_mol_supp = Chem.SmilesMolSupplierFromText(smiles_txt)
+    rd_mols = [x for x in rd_mol_supp]
+
+    # Check for failure to parse
+    nones = []
+    for i, mol in enumerate(rd_mols):
+        if mol is None:
+            nones.append(i)
+
+    if len(nones) > 0:
+        # Find SMILES that did not parse
+        smiles_list = smiles_txt.split('\n')[1:]
+        print(nones)
+        missing_mols = [smiles_list[none] for none in nones]
+        lines = [int(none) + 1 for none in nones]
+
+        raise RuntimeError("Not all SMILES were parsed properly. {} indices are None in the rd_mols list. The corresponding"
+                           "SMILES are {}. They are on lines {} in the file ".format(nones, missing_mols, lines))
+
+    return rd_mols
 
 
 def smiles_to_oemol(smiles, name='', normalize=True):
