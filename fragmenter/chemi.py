@@ -620,9 +620,10 @@ def smifile_to_rdmols(filename):
         print(nones)
         missing_mols = [smiles_list[none] for none in nones]
         lines = [int(none) + 1 for none in nones]
-
-        raise RuntimeError("Not all SMILES were parsed properly. {} indices are None in the rd_mols list. The corresponding"
+        error = RuntimeError("Not all SMILES were parsed properly. {} indices are None in the rd_mols list. The corresponding"
                            "SMILES are {}. They are on lines {} in the file ".format(nones, missing_mols, lines))
+        error.results = rd_mols
+        raise error
 
     return rd_mols
 
