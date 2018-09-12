@@ -73,23 +73,23 @@ class TestFragment(unittest.TestCase):
 
         self.assertEqual(tautomers_1, tautomers_2)
 
-    # def test_expand_enantiomers(self):
-    #     smiles = 'CN(C)C/C=C/C(=O)NC1=C(C=C2C(=C1)C(=NC=N2)NC3=CC(=C(C=C3)F)Cl)O[C@H]4CCOC4'
-    #     molecule = chemi.smiles_to_oemol(smiles)
-    #     stereoisomers = fragmenter.fragment._expand_states(molecule, enumerate='stereoisomers')
-    #
-    #     stereoisomers_1 = {'CN(C)C/C=C/C(=O)Nc1cc2c(cc1O[C@@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F',
-    #                     'CN(C)C/C=C/C(=O)Nc1cc2c(cc1O[C@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F',
-    #                     'CN(C)C/C=C\\C(=O)Nc1cc2c(cc1O[C@@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F',
-    #                     'CN(C)C/C=C\\C(=O)Nc1cc2c(cc1O[C@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F'}
-    #
-    #     stereoisomers_2 = set()
-    #     for mol in stereoisomers:
-    #         stereoisomers_2.add(to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=False, isomeric=True))
-    #     intersection = stereoisomers_1.intersection(stereoisomers_2)
-    #     self.assertEqual(len(intersection), len(stereoisomers_1))
-    #     self.assertEqual(len(intersection), len(stereoisomers_2))
-    #     self.assertEqual(len(stereoisomers_1), len(stereoisomers_2))
+    def test_expand_enantiomers(self):
+        smiles = 'CN(C)C/C=C/C(=O)NC1=C(C=C2C(=C1)C(=NC=N2)NC3=CC(=C(C=C3)F)Cl)O[C@H]4CCOC4'
+        molecule = chemi.smiles_to_oemol(smiles)
+        stereoisomers = fragmenter.fragment._expand_states(molecule, enumerate='stereoisomers')
+
+        stereoisomers_1 = {'CN(C)C/C=C/C(=O)Nc1cc2c(cc1O[C@@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F',
+                        'CN(C)C/C=C/C(=O)Nc1cc2c(cc1O[C@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F',
+                        'CN(C)C/C=C\\C(=O)Nc1cc2c(cc1O[C@@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F',
+                        'CN(C)C/C=C\\C(=O)Nc1cc2c(cc1O[C@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F'}
+
+        stereoisomers_2 = set()
+        for mol in stereoisomers:
+            stereoisomers_2.add(to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=False, isomeric=True))
+        intersection = stereoisomers_1.intersection(stereoisomers_2)
+        self.assertEqual(len(intersection), len(stereoisomers_1))
+        self.assertEqual(len(intersection), len(stereoisomers_2))
+        self.assertEqual(len(stereoisomers_1), len(stereoisomers_2))
 
 
 
