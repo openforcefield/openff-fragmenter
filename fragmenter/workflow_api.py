@@ -8,7 +8,7 @@ import os
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from openeye import oechem
-from cmiles import to_molecular_id
+from cmiles import to_molecule_id
 
 
 _default_options = {}
