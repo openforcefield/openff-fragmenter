@@ -228,7 +228,7 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['dihedrals']), 1)
         self.assertEqual(len(crank_jobs['CCCC']['crank_job_1']['dihedrals']), 2)
         self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance'], crank_jobs['CCCC']['crank_job_1']['provenance'])
-        self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']), 5)
+        self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']), 7)
         self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_smiles'],
                          crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_explicit_hydrogen_smiles'])
 
