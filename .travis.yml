@@ -61,7 +61,7 @@ script:
   - conda build --python=$PYTHON_VER devtools/conda-recipe
   - conda install --yes --use-local fragmenter
 
-  - pytest -v --cov=fragmenter fragmenter/tests/
+  - pytest -v -s --cov=fragmenter fragmenter/tests/
 
 notifications:
     email: false
