@@ -8,7 +8,7 @@ import os
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from openeye import oechem
-from cmiles import to_canonical_smiles
+from cmiles import to_molecular_id
 
 
 _default_options = {}
@@ -130,7 +130,7 @@ def enumerate_fragments(molecule, title='', mol_provenance=None, options=None, j
     for fragm in fragments:
         for i, frag in enumerate(fragments[fragm]):
             fragment_mol = chemi.smiles_to_oemol(frag)
-            SMILES = to_canonical_smiles(fragment_mol, canonicalization='openeye')
+            SMILES = to_molecule_id(fragment_mol, canonicalization='openeye')
 
             frag = SMILES['canonical_isomeric_smiles']
             fragments_json_dict[frag] = {'SMILES': SMILES}
@@ -156,6 +156,9 @@ def enumerate_fragments(molecule, title='', mol_provenance=None, options=None, j
             fragments_json_dict[frag]['molecule'] = qm_mol
             fragments_json_dict[frag]['provenance'] = provenance
             fragments_json_dict[frag]['provenance']['canonicalization'] = SMILES.pop('provenance')
+
+            needed_torsion_drives = torsions.find_torsions(mol)
+            fragments_json_dict[frag]['needed_torsion_drives'] = needed_torsion_drives
 
 
     if json_filename:

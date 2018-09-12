@@ -18,6 +18,7 @@ def test_fragmenter_imported():
 
 class TestFragment(unittest.TestCase):
 
+    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_stereo_parent(self):
         """Test non isomeric and isomeric parent molecule SMILES"""
         smiles = 'NC(C)(F)C(=O)O'
@@ -33,6 +34,8 @@ class TestFragment(unittest.TestCase):
         fragmenter.fragment._generate_fragments(mol_2)
         fragmenter.fragment._generate_fragments(mol_3)
 
+
+    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_expand_protonation_states(self):
         """Test expand protonation states"""
         smiles = 'C5=C(C1=CN=CC=C1)N=C(NC2=C(C=CC(=C2)NC(C3=CC=C(C=C3)CN4CCN(CC4)C)=O)C)N=C5'
@@ -62,6 +65,8 @@ class TestFragment(unittest.TestCase):
         self.assertEqual(len(intersection), len(protonation_1))
         self.assertEqual(len(intersection), len(protonation_2))
 
+
+    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_expand_tautomers(self):
         """Test expand tautomer"""
         smiles_1 ='c1ccc2c(c1)C=CCC2=O'
@@ -73,6 +78,8 @@ class TestFragment(unittest.TestCase):
 
         self.assertEqual(tautomers_1, tautomers_2)
 
+
+    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_expand_enantiomers(self):
         smiles = 'CN(C)C/C=C/C(=O)NC1=C(C=C2C(=C1)C(=NC=N2)NC3=CC(=C(C=C3)F)Cl)O[C@H]4CCOC4'
         molecule = chemi.smiles_to_oemol(smiles)
