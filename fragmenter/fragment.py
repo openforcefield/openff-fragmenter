@@ -1,20 +1,18 @@
 from itertools import combinations
 import openeye as oe
 from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
-
-from openmoltools import openeye
+from cmiles import to_canonical_smiles_oe
 
 import yaml
 import os
-import pwd
 from pkg_resources import resource_filename
 import copy
 import itertools
-import uuid
 import json
 
-from .utils import logger, normalize_molecule, new_output_stream, write_oedatabase, smiles_to_oemol
-import fragmenter
+from .utils import logger, make_python_identifier
+from .chemi import to_smi, normalize_molecule, get_charges
+
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
@@ -88,7 +86,8 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
     for molecule in molecules:
         #states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
         # Not using create mapped SMILES because OEMol is needed but state is OEMolBase.
-        states.add(oechem.OEMolToSmiles(molecule))
+        #states.add(oechem.OEMolToSmiles(molecule))
+        states.add(to_canonical_smiles_oe(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
 
     logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 
@@ -99,7 +98,7 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
             molecule = molecule + ' ' + title + '_' + str(count)
             count += 1
             smiles_list.append(molecule)
-        fragmenter.utils.to_smi(smiles_list, filename)
+        to_smi(smiles_list, filename)
 
     if return_smiles_list:
         return smiles_list
@@ -246,7 +245,7 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Fal
             IUPAC = oeiupac.OECreateIUPACName(molecule)
             name = molecule.GetTitle()
             if IUPAC == name:
-                name = fragmenter.utils.make_python_identifier(oechem.OEMolToSmiles(molecule))[0]
+                name = make_python_identifier(oechem.OEMolToSmiles(molecule))[0]
             oname = '{}.pdf'.format(name)
             print(oname)
             ToPdf(charged, oname, frags)
@@ -276,7 +275,7 @@ def _generate_fragments(mol, strict_stereo=True):
     """
 
     try:
-        charged = openeye.get_charges(mol, keep_confs=1, strictStereo=strict_stereo)
+        charged = get_charges(mol, keep_confs=1, strict_stereo=strict_stereo)
     except RuntimeError:
         logger().warning("Could not charge molecule {} so no WBO were calculated. Cannot fragment molecule {}".format(mol.GetTitle(),
                                                                                                                       mol.GetTitle()))
@@ -806,7 +805,7 @@ def frag_to_smiles(frags, mol):
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
         #s = oechem.OEMolToSmiles(fragment)
         #s2 = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=False)
-        s = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=True)
+        s = to_canonical_smiles_oe(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
 
         if s not in smiles:
             smiles[s] = []

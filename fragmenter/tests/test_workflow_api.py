@@ -2,7 +2,7 @@
 
 import unittest
 import fragmenter
-from fragmenter import workflow_api
+from fragmenter import workflow_api, chemi
 from fragmenter.tests.utils import get_fn, has_crank, has_openeye
 import json
 import copy
@@ -13,16 +13,6 @@ class TestWorkflow(unittest.TestCase):
     def test_get_provenance(self):
         """Test get provenance"""
         provenance = workflow_api._get_provenance(routine='enumerate_states')
-        canonicalization_details = {'canonical_isomeric_SMILES': {'Flags': ['ISOMERIC',
-                                                                            'Isotopes',
-                                                                            'AtomStereo',
-                                                                            'BondStereo',
-                                                                            'Canonical',
-                                                                            'AtomMaps',
-                                                                            'RGroups'],
-                                    'oe_function': 'openeye.oechem.OEMolToSmiles(molecule)'},
-                                    'package': 'openeye-v2018.Feb.1'}
-        self.assertEqual(provenance['canonicalization_details'], canonicalization_details)
         default_kewyords = {'carbon_hybridization': True,
                             'level': 0,
                             'max_states': 200,
@@ -36,12 +26,10 @@ class TestWorkflow(unittest.TestCase):
 
         options = get_fn('options.yaml')
         provenance = workflow_api._get_provenance(routine='enumerate_states', options=options)
-        self.assertEqual(provenance['canonicalization_details'], canonicalization_details)
         self.assertTrue(provenance['routine']['enumerate_states']['keywords']['tautomers'])
         self.assertFalse(provenance['routine']['enumerate_states']['keywords']['stereoisomers'])
 
         provenance = workflow_api._get_provenance(routine='enumerate_fragments', options=options)
-        self.assertEqual(provenance['canonicalization_details'], workflow_api._canonicalization_details)
         self.assertTrue(provenance['routine']['enumerate_fragments']['keywords']['generate_visualization'])
         self.assertFalse(provenance['routine']['enumerate_fragments']['keywords']['strict_stereo'])
 
@@ -132,7 +120,7 @@ class TestWorkflow(unittest.TestCase):
         states.pop('provenance')
         self.assertEqual(states, smiles)
 
-    def test_enumerate_fragents(self):
+    def test_enumerate_fragments(self):
         """Test enumerate fragments"""
 
         mol_smiles = 'CCCCC'
@@ -205,10 +193,10 @@ class TestWorkflow(unittest.TestCase):
 
         self.assertEqual(len(frags_iso.keys()), 2)
         iso_frag = frags_iso['CC[C@@H](C)N']
-        self.assertEqual(iso_frag['SMILES']['canonical_SMILES'], 'CCC(C)N')
-        self.assertEqual(iso_frag['SMILES']['canonical_isomeric_explicit_hydrogen_SMILES'],
+        self.assertEqual(iso_frag['SMILES']['canonical_smiles'], 'CCC(C)N')
+        self.assertEqual(iso_frag['SMILES']['canonical_isomeric_explicit_hydrogen_smiles'],
                          '[H][C@@](C([H])([H])[H])(C([H])([H])C([H])([H])[H])N([H])[H]')
-        self.assertEqual(iso_frag['SMILES']['canonical_explicit_hydrogen_SMILES'],
+        self.assertEqual(iso_frag['SMILES']['canonical_explicit_hydrogen_smiles'],
                          '[H]C([H])([H])C([H])([H])C([H])(C([H])([H])[H])N([H])[H]')
 
     def test_generate_crank_jobs(self):
@@ -240,9 +228,9 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['dihedrals']), 1)
         self.assertEqual(len(crank_jobs['CCCC']['crank_job_1']['dihedrals']), 2)
         self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance'], crank_jobs['CCCC']['crank_job_1']['provenance'])
-        self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']), 5)
-        self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_SMILES'],
-                         crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_explicit_hydrogen_SMILES'])
+        self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']), 7)
+        self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_smiles'],
+                         crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_explicit_hydrogen_smiles'])
 
     @unittest.skipUnless(has_crank, 'Cannot test without crank')
     def test_crank(self):
@@ -267,7 +255,7 @@ class TestWorkflow(unittest.TestCase):
         from openeye import oechem
         crank_jobs = workflow_api.workflow(['CCCC'], write_json_crank_job=False)
 
-        mol_with_map = fragmenter.utils.smiles_to_oemol(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_SMILES'])
+        mol_with_map = chemi.smiles_to_oemol(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_smiles'])
 
         for job in crank_jobs['CCCC']:
             dihedrals = crank_jobs['CCCC'][job]['dihedrals']

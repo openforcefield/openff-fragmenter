@@ -10,7 +10,8 @@ import os
 import json
 import itertools
 
-from . import utils
+from . import utils, chemi
+from cmiles import to_canonical_smiles_oe
 
 warnings.simplefilter('always')
 
@@ -32,10 +33,12 @@ def find_torsions(molecule):
 
     """
     # Check if molecule has map
-    is_mapped = utils.is_mapped(molecule)
+    is_mapped = chemi.is_mapped(molecule)
     if not is_mapped:
         utils.logger().warning('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
-        tagged_smiles = utils.create_mapped_smiles(molecule)
+        tagged_smiles = to_canonical_smiles_oe(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
+        # Generate new molecule with tags
+        molecule = chemi.smiles_to_oemol(tagged_smiles)
         utils.logger().warning('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
         utils.logger().warning('The new tagged SMARTS is: {}'.format(tagged_smiles))
         # ToDo: save the new tagged SMILES somewhere. Maybe return it?
@@ -108,6 +111,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
     # Keep only one torsion per rotatable bond
     tors = []
     best_tor = [sorted_tors[0][0], sorted_tors[0][0], sorted_tors[0][0], sorted_tors[0][0]]
+    best_tor_order = best_tor[0].GetAtomicNum() + best_tor[3].GetAtomicNum()
     first_pass = True
     for tor in sorted_tors:
         utils.logger().debug("Map Idxs: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))

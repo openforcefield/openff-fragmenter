@@ -1,11 +1,11 @@
 {
   "CCCC": {
     "SMILES": {
-      "canonical_SMILES": "CCCC",
-      "canonical_explicit_hydrogen_SMILES": "[H]C([H])([H])C([H])([H])C([H])([H])C([H])([H])[H]",
-      "canonical_isomeric_SMILES": "CCCC",
-      "canonical_isomeric_explicit_hydrogen_SMILES": "[H]C([H])([H])C([H])([H])C([H])([H])C([H])([H])[H]",
-      "canonical_isomeric_explicit_hydrogen_mapped_SMILES": "[H:5][C:1]([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])[H:14]"},
+      "canonical_smiles": "CCCC",
+      "canonical_explicit_hydrogen_smiles": "[H]C([H])([H])C([H])([H])C([H])([H])C([H])([H])[H]",
+      "canonical_isomeric_smiles": "CCCC",
+      "canonical_isomeric_explicit_hydrogen_smiles": "[H]C([H])([H])C([H])([H])C([H])([H])C([H])([H])[H]",
+      "canonical_isomeric_explicit_hydrogen_mapped_smiles": "[H:5][C:1]([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])[H:14]"},
     "molecule": {
       "geometry": [
         0.31914281845092773,

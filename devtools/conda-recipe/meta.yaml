@@ -12,13 +12,12 @@ requirements:
   build:
     - python
     - setuptools
-    - openmoltools
 
   run:
     - python
     - setuptools
-    - openmoltools
     - openeye-toolkits
+    - rdkit
     - pyyaml
 
 test:

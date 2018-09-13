@@ -4,8 +4,8 @@ import unittest
 import json
 from fragmenter.tests.utils import get_fn, has_openeye
 import fragmenter.torsions as torsions
-from fragmenter import utils
-from openmoltools import openeye
+from fragmenter import utils, chemi
+from cmiles import to_canonical_smiles_oe
 import warnings
 
 
@@ -22,9 +22,9 @@ class TestTorsions(unittest.TestCase):
         needed_torsion_scans = torsions.find_torsions(molecule=inp_mol)
         self.assertEqual(len(needed_torsion_scans['internal']), 1)
         self.assertEqual(len(needed_torsion_scans['terminal']), 2)
-        self.assertEqual(needed_torsion_scans['internal']['torsion_0'], (14, 10, 7, 4))
-        self.assertEqual(needed_torsion_scans['terminal']['torsion_0'], (10, 7, 4, 3))
-        self.assertEqual(needed_torsion_scans['terminal']['torsion_1'], (7, 10, 14, 13))
+        self.assertEqual(needed_torsion_scans['internal']['torsion_0'], (1, 3, 4, 2))
+        self.assertEqual(needed_torsion_scans['terminal']['torsion_0'], (4, 3, 1, 5))
+        self.assertEqual(needed_torsion_scans['terminal']['torsion_1'], (3, 4, 2, 8))
 
     @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_tagged_smiles(self):
@@ -35,7 +35,7 @@ class TestTorsions(unittest.TestCase):
         inp_mol = oechem.OEMol()
         oechem.OEReadMolecule(ifs, inp_mol)
 
-        tagged_smiles = utils.create_mapped_smiles(inp_mol)
+        tagged_smiles = to_canonical_smiles_oe(inp_mol, isomeric=True, mapped=True, explicit_hydrogen=True)
 
         # Tags should always be the same as mol2 molecule ordering
         self.assertEqual(tagged_smiles, '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]')
@@ -45,13 +45,13 @@ class TestTorsions(unittest.TestCase):
         """Test get atom map"""
         from openeye import oechem
         tagged_smiles = '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]'
-        mol_1 = openeye.smiles_to_oemol('CC[N+]#C')
+        mol_1 = chemi.smiles_to_oemol('CC[N+]#C')
         inf = get_fn('ethylmethylidyneamonium.mol2')
         ifs = oechem.oemolistream(inf)
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_1)
+        mol_1, atom_map = chemi.get_atom_map(tagged_smiles, mol_1)
 
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
@@ -62,13 +62,13 @@ class TestTorsions(unittest.TestCase):
 
         # Test aromatic molecule
         tagged_smiles = '[H:10][c:4]1[c:3]([c:2]([c:1]([c:6]([c:5]1[H:11])[H:12])[C:7]([H:13])([H:14])[H:15])[H:8])[H:9]'
-        mol_1 = openeye.smiles_to_oemol('Cc1ccccc1')
+        mol_1 = chemi.smiles_to_oemol('Cc1ccccc1')
         inf = get_fn('toluene.mol2')
         ifs = oechem.oemolistream(inf)
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_1)
+        mol_1, atom_map = chemi.get_atom_map(tagged_smiles, mol_1)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
@@ -81,8 +81,8 @@ class TestTorsions(unittest.TestCase):
         """Test atom map"""
         from openeye import oechem
         tagged_smiles = '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]'
-        mol_from_tagged_smiles = openeye.smiles_to_oemol(tagged_smiles)
-        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_from_tagged_smiles)
+        mol_from_tagged_smiles = chemi.smiles_to_oemol(tagged_smiles)
+        mol_1, atom_map = chemi.get_atom_map(tagged_smiles, mol_from_tagged_smiles)
 
         # Compare atom map to tag
         for i in range(1, len(atom_map) +1):
@@ -94,23 +94,23 @@ class TestTorsions(unittest.TestCase):
         """Test writing out mapped xyz"""
         from openeye import oechem, oeomega
         tagged_smiles = '[H:10][c:4]1[c:3]([c:2]([c:1]([c:6]([c:5]1[H:11])[H:12])[C:7]([H:13])([H:14])[H:15])[H:8])[H:9]'
-        mol_1 = openeye.smiles_to_oemol('Cc1ccccc1')
+        mol_1 = chemi.smiles_to_oemol('Cc1ccccc1')
         inf = get_fn('toluene.mol2')
         ifs = oechem.oemolistream(inf)
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        mol_1, atom_map = utils.get_atom_map(tagged_smiles, mol_1)
+        mol_1, atom_map = chemi.get_atom_map(tagged_smiles, mol_1)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
             atom_2 = mol_2.GetAtom(oechem.OEHasAtomIdx(mapping-1))
             atom_2.SetAtomicNum(i+1)
 
-        xyz_1 = utils.to_mapped_xyz(mol_1, atom_map)
+        xyz_1 = chemi.to_mapped_xyz(mol_1, atom_map)
         # molecule generated from mol2 should be in the right order.
         atom_map_mol2 = {1:0, 2:1, 3:2, 4:3, 5:4, 6:5, 7:6, 8:7, 9:8, 10:9, 11:10, 12:11, 13:12, 14:13, 15:14}
-        xyz_2 = utils.to_mapped_xyz(mol_2, atom_map_mol2)
+        xyz_2 = chemi.to_mapped_xyz(mol_2, atom_map_mol2)
 
         for ele1, ele2 in zip(xyz_1.split('\n')[:-1], xyz_2.split('\n')[:-1]):
             self.assertEqual(ele1.split(' ')[2], ele2.split(' ')[2])
@@ -120,23 +120,23 @@ class TestTorsions(unittest.TestCase):
         """Test mapped geometry"""
         from openeye import oechem
 
-        infile = get_fn('butane.pdb')
+        infile = get_fn('butane.xyz')
         ifs = oechem.oemolistream(infile)
         molecule = oechem.OEMol()
         oechem.OEReadMolecule(ifs, molecule)
-        tagged_smiles = utils.create_mapped_smiles(molecule)
-        molecule, atom_map = utils.get_atom_map(tagged_smiles, molecule)
-        mapped_geometry = utils.to_mapped_QC_JSON_geometry(molecule, atom_map)
+        tagged_smiles = to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=True, mapped=True)
+        molecule, atom_map = chemi.get_atom_map(tagged_smiles, molecule)
+        mapped_geometry = chemi.to_mapped_QC_JSON_geometry(molecule, atom_map)
 
         f = open(infile)
         line = f.readline()
         symbols = []
         geometry = []
-        while line.strip():
-            if line.startswith('ATOM'):
+        while line:
+            if line.startswith('  '):
                 line = line.split()
-                symbols.append(line[2][0])
-                geometry.append(line[5:8])
+                symbols.append(line[0])
+                geometry.append(line[1:])
             line = f.readline()
         f.close()
         geometry = sum(geometry, [])

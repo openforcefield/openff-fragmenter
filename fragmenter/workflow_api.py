@@ -6,25 +6,10 @@ import json
 import os
 
 import fragmenter
-from fragmenter import fragment, torsions, utils
-import openeye as oe
+from fragmenter import fragment, torsions, utils, chemi
 from openeye import oechem
+from cmiles import to_molecule_id
 
-
-_OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
-_canonicalization_details = {'package': _OPENEYE_VERSION,
-                             'canonical_isomeric_SMILES': {'Flags': ['ISOMERIC', 'Isotopes', 'AtomStereo',
-                                                                    'BondStereo', 'Canonical', 'AtomMaps', 'RGroups'],
-                                                           'oe_function': 'openeye.oechem.OEMolToSmiles(molecule)'},
-
-                             'canonical_SMILES': {'Flags': ['DEFAULT', 'Canonical', 'AtomMaps', 'RGroups'],
-                                                  'oe_function': 'openeye.oechem.OECreateCanSmiString(molecule)'},
-                             'canonical_isomeric_explicit_hydrogen_SMILES': {'Flags': ['Hydrogens', 'Isotopes', 'AtomStereo',
-                                                                                      'BondStereo', 'Canonical', 'RGroups'],
-                                                                            'oe_function': 'openeye.oechem.OECreateSmiString()'},
-                             'canonical_explicit_hydrogen_SMILES': {'Flags': ['Hydrogens', 'Canonical', 'RGroups'],
-                                                                   'oe_function': 'openeye.oechem.OECreateSmiString()'},
-                             'notes': 'All other available OESMIELSFlag are set to False'}
 
 _default_options = {}
 _default_options['enumerate_states'] = {'protonation': True,
@@ -81,7 +66,7 @@ def enumerate_states(molecule, title='', options=None, json_filename=None):
     provenance = _get_provenance('enumerate_states', options=options)
     options = provenance['routine']['enumerate_states']['keywords']
 
-    molecule = utils.check_molecule(molecule, title=title)
+    molecule = chemi.standardize_molecule(molecule, title=title)
     can_iso_smiles = oechem.OEMolToSmiles(molecule)
     states = fragment.expand_states(molecule, **options)
 
@@ -129,7 +114,7 @@ def enumerate_fragments(molecule, title='', mol_provenance=None, options=None, j
     provenance['routine']['enumerate_fragments']['parent_molecule'] = molecule
     options = provenance['routine']['enumerate_fragments']['keywords']
 
-    parent_molecule = utils.check_molecule(molecule, title)
+    parent_molecule = chemi.standardize_molecule(molecule, title)
     provenance['routine']['enumerate_fragments']['parent_molecule_name'] = parent_molecule.GetTitle()
 
     fragments = fragment.generate_fragments(parent_molecule, **options)
@@ -144,38 +129,36 @@ def enumerate_fragments(molecule, title='', mol_provenance=None, options=None, j
     fragments_json_dict = {}
     for fragm in fragments:
         for i, frag in enumerate(fragments[fragm]):
-            SMILES = {}
-            fragment_mol = utils.smiles_to_oemol(frag)
-            SMILES['canonical_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False,
-                                                                    explicit_hydrogen=False)
-            SMILES['canonical_isomeric_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, explicit_hydrogen=False)
-            SMILES['canonical_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False, isomeric=False)
-            SMILES['canonical_isomeric_explicit_hydrogen_SMILES'] = utils.create_mapped_smiles(fragment_mol, tagged=False)
-            SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(fragment_mol)
+            fragment_mol = chemi.smiles_to_oemol(frag)
+            SMILES = to_molecule_id(fragment_mol, canonicalization='openeye')
 
-            frag = SMILES['canonical_isomeric_SMILES']
+            frag = SMILES['canonical_isomeric_smiles']
             fragments_json_dict[frag] = {'SMILES': SMILES}
 
 
             # Generate QM molecule
-            mol, atom_map = utils.get_atom_map(tagged_smiles=SMILES['canonical_isomeric_explicit_hydrogen_mapped_SMILES'],
+            mol, atom_map = chemi.get_atom_map(tagged_smiles=SMILES['canonical_isomeric_explicit_hydrogen_mapped_smiles'],
                                                molecule=fragment_mol)
 
             # Generate xyz coordinates for debugging
-            utils.to_mapped_xyz(mol, atom_map)
+            chemi.to_mapped_xyz(mol, atom_map)
 
-            charge = utils.get_charge(mol)
+            charge = chemi.get_charge(mol)
             try:
-                qm_mol = utils.to_mapped_QC_JSON_geometry(mol, atom_map, charge=charge)
+                qm_mol = chemi.to_mapped_QC_JSON_geometry(mol, atom_map, charge=charge)
             except RuntimeError:
                 utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
                               "{} will not be included in fragments dictionary".format(
-                        SMILES['canonical_isomeric_SMILES'], SMILES['canonical_isomeric_SMILES']))
+                        SMILES['canonical_isomeric_smiles'], SMILES['canonical_isomeric_smiles']))
                 fragments_json_dict.pop(frag)
                 continue
 
             fragments_json_dict[frag]['molecule'] = qm_mol
             fragments_json_dict[frag]['provenance'] = provenance
+            fragments_json_dict[frag]['provenance']['canonicalization'] = SMILES.pop('provenance')
+
+            needed_torsion_drives = torsions.find_torsions(mol)
+            fragments_json_dict[frag]['needed_torsion_drives'] = needed_torsion_drives
 
 
     if json_filename:
@@ -207,13 +190,13 @@ def generate_crank_jobs(fragment_dict, options=None, fragment_name=None):
     provenance = _get_provenance(routine='generate_crank_jobs', options=options)
     options = provenance['routine']['generate_crank_jobs']['keywords']
 
-    mapped_smiles = fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_SMILES']
-    OEMol = utils.smiles_to_oemol(mapped_smiles)
+    mapped_smiles = fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
+    OEMol = chemi.smiles_to_oemol(mapped_smiles)
 
     # Check if molecule is mapped
-    if not utils.is_mapped(OEMol):
+    if not chemi.is_mapped(OEMol):
         utils.logger().warning("OEMol is not mapped. Creating a new mapped SMILES")
-        fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_SMILES'] = utils.create_mapped_smiles(OEMol)
+        fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_smiles'] = chemi.create_mapped_smiles(OEMol)
 
     needed_torsion_drives = torsions.find_torsions(OEMol)
     fragment_dict['needed_torsion_drives'] = needed_torsion_drives
@@ -334,15 +317,9 @@ def _get_provenance(routine, options=None):
                   },
                   'username': getpass.getuser()}
 
-    if routine == 'enumerate_states':
-        package = _canonicalization_details['package']
-        can_is_smiles = _canonicalization_details['canonical_isomeric_SMILES']
-        canonicalization_details = {'package': package,
-                                    'canonical_isomeric_SMILES': can_is_smiles}
-        provenance['canonicalization_details'] = canonicalization_details
-    if routine == 'enumerate_fragments':
-        canonicalization_details = _canonicalization_details
-        provenance['canonicalization_details'] = canonicalization_details
+    # if routine == 'enumerate_fragments':
+    #     #canonicalization_details = _canonicalization_details
+    #     provenance['canonicalization_details'] = canonicalization_details
 
     provenance['routine'][routine]['keywords'] = _load_options(routine, options)
 
