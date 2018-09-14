@@ -1,0 +1,43 @@
+{"workflow_1": {
+    "fragmenter": {
+      "enumerate_states": {
+        "version": "0.0.0",
+        "options": {
+          "protonation": true,
+          "tautomers": false,
+          "stereoisomers": true,
+          "max_states": 200,
+          "level": 0,
+          "reasonable": true,
+          "carbon_hybridization": true,
+          "suppress_hydrogen": true
+        }
+      },
+      "enumerate_fragments": {
+        "version": "0.0.0",
+        "options": {
+          "strict_stereo": true,
+          "combinatorial": true,
+          "MAX_ROTORS": 2,
+          "remove_map": true
+        }
+      },
+      "torsiondrive_input": {
+        "version": "0.0.0",
+        "options": {
+          "max_conf": 1,
+          "terminal_torsion_resolution": 30,
+          "internal_torsion_resolution": 30,
+          "scan_internal_terminal_combination": 0,
+          "scan_dimension": 2
+        }
+      }
+    },
+    "torsiondriver": {
+      "version": "0.1.0",
+      "qc_program": "psi4",
+      "method": "B3LYP",
+      "basis": "aug-cc-pVDZ"
+    }
+  }
+}
