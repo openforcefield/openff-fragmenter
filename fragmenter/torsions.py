@@ -66,12 +66,12 @@ def find_torsions(molecule):
     if h_tors:
         h_tors_min = one_torsion_per_rotatable_bond(h_tors)
         for i, tor in enumerate(h_tors_min):
-            tor_name = ((tor[0].GetMapIdx()), (tor[1].GetMapIdx()), (tor[2].GetMapIdx()), (tor[3].GetMapIdx()))
+            tor_name = ((tor[0].GetMapIdx() -1 ), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
             needed_torsion_scans['terminal']['torsion_{}'.format(str(i))] = tor_name
     if mid_tors:
         mid_tors_min = one_torsion_per_rotatable_bond(mid_tors)
         for i, tor in enumerate(mid_tors_min):
-            tor_name = ((tor[0].GetMapIdx()), (tor[1].GetMapIdx()), (tor[2].GetMapIdx()), (tor[3].GetMapIdx()))
+            tor_name = ((tor[0].GetMapIdx() - 1), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
             needed_torsion_scans['internal']['torsion_{}'.format(str(i))] = tor_name
 
     # Check that there are no duplicate torsions in mid and h_torsions
@@ -188,10 +188,11 @@ def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_tor
     terminal_dimension = len(terminal_torsions)
     torsion_dimension = internal_dimension + terminal_dimension
 
-    model = {'method': method, 'basis': basis}
-    options = {'scf_type': 'df'}
-    if kwargs:
-        options = kwargs['options']
+    # model = {'method': method, 'basis': basis}
+    # options = {'scf_type': 'df'}
+    # if kwargs:
+    #     print(kwargs)
+    #     options = kwargs['options']
 
     crank_job = 0
     crank_jobs = dict()
@@ -199,30 +200,22 @@ def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_tor
     if not scan_internal_terminal_combination:
         if internal_torsion_resolution:
             for comb in itertools.combinations(internal_torsions, scan_dimension):
-                internal_grid = {torsion: internal_torsion_resolution for torsion in comb}
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                                'internal_torsions': internal_grid,
-                                                                'terminal_torsions': {}}
+                internal_grid = {internal_torsions[torsion]: internal_torsion_resolution for torsion in comb}
+                crank_jobs['crank_job_{}'.format(crank_job)] = internal_grid
                 crank_job +=1
             if internal_dimension < scan_dimension:
-                internal_grid = {torsion: internal_torsion_resolution for torsion in internal_torsions}
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                                'internal_torsions': internal_grid,
-                                                                'terminal_torsions': {}}
+                internal_grid = {internal_torsions[torsion]: internal_torsion_resolution for torsion in internal_torsions}
+                crank_jobs['crank_job_{}'.format(crank_job)] = internal_grid
                 crank_job +=1
 
         if terminal_torsion_resolution:
             for comb in itertools.combinations(terminal_torsions, scan_dimension):
-                terminal_grid = {torsion: terminal_torsion_resolution for torsion in comb}
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                                'internal_torsions': {},
-                                                                'terminal_torsions': terminal_grid}
+                terminal_grid = {terminal_torsions[torsion]: terminal_torsion_resolution for torsion in comb}
+                crank_jobs['crank_job_{}'.format(crank_job)] = terminal_grid
                 crank_job +=1
             if terminal_dimension < scan_dimension:
-                terminal_grid = {torsion: internal_torsion_resolution for torsion in terminal_torsions}
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                                'internal_torsions': {},
-                                                                'terminal_torsions': terminal_grid}
+                terminal_grid = {terminal_torsions[torsion]: internal_torsion_resolution for torsion in terminal_torsions}
+                crank_jobs['crank_job_{}'.format(crank_job)] = terminal_grid
                 crank_job +=1
     else:
         # combine both internal and terminal torsions
@@ -230,14 +223,12 @@ def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_tor
         for comb in itertools.combinations(all_torsion_idx, scan_dimension):
             internal_grid = {'torsion_{}'.format(i): internal_torsion_resolution for i in comb if i < internal_dimension}
             terminal_grid = {'torsion_{}'.format(i-internal_dimension): terminal_torsion_resolution for i in comb if i >= internal_dimension}
-            crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                            'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
+            crank_jobs['crank_job_{}'.format(crank_job)] = {'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
             crank_job += 1
         if torsion_dimension < scan_dimension:
             internal_grid = {'torsion_{}'.format(i): internal_torsion_resolution for i in all_torsion_idx if i < internal_dimension}
             terminal_grid = {'torsion_{}'.format(i-internal_dimension): terminal_torsion_resolution for i in all_torsion_idx if i >= internal_dimension}
-            crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                            'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
+            crank_jobs['crank_job_{}'.format(crank_job)] = {'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
             crank_job += 1
 
     fragment_data['crank_torsion_drives'] = crank_jobs
