@@ -816,6 +816,31 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
     return xyz
 
 
+def get_mapped_connectivity_table(mapped_smiles):
+    """
+    generate a connectivity table with map indices
+
+    Parameters
+    ----------
+    mapped_smiles: str
+        The mapped SMILES. You can get this mapped SMILES from cmiles
+    Returns
+    -------
+    connectivity_table: list
+        list of list of map indices of bond and order [[map_idx_1, map_idx_2, bond_order] ...]
+    """
+    # Check if input is a string
+    if not isinstance(mapped_smiles, str):
+        raise TypeError("Input must be a mapped SMILES which is a string")
+
+    mapped_mol = oechem.OEMol()
+    oechem.OESmilesToMol(mapped_mol, mapped_smiles)
+
+    connectivity_table = [[bond.GetBgn().GetMapIdx()-1, bond.GetEnd().GetMapIdx()-1, bond.GetOrder()]
+                          for bond in mapped_mol.GetBonds()]
+    return connectivity_table
+
+
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Functions for molecule visualization
