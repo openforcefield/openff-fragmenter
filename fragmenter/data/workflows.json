@@ -23,7 +23,7 @@
           "remove_map": true
         }
       },
-      "torsiondrive_input": {
+      "torsiondriver_input": {
         "version": "0.0.0",
         "options": {
           "max_conf": 1,

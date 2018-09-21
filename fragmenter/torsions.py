@@ -192,24 +192,24 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
         if internal_torsion_resolution:
             for comb in itertools.combinations(internal_torsions, scan_dimension):
                 dihedrals = [internal_torsions[torsion] for torsion in comb]
-                grid = [internal_torsion_resolution]*scan_dimension
+                grid = [internal_torsion_resolution]*len(dihedrals)
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
             if internal_dimension < scan_dimension:
                 dihedrals = [internal_torsions[torsion] for torsion in internal_torsions]
-                grid = [internal_torsion_resolution]*scan_dimension
+                grid = [internal_torsion_resolution]*len(dihedrals)
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
 
         if terminal_torsion_resolution:
             for comb in itertools.combinations(terminal_torsions, scan_dimension):
                 dihedrals = [terminal_torsions[torsion] for torsion in comb]
-                grid = [terminal_dimension]*scan_dimension
+                grid = [terminal_torsion_resolution]*scan_dimension
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
             if terminal_dimension < scan_dimension:
                 dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
-                grid = [terminal_torsion_resolution]*scan_dimension
+                grid = [terminal_torsion_resolution]*len(dihedrals)
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
     else:
@@ -277,54 +277,3 @@ def get_initial_crank_state(fragment):
 
         crank_initial_states[job] = crank_state
     return crank_initial_states
-
-
-def to_crank_input(fragment, mol_name=None, path=None, crank_job='crank_job_1', launch=False, **kwargs):
-    """
-    Generate crank input files for a fragment (psi4 input file and dihedral file containing torsions that should
-    be restrained
-
-    Parameters
-    ----------
-    fragment: dict
-    mol_name: str
-        name for molecule. Will be used for filename and molecule name in psi4 input file so it should be a valid Python
-        identifier. If None, a name will be generated from SMILES with invalid characters converted to hex. Default is
-        None
-    path: str
-        path to write files to. If None, the directory will be created in current directory. Default None
-    crank_job: str
-        key to crank job in fragment. Default is crank_job_1
-    **kwargs: key arguments for generating psi4 input file
-
-    Returns
-    -------
-    path: str
-        path to where the files were written
-    inputfile: str
-        absolute path to psi4 input file
-    dihedralfile: str
-        absolute path to dihedral file
-
-    """
-    if not mol_name:
-        # Generate Python valid identifier string from smiles by converting forbidden characters to _hex_
-        smiles = fragment['canonical_isomeric_SMILES']
-        mol_name, namespace = utils.make_python_identifier(smiles, convert='hex')
-    if not path:
-        cwd = os.getcwd()
-        path = os.path.join(cwd, mol_name + '_{}'.format(crank_job))
-
-    # create folder to launch crank in
-    try:
-        os.mkdir(path)
-    except FileExistsError:
-        utils.logger().warning("Overwriting {}".format(path))
-
-    # Write out input files
-    inputfile = os.path.join(path, mol_name + '_{}.dat'.format(crank_job))
-    utils.to_psi4_input(fragment, molecule_name=mol_name, crank_job=crank_job, filename=inputfile, **kwargs)
-    dihedralfile = os.path.join(path, mol_name + '_{}.txt'.format(crank_job))
-    utils.to_dihedraltxt(fragment, crank_job=crank_job, filename=dihedralfile)
-
-    return path, inputfile, dihedralfile

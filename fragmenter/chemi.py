@@ -683,6 +683,7 @@ def file_to_smiles_list(filename, return_titles=True, isomeric=True):
 def standardize_molecule(molecule, title=''):
 
     if isinstance(molecule, oechem.OEMol):
+        mol = molecule
         return molecule
 
     if isinstance(molecule, str):
@@ -695,12 +696,11 @@ def standardize_molecule(molecule, title=''):
                 raise Warning('Could not parse molecule.')
 
         # normalize molecule
-        if not title:
-            title = mol.GetTitle()
-            molecule = normalize_molecule(mol, title=title)
+        mol = normalize_molecule(mol, title=title)
+
     else:
         raise TypeError("Wrong type of input for molecule. Can be SMILES, filename or OEMol")
-    return molecule
+    return mol
 
 
 def mol_to_tagged_smiles(infile, outfile):
@@ -731,45 +731,6 @@ def mol_to_tagged_smiles(infile, outfile):
         # with name if molecule has title
         oechem.OEWriteMolecule(ofs, mol)
 
-
-# def to_mapped_QC_JSON_geometry(molecule, atom_map, charge=0, multiplicity=1):
-#     """
-#     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
-#     tag on the SMILES to the atom idex in OEMol.
-#     Parameters
-#     ----------
-#     molecule: OEMol with conformers
-#     atom_map: dict
-#         maps tag in SMILES to atom index
-#     charge: int
-#         charge of molecule. Default is 0 (neural)
-#     multiplicity: int
-#         spin multiplicity of molecule (2S +1). Default is 1 (all electrons are paired)
-#
-#     Returns
-#     -------
-#     dict: QC_JSON Molecule spec {symbols: [], geometry: [], 'molecular_charge': int, 'molecular_multiplicity': int}
-#
-#     """
-#     symbols = []
-#     geometry = []
-#     if molecule.GetMaxConfIdx() != 1:
-#         raise Warning("The molecule must have at least and at most 1 conformation")
-#
-#     # Check if coordinates are missing
-#     if not has_conformer(molecule, check_two_dimension=True):
-#         raise RuntimeError("molecule {} does not have a 3D conformation".format(oechem.OEMolToSmiles(molecule)))
-#
-#     for mapping in range(1, len(atom_map)+1):
-#         idx = atom_map[mapping]
-#         atom = molecule.GetAtom(oechem.OEHasAtomIdx(idx))
-#         syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
-#         symbols.append(syb)
-#         for i in range(3):
-#             geometry.append(molecule.GetCoords()[idx][i])
-#
-#     return {'symbols': symbols, 'geometry': geometry, 'molecular_charge': charge,
-#             'molecular_multiplicity': multiplicity}
 
 def to_mapped_QC_JSON_geometry(mapped_mol, multiplicity=1):
     """

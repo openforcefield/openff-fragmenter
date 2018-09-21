@@ -1,7 +1,6 @@
 import socket
 import uuid
 import getpass
-import yaml
 import json
 import os
 from pkg_resources import resource_filename
@@ -13,21 +12,24 @@ from cmiles import to_molecule_id
 
 def enumerate_states(molecule, workflow_id, options=None, title='', json_filename=None):
     """
-    enumerate protonation, tautomers and stereoisomers for molecule. Default does not enumerate tautomers, only
-    protonation/ionization states and stereoisomers
+    enumerate protonation, tautomers and stereoisomers for molecule.
 
     Parameters
     ----------
     molecule: any format that OpenEye pareses. Can be path to file containing molecule or SMILES/Inchi string
-    options: str, optional. Default None
-        path to user options yaml file. If None will use default options
-    json_filename: str, optional. default None
-        path to json output file. If None, no file will be written
+    workflow_id: str
+        Which workflow to use as defined in data/workflows.json
+    options: dict, optional, default None
+        dictionary of keyword options. Default is None. If None, will use options defined in workflow ID
+    title: str, optional, default empty string
+        title of molecule. If None, the title of the molecule will be the IUPAC name
+    json_filename: str, optional, default None
+        json filename for states generated. If None will not write json file
 
     Returns
     -------
     json_dict: dict
-        dictoinary containing canonical isomeric SMILES for states and provenane.
+        dictionary containing canonical isomeric SMILES for states and provenance.
 
     """
     # Load options for enumerate states
@@ -35,16 +37,11 @@ def enumerate_states(molecule, workflow_id, options=None, title='', json_filenam
     provenance = _get_provenance(workflow_id=workflow_id, routine=routine)
     if not options:
         options = _get_options(workflow_id, routine)
-    #options = provenance['routine']['enumerate_states']['keywords']
 
     molecule = chemi.standardize_molecule(molecule, title=title)
     can_iso_smiles = oechem.OEMolToSmiles(molecule)
     states = fragment.expand_states(molecule, **options)
 
-    # Remove extraneous options
-    #routine_options = _remove_extraneous_options(user_options=options, routine='enumerate_states')
-
-    #provenance['routine']['enumerate_states']['keywords'] = routine_options
     provenance['routine']['enumerate_states']['parent_molecule'] = can_iso_smiles
     provenance['routine']['enumerate_states']['parent_molecule_name'] = molecule.GetTitle()
     json_dict = {'provenance': provenance, 'states': states}
@@ -66,15 +63,19 @@ def enumerate_fragments(molecule, workflow_id, options=None, mol_provenance=None
     ----------
     molecule: Input molecule. Very permissive. Can be anything that OpenEye can parse
         SMILES string of molecule to fragment
+    workflow_id: str
+        Which workflow to use for options.
+    options: dictionary, optional, default None
+        Dictionary of keyword options. If None, will use optiond defined in workflows
     title: str, optional. Default empty str
         The title or name of the molecule. If empty stirng will use the IUPAC name for molecule title.
     mol_provenance: dict, optional. Default is None
         provenance for molecule. If the molecule is a state from enumerate_states, the provenance from enumerate_states
         should be used
-    options: str, optional, Default None
-        path to yaml file with user options. If None will use default options
     json_filename: str, optional. Default None
         If a filename is provided, will write output to json file.
+    generate_vis: bool, optional, default False
+        If True, will generate visualization of fragments from parent molecule
 
     Returns
     -------
@@ -117,14 +118,22 @@ def enumerate_fragments(molecule, workflow_id, options=None, mol_provenance=None
 
 def generate_torsiondrive_input(fragment_dict, workflow_id, options=None, json_filename=None):
     """
+    Generate input for torsiondriver QCFractal portal
 
     Parameters
     ----------
-    fragment_dict
-    workflow
+    fragment_dict: dict
+        dictionary with fragment identifiers and provenance
+    workflow_id: str
+        workflow to use for options
+    options: dict, optional, default None
+        Keyword options. If None will use options defined in workflow
+    json_filename: str, optional, default None
+        If given will write jobs to json file
 
     Returns
     -------
+    torsiondriver_inputs: dictionary defining the molecule and torsiondriver job options.
 
     """
 
@@ -150,17 +159,16 @@ def generate_torsiondrive_input(fragment_dict, workflow_id, options=None, json_f
                           "{} will not be included in fragments dictionary".format(
                     mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
 
-    torsiondriver_inputs = []
+    identifier = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
+    torsiondriver_inputs = {identifier: {'torsiondriver_input': {}, 'provenance': provenance}}
     needed_torsion_drives = torsions.define_torsiondrive_jobs(torsions.find_torsions(mapped_mol), **options)
-    for job in needed_torsion_drives:
-        print(needed_torsion_drives[job])
+    for i, job in enumerate(needed_torsion_drives):
         torsiondriver_input = dict()
         torsiondriver_input['molecule'] = qm_mol
         torsiondriver_input['molecule']['identifiers'] = mol_id
         torsiondriver_input['dihedrals'] = needed_torsion_drives[job]['dihedrals']
         torsiondriver_input['grid_spacing'] = needed_torsion_drives[job]['grid_spacing']
-        torsiondriver_input['provenance'] = provenance
-        torsiondriver_inputs.append(torsiondriver_input)
+        torsiondriver_inputs[identifier]['torsiondriver_input']['job_{}'.format(i)] = torsiondriver_input
 
     if json_filename:
         with open(json_filename, 'w') as f:
@@ -169,56 +177,8 @@ def generate_torsiondrive_input(fragment_dict, workflow_id, options=None, json_f
     return torsiondriver_inputs
 
 
-def generate_crank_jobs(fragment_dict, options=None, fragment_name=None):
-    """
-
-    Generate crank initial state from fragment json specs
-
-    Parameters
-    ----------
-    fragment_dict: dict
-        JSON spec for fragment
-    options: str, Optional. Default None
-        path to yaml file with options. If None will use default options
-    fragment_name: str, optional. Default None
-        The base name for crank job names. If name is given, each crank job will be written to its own directory with the
-        initial state json file
-    Returns
-    -------
-    crank_initial_states: dict
-        dictionary of crank jobs
-
-    """
-
-    provenance = _get_provenance(routine='generate_crank_jobs', options=options)
-    options = provenance['routine']['generate_crank_jobs']['keywords']
-
-    mapped_smiles = fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
-    OEMol = chemi.smiles_to_oemol(mapped_smiles)
-
-    # Check if molecule is mapped
-    if not chemi.is_mapped(OEMol):
-        utils.logger().warning("OEMol is not mapped. Creating a new mapped SMILES")
-        fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_smiles'] = chemi.create_mapped_smiles(OEMol)
-
-    needed_torsion_drives = torsions.find_torsions(OEMol)
-    fragment_dict['needed_torsion_drives'] = needed_torsion_drives
-
-    crank_job_specs = torsions.define_crank_job(fragment_dict, **options)
-    crank_initial_states = torsions.get_initial_crank_state(crank_job_specs)
-
-    routine_options = _remove_extraneous_options(user_options=options, routine='generate_crank_jobs')
-
-    for crank_job in crank_initial_states:
-        crank_initial_states[crank_job]['provenance'] = fragment_dict['provenance']
-        crank_initial_states[crank_job]['provenance']['SMILES'] = fragment_dict['SMILES']
-        crank_initial_states[crank_job]['provenance']['routine']['generate_crank_jobs'] = provenance['routine']['generate_crank_jobs']
-        crank_initial_states[crank_job]['provenance']['routine']['generate_crank_jobs']['keywords'] = routine_options
-
-    return crank_initial_states
-
-
-def workflow(molecules_smiles, molecule_titles=None, options=None, write_json_intermediate=False, write_json_crank_job=True):
+def workflow(molecules_smiles, workflow_id, molecule_titles=None, generate_vis=False, write_json_intermediate=False,
+             json_filename=None):
     """
     Convenience function to run Fragmenter workflow.
 
@@ -227,19 +187,19 @@ def workflow(molecules_smiles, molecule_titles=None, options=None, write_json_in
     molecules_smiles: list of str
         list of SMILES
     molecule_titles: list of molecule names, optional. Default None
-        If list of molecule names is provided, the name will be added to provenance and used for filenames
-    options: str, optional. Default is None
-        path to yaml file with options.
+        If list of molecule names is provided, the name will be added to provenance and used for intermediate filenames.
+        If not, the name will be the IUPAC name
+    generate_vis: bool, optional, default None
+        If True, will generate visualization of fragments
     write_json_intermediate: bool, optional. Default False
         If True will write JSON files for intermediate steps (enumerating states and fragments)
-    write_json_crank_job: bool, optional. Default Tre
-        If True, will create a directory for crank job with crank initial state. The name of the directory and file will
-        be the canonical SMILES of the fragment.
+    json_filename: str, optional, default None
+        filename to write jobs out to.
 
     Returns
     -------
     molecules: dict
-        JSON specs for crank jobs. Keys are canonical SMILES of fragment.
+        JSON specs for torsiondriver jobs. Keys are canonical isomeric explicit hydrogen mapped SMILES of fragment.
 
     """
 
@@ -248,48 +208,36 @@ def workflow(molecules_smiles, molecule_titles=None, options=None, write_json_in
         molecules_smiles = [molecules_smiles]
 
     all_frags = {}
-    all_crank_jobs = {}
+    options = _get_options(workflow_id=workflow_id, all=True)
     for i, molecule_smile in enumerate(molecules_smiles):
-        json_filename = None
+        filename = None
         title = ''
         if molecule_titles:
             title = molecule_titles[i]
         if write_json_intermediate and title:
-            json_filename = 'states_{}.json'.format(title)
+            filename = 'states_{}.json'.format(title)
         if write_json_intermediate and not title:
-            json_filename = 'states_{}.json'.format(utils.make_python_identifier(molecule_smile)[0])
-        states = enumerate_states(molecule_smile, title=title, options=options, json_filename=json_filename)
+            filename = 'states_{}.json'.format(utils.make_python_identifier(molecule_smile)[0])
+        states = enumerate_states(molecule_smile, workflow_id=workflow_id, title=title, options=options['enumerate_states']['options'], json_filename=filename)
         for j, state in enumerate(states['states']):
             if write_json_intermediate and title:
-                json_filename =  'fragments_{}_{}.json'.format(title, j)
+                filename = 'fragments_{}_{}.json'.format(title, j)
             if write_json_intermediate and not title:
-                json_filename = 'fragment_{}_{}.json'.format(utils.make_python_identifier(state)[0], j)
-            fragments = enumerate_fragments(state, title=title, mol_provenance=states['provenance'], options=options,
-                                            json_filename=json_filename)
+                filename = 'fragment_{}_{}.json'.format(utils.make_python_identifier(state)[0], j)
+            fragments = enumerate_fragments(state, title=title, workflow_id=workflow_id,
+                                            mol_provenance=states['provenance'], options=options['enumerate_fragments']['options'],
+                                            json_filename=filename, generate_vis=generate_vis)
             all_frags.update(**fragments)
-    namespaces = {}
+
+    all_jobs = {}
     for frag in all_frags:
-        crank_jobs = generate_crank_jobs(all_frags[frag], options=options)
-        all_crank_jobs[frag] = crank_jobs
+        crank_jobs = generate_torsiondrive_input(all_frags[frag], workflow_id=workflow_id, options=options['torsiondriver_input']['options'])
+        all_jobs.update(crank_jobs)
 
-        if write_json_crank_job:
-            name, namespace = utils.make_python_identifier(frag, namespace=namespaces, convert='hex', handle='force')
-            namespaces.update(namespace)
-            for job in crank_jobs:
-                # Make directory for job
-                current_path = os.getcwd()
-                path = os.path.join(current_path, name + '_{}'.format(job))
-                try:
-                    os.mkdir(path)
-                except FileExistsError:
-                    utils.logger().warning('Warning: overwriting {}'.format(path))
-                # extend with job number because several jobs can exist in a fragment
-                jsonfilename = os.path.join(path, name + '_{}.json'.format(job))
-                outfile = open(jsonfilename, 'w')
-                json.dump(crank_jobs[job], outfile, indent=2, sort_keys=True)
-                outfile.close()
-
-    return all_crank_jobs
+    if json_filename:
+        with open(json_filename, 'w') as f:
+            json.dump(all_jobs, f, indent=2, sort_keys=True)
+    return all_jobs
 
 
 def _get_provenance(workflow_id, routine):
@@ -319,69 +267,24 @@ def _get_provenance(workflow_id, routine):
                       'version': fragmenter.__version__
                   }}}
 
-    # if routine == 'enumerate_fragments':
-    #     #canonicalization_details = _canonicalization_details
-    #     provenance['canonicalization_details'] = canonicalization_details
-
-    #provenance['routine'][routine]['keywords'] = _load_options(routine, options)
-
     return provenance
 
 
-def _get_options(workflow_id, routine):
+def _get_options(workflow_id, routine=None, all=False):
 
     fn = resource_filename('fragmenter', os.path.join('data', 'workflows.json'))
     f = open(fn)
-    options = json.load(f)[workflow_id]['fragmenter'][routine]['options']
+    options = json.load(f)[workflow_id]
     f.close()
+    if routine:
+        options = options['fragmenter'][routine]['options']
+    elif all:
+        options = options['fragmenter']
+    else:
+        raise RuntimeError("You must define a routine or set all to True for options for all fragmenter routines. ")
 
     return options
-# def _load_options(routine, load_path=None):
-#     """
-#     load user options
-# 
-#     Parameters
-#     ----------
-#     routine: str
-#         routine to load options for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
-#     load_path: str, optional. Default None
-#         path to user option yaml file. If none will use default options
-# 
-#     Returns
-#     -------
-#     options: dict
-#         keywords for routine
-# 
-#     """
-# 
-#     if load_path:
-#         with open(load_path) as stream:
-#             user_config = yaml.load(stream)
-#             # Check options
-#             functions = list(user_config.keys())
-#             allowed_functions = list(_default_options.keys())
-#             for f in functions:
-#                 if f not in allowed_functions:
-#                     raise KeyError("{} is not a function. Only function names allowed are {}".format(f, allowed_functions))
-#                 user_options = user_config[f].keys()
-#                 allowed_options = _allowed_options[f]
-#                 for option in user_options:
-#                     if option not in allowed_options:
-#                         if f == 'generate_crank_jobs':
-#                             utils.logger().warning("Is {} an allowed keyword for {}? Please double check".format(option, f))
-#                             continue
-#                         raise KeyError("{} is not an allowed option for {}. Allowed options are {}".format(option, f, allowed_options))
-# 
-#         options = {**_default_options[routine], **user_config[routine]}
-#     else:
-#         options = _default_options[routine]
-#     return options
-# 
-# def _remove_extraneous_options(user_options, routine):
-# 
-#     options = {option: user_options[option] for option in _default_options[routine]}
-# 
-#     return options
+
 
 def combine_json_fragments(json_inputs, json_output=None):
     """
