@@ -142,9 +142,8 @@ def one_torsion_per_rotatable_bond(torsion_list):
     return tors
 
 
-def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_torsion_resolution=0,
-                     scan_internal_terminal_combination=0, scan_dimension=2, qc_program='Psi4', method='B3LYP',
-                     basis='aug-cc-pVDZ', **kwargs):
+def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=30, terminal_torsion_resolution=0,
+                     scan_internal_terminal_combination=0, scan_dimension=2):
     """
     define crank jobs with torsions to drive and resolution to drive them at.
 
@@ -180,19 +179,11 @@ def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_tor
         raise Warning("If you are not scanning internal or terminal torsions, you must set scan_internal_terminal_"
                       "combinations to 0")
 
-    needed_torsion_drives = fragment_data['needed_torsion_drives']
-
     internal_torsions = needed_torsion_drives['internal']
     terminal_torsions = needed_torsion_drives['terminal']
     internal_dimension = len(internal_torsions)
     terminal_dimension = len(terminal_torsions)
     torsion_dimension = internal_dimension + terminal_dimension
-
-    # model = {'method': method, 'basis': basis}
-    # options = {'scf_type': 'df'}
-    # if kwargs:
-    #     print(kwargs)
-    #     options = kwargs['options']
 
     crank_job = 0
     crank_jobs = dict()
@@ -200,40 +191,48 @@ def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_tor
     if not scan_internal_terminal_combination:
         if internal_torsion_resolution:
             for comb in itertools.combinations(internal_torsions, scan_dimension):
-                internal_grid = {internal_torsions[torsion]: internal_torsion_resolution for torsion in comb}
-                crank_jobs['crank_job_{}'.format(crank_job)] = internal_grid
+                dihedrals = [internal_torsions[torsion] for torsion in comb]
+                grid = [internal_torsion_resolution]*scan_dimension
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
             if internal_dimension < scan_dimension:
-                internal_grid = {internal_torsions[torsion]: internal_torsion_resolution for torsion in internal_torsions}
-                crank_jobs['crank_job_{}'.format(crank_job)] = internal_grid
+                dihedrals = [internal_torsions[torsion] for torsion in internal_torsions]
+                grid = [internal_torsion_resolution]*scan_dimension
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
 
         if terminal_torsion_resolution:
             for comb in itertools.combinations(terminal_torsions, scan_dimension):
-                terminal_grid = {terminal_torsions[torsion]: terminal_torsion_resolution for torsion in comb}
-                crank_jobs['crank_job_{}'.format(crank_job)] = terminal_grid
+                dihedrals = [terminal_torsions[torsion] for torsion in comb]
+                grid = [terminal_dimension]*scan_dimension
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
             if terminal_dimension < scan_dimension:
-                terminal_grid = {terminal_torsions[torsion]: internal_torsion_resolution for torsion in terminal_torsions}
-                crank_jobs['crank_job_{}'.format(crank_job)] = terminal_grid
+                dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
+                grid = [terminal_torsion_resolution]*scan_dimension
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
     else:
         # combine both internal and terminal torsions
         all_torsion_idx = np.arange(0, torsion_dimension)
         for comb in itertools.combinations(all_torsion_idx, scan_dimension):
-            internal_grid = {'torsion_{}'.format(i): internal_torsion_resolution for i in comb if i < internal_dimension}
-            terminal_grid = {'torsion_{}'.format(i-internal_dimension): terminal_torsion_resolution for i in comb if i >= internal_dimension}
-            crank_jobs['crank_job_{}'.format(crank_job)] = {'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
+            internal_torsions = [internal_torsions['torsion_{}'.format(i)] for i in comb if i < internal_dimension]
+            terminal_torsions = [terminal_torsions['torsion_{}'.format(i-internal_dimension)] for i in comb if i >= internal_dimension]
+            grid = [internal_torsion_resolution]*len(internal_torsions)
+            grid.extend([terminal_torsion_resolution]*len(terminal_torsions))
+            dihedrals = internal_torsions + terminal_torsions
+            crank_jobs['crank_job_{}'.format(crank_job)] = {'diherals': dihedrals, 'grid_spacing': grid}
             crank_job += 1
         if torsion_dimension < scan_dimension:
-            internal_grid = {'torsion_{}'.format(i): internal_torsion_resolution for i in all_torsion_idx if i < internal_dimension}
-            terminal_grid = {'torsion_{}'.format(i-internal_dimension): terminal_torsion_resolution for i in all_torsion_idx if i >= internal_dimension}
-            crank_jobs['crank_job_{}'.format(crank_job)] = {'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
+            internal_torsions = [internal_torsions['torsion_{}'.format(i)] for i in all_torsion_idx if i < internal_dimension]
+            terminal_torsions = [terminal_torsions['torsion_{}'.format(i-internal_dimension)] for i in all_torsion_idx if i >= internal_dimension]
+            grid = [internal_torsion_resolution]*len(internal_torsions)
+            grid.extend([terminal_torsion_resolution]*len(terminal_torsions))
+            dihedrals = internal_torsions + terminal_torsions
+            crank_jobs['crank_job_{}'.format(crank_job)] = {'diherals': dihedrals, 'grid_spacing': grid}
             crank_job += 1
 
-    fragment_data['crank_torsion_drives'] = crank_jobs
-
-    return fragment_data
+    return crank_jobs
 
 
 def get_initial_crank_state(fragment):
