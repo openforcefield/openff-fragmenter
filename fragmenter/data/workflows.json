@@ -1,4 +1,5 @@
-{"workflow_1": {
+{
+  "workflow_1": {
     "fragmenter": {
       "enumerate_states": {
         "version": "0.0.0",
@@ -31,13 +32,19 @@
           "scan_internal_terminal_combination": 0,
           "scan_dimension": 2
         }
+      },
+      "torsiondrive_meta": {},
+      "optimization_meta": {
+        "program": "geometric",
+        "coordsys": "trict"
+      },
+      "qc_meta": {
+        "driver": "gradient",
+        "method": "UFF",
+        "basis": "",
+        "options": "none",
+        "program": "rdkit"
       }
-    },
-    "torsiondriver": {
-      "version": "0.1.0",
-      "qc_program": "psi4",
-      "method": "B3LYP",
-      "basis": "aug-cc-pVDZ"
     }
   }
 }
