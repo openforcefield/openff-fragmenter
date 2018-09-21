@@ -11,38 +11,6 @@ from openeye import oechem
 from cmiles import to_molecule_id
 
 
-# _default_options = {}
-# _default_options['enumerate_states'] = {'protonation': True,
-#                                      "tautomers":False,
-#                                      'stereoisomers':True,
-#                                      'max_states': 200,
-#                                      'level': 0,
-#                                      'reasonable': True,
-#                                      'carbon_hybridization': True,
-#                                      'suppress_hydrogen': True}
-# _default_options['enumerate_fragments'] = {'strict_stereo': True,
-#                                           'combinatorial': True,
-#                                           'MAX_ROTORS': 2,
-#                                           'remove_map': True}
-# _default_options['generate_crank_jobs'] = {'max_conf': 1,
-#                                     'terminal_torsion_resolution': 30,
-#                                     'internal_torsion_resolution': 30,
-#                                     'scan_internal_external_combination': 0,
-#                                     'scan_dimension': 2,
-#                                     'options':{
-#                                     'qc_program': 'psi4',
-#                                     'method': 'B3LYP',
-#                                     'basis': 'aug-cc-pVDZ'}}
-#
-# _allowed_options = {'enumerate_states': ['protonation', 'tautomers', 'stereoisomers', 'max_states', 'level', 'reasonable',
-#                   'carbon_hybridization', 'suppress_hydrogen', 'verbose', 'filename','return_smiles_list', 'return_molecules'],
-#                     'enumerate_fragments': ['generate_visualization', 'strict_stereo', 'combinatorial', 'MAX_ROTOR',
-#                        'remove_map', 'json_filename'],
-#                     'generate_crank_jobs': ['internal_torsion_resolution', 'terminal_torsion_resolution',
-#                      'scan_internal_terminal_combination', 'scan_dimension', 'qc_program', 'method',
-#                      'basis']}
-
-
 def enumerate_states(molecule, workflow_id, options=None, title='', json_filename=None):
     """
     enumerate protonation, tautomers and stereoisomers for molecule. Default does not enumerate tautomers, only
@@ -89,13 +57,14 @@ def enumerate_states(molecule, workflow_id, options=None, title='', json_filenam
     return json_dict
 
 
-def enumerate_fragments(molecule, workflow_id, options=None, mol_provenance=None, title='', json_filename=None):
+def enumerate_fragments(molecule, workflow_id, options=None, mol_provenance=None, title='', json_filename=None,
+                        generate_vis=False):
     """
     Fragment molecule
 
     Parameters
     ----------
-    molecule: str
+    molecule: Input molecule. Very permissive. Can be anything that OpenEye can parse
         SMILES string of molecule to fragment
     title: str, optional. Default empty str
         The title or name of the molecule. If empty stirng will use the IUPAC name for molecule title.
@@ -115,58 +84,29 @@ def enumerate_fragments(molecule, workflow_id, options=None, mol_provenance=None
     """
     routine = 'enumerate_fragments'
     provenance = _get_provenance(workflow_id=workflow_id, routine=routine)
-    provenance['routine']['enumerate_fragments']['parent_molecule'] = molecule
     if options is None:
         options = _get_options(workflow_id, routine)
 
-    #options = provenance['routine']['enumerate_fragments']['keywords']
-
     parent_molecule = chemi.standardize_molecule(molecule, title)
     provenance['routine']['enumerate_fragments']['parent_molecule_name'] = parent_molecule.GetTitle()
+    provenance['routine']['enumerate_fragments']['parent_molecule'] = oechem.OEMolToSmiles(parent_molecule)
 
-    fragments = fragment.generate_fragments(parent_molecule, **options)
-
-    #routine_options = _remove_extraneous_options(user_options=options, routine='enumerate_fragments')
+    fragments = fragment.generate_fragments(parent_molecule, generate_vis, **options)
 
     if mol_provenance:
         provenance['routine']['enumerate_states'] = mol_provenance['routine']['enumerate_states']
-    #provenance['routine']['enumerate_fragments']['keywords'] = routine_options
 
-    # Generate SMILES
+    # Generate identifiers for fragments
     fragments_json_dict = {}
     for fragm in fragments:
         for i, frag in enumerate(fragments[fragm]):
             fragment_mol = chemi.smiles_to_oemol(frag)
-            SMILES = to_molecule_id(fragment_mol, canonicalization='openeye')
+            identifiers = to_molecule_id(fragment_mol, canonicalization='openeye')
 
-            frag = SMILES['canonical_isomeric_smiles']
-            fragments_json_dict[frag] = {'SMILES': SMILES}
-
-
-            # # Generate QM molecule
-            # mol, atom_map = chemi.get_atom_map(tagged_smiles=SMILES['canonical_isomeric_explicit_hydrogen_mapped_smiles'],
-            #                                    molecule=fragment_mol)
-            #
-            # # Generate xyz coordinates for debugging
-            # chemi.to_mapped_xyz(mol, atom_map)
-            #
-            # charge = chemi.get_charge(mol)
-            # try:
-            #     qm_mol = chemi.to_mapped_QC_JSON_geometry(mol, atom_map, charge=charge)
-            # except RuntimeError:
-            #     utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
-            #                   "{} will not be included in fragments dictionary".format(
-            #             SMILES['canonical_isomeric_smiles'], SMILES['canonical_isomeric_smiles']))
-            #     fragments_json_dict.pop(frag)
-            #     continue
-            #
-            # fragments_json_dict[frag]['molecule'] = qm_mol
+            frag = identifiers['canonical_isomeric_smiles']
+            fragments_json_dict[frag] = {'identifiers': identifiers}
             fragments_json_dict[frag]['provenance'] = provenance
-            fragments_json_dict[frag]['provenance']['canonicalization'] = SMILES.pop('provenance')
-            #
-            # needed_torsion_drives = torsions.find_torsions(mol)
-            # fragments_json_dict[frag]['needed_torsion_drives'] = needed_torsion_drives
-            #
+            fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
 
     if json_filename:
         with open(json_filename, 'w') as f:
@@ -188,47 +128,37 @@ def generate_torsiondrive_input(fragment_dict, workflow_id, options=None, json_f
 
     """
 
-    #ToDo change routine and keywords to workflow JSON
-
+    options = _get_options(workflow_id=workflow_id, routine='torsiondriver_input')
+    provenance = _get_provenance(workflow_id=workflow_id, routine='torsiondriver_input')
+    fragment_dict['provenance']['routine']['torsiondriver_input'] = provenance['routine']['torsiondriver_input']
     provenance = fragment_dict['provenance']
-    provenance['routine']['torsiondriver_input'] = _get_provenance(workflow_id=workflow_id, routine='torsiondriver_input')['routine']['torsiondriver_input']
 
-    mol_id = fragment_dict['SMILES']
+    mol_id = fragment_dict['identifiers']
 
     if not options:
         options = _get_options(workflow_id, 'torsiondrive_input')
 
     mapped_smiles = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
-    OEMol = chemi.smiles_to_oemol(mapped_smiles)
-
-    # Check if molecule is mapped
-    if not chemi.is_mapped(OEMol):
-        utils.logger().warning("OEMol is not mapped. Creating a new mapped SMILES")
-        fragment_dict['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_smiles'] = chemi.create_mapped_smiles(OEMol)
+    mapped_mol = chemi.smiles_to_oemol(mapped_smiles)
 
     if options.pop('max_conf') == 1:
         # Generate 1 conformation for all jobs
-        mol, atom_map = chemi.get_atom_map(tagged_smiles=mapped_smiles, molecule=OEMol)
-        charge = chemi.get_charge(mol)
         try:
-            qm_mol = chemi.to_mapped_QC_JSON_geometry(mol, atom_map, charge=charge)
+            qm_mol = chemi.to_mapped_QC_JSON_geometry(mapped_mol)
         except RuntimeError:
             utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
                           "{} will not be included in fragments dictionary".format(
                     mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
 
-    #options.pop('max_conf')
-
     torsiondriver_inputs = []
-    needed_torsion_drives = torsions.find_torsions(OEMol)
-    fragment_dict['needed_torsion_drives'] = needed_torsion_drives
-    torsiondrive_jobs = torsions.define_crank_job(fragment_dict, **options)
-    for job in torsiondrive_jobs['crank_torsion_drives']:
-        torsiondriver_input = {}
-        torsiondriver_input['molecule_ID'] = mol_id
-        torsiondriver_input['QCJSON_molecule'] = qm_mol
-        torsiondriver_input['workflow_ID'] = workflow_id
-        torsiondriver_input['torsions_to_drive'] = str(torsiondrive_jobs['crank_torsion_drives'][job])
+    needed_torsion_drives = torsions.define_torsiondrive_jobs(torsions.find_torsions(mapped_mol), **options)
+    for job in needed_torsion_drives:
+        print(needed_torsion_drives[job])
+        torsiondriver_input = dict()
+        torsiondriver_input['molecule'] = qm_mol
+        torsiondriver_input['molecule']['identifiers'] = mol_id
+        torsiondriver_input['dihedrals'] = needed_torsion_drives[job]['dihedrals']
+        torsiondriver_input['grid_spacing'] = needed_torsion_drives[job]['grid_spacing']
         torsiondriver_input['provenance'] = provenance
         torsiondriver_inputs.append(torsiondriver_input)
 
@@ -341,7 +271,6 @@ def workflow(molecules_smiles, molecule_titles=None, options=None, write_json_in
     for frag in all_frags:
         crank_jobs = generate_crank_jobs(all_frags[frag], options=options)
         all_crank_jobs[frag] = crank_jobs
-
 
         if write_json_crank_job:
             name, namespace = utils.make_python_identifier(frag, namespace=namespaces, convert='hex', handle='force')
