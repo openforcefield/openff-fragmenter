@@ -118,7 +118,7 @@ def enumerate_fragments(molecule, workflow_id, options=None, mol_provenance=None
 
 def generate_torsiondrive_input(fragment_dict, workflow_id, options=None, json_filename=None):
     """
-    Generate input for torsiondriver QCFractal portal
+    Generate input for torsiondrive QCFractal portal
 
     Parameters
     ----------
@@ -133,13 +133,13 @@ def generate_torsiondrive_input(fragment_dict, workflow_id, options=None, json_f
 
     Returns
     -------
-    torsiondriver_inputs: dictionary defining the molecule and torsiondriver job options.
+    torsiondrive_inputs: dictionary defining the molecule and torsiondrive job options.
 
     """
 
-    options = _get_options(workflow_id=workflow_id, routine='torsiondriver_input')
-    provenance = _get_provenance(workflow_id=workflow_id, routine='torsiondriver_input')
-    fragment_dict['provenance']['routine']['torsiondriver_input'] = provenance['routine']['torsiondriver_input']
+    options = _get_options(workflow_id=workflow_id, routine='torsiondrive_input')
+    provenance = _get_provenance(workflow_id=workflow_id, routine='torsiondrive_input')
+    fragment_dict['provenance']['routine']['torsiondrive_input'] = provenance['routine']['torsiondrive_input']
     provenance = fragment_dict['provenance']
 
     mol_id = fragment_dict['identifiers']
@@ -160,21 +160,21 @@ def generate_torsiondrive_input(fragment_dict, workflow_id, options=None, json_f
                     mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
 
     identifier = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
-    torsiondriver_inputs = {identifier: {'torsiondriver_input': {}, 'provenance': provenance}}
+    torsiondrive_inputs = {identifier: {'torsiondrive_input': {}, 'provenance': provenance}}
     needed_torsion_drives = torsions.define_torsiondrive_jobs(torsions.find_torsions(mapped_mol), **options)
     for i, job in enumerate(needed_torsion_drives):
-        torsiondriver_input = dict()
-        torsiondriver_input['molecule'] = qm_mol
-        torsiondriver_input['molecule']['identifiers'] = mol_id
-        torsiondriver_input['dihedrals'] = needed_torsion_drives[job]['dihedrals']
-        torsiondriver_input['grid_spacing'] = needed_torsion_drives[job]['grid_spacing']
-        torsiondriver_inputs[identifier]['torsiondriver_input']['job_{}'.format(i)] = torsiondriver_input
+        torsiondrive_input = dict()
+        torsiondrive_input['initial_molecule'] = qm_mol
+        torsiondrive_input['initial_molecule']['identifiers'] = mol_id
+        torsiondrive_input['dihedrals'] = needed_torsion_drives[job]['dihedrals']
+        torsiondrive_input['grid_spacing'] = needed_torsion_drives[job]['grid_spacing']
+        torsiondrive_inputs[identifier]['torsiondrive_input']['job_{}'.format(i)] = torsiondrive_input
 
     if json_filename:
         with open(json_filename, 'w') as f:
-            json.dump(torsiondriver_inputs, f, indent=2, sort_keys=True)
+            json.dump(torsiondrive_inputs, f, indent=2, sort_keys=True)
 
-    return torsiondriver_inputs
+    return torsiondrive_inputs
 
 
 def workflow(molecules_smiles, workflow_id, molecule_titles=None, generate_vis=False, write_json_intermediate=False,
@@ -199,7 +199,7 @@ def workflow(molecules_smiles, workflow_id, molecule_titles=None, generate_vis=F
     Returns
     -------
     molecules: dict
-        JSON specs for torsiondriver jobs. Keys are canonical isomeric explicit hydrogen mapped SMILES of fragment.
+        JSON specs for torsiondrive jobs. Keys are canonical isomeric explicit hydrogen mapped SMILES of fragment.
 
     """
 
@@ -231,7 +231,7 @@ def workflow(molecules_smiles, workflow_id, molecule_titles=None, generate_vis=F
 
     all_jobs = {}
     for frag in all_frags:
-        crank_jobs = generate_torsiondrive_input(all_frags[frag], workflow_id=workflow_id, options=options['torsiondriver_input']['options'])
+        crank_jobs = generate_torsiondrive_input(all_frags[frag], workflow_id=workflow_id, options=options['torsiondrive_input']['options'])
         all_jobs.update(crank_jobs)
 
     if json_filename:

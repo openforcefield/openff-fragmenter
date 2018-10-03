@@ -732,7 +732,7 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def to_mapped_QC_JSON_geometry(mapped_mol, multiplicity=1):
+def to_mapped_QC_JSON_geometry(mapped_mol, atom_map=None, multiplicity=1):
     """
     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
     tag on the SMILES to the atom idex in OEMol.
@@ -752,7 +752,7 @@ def to_mapped_QC_JSON_geometry(mapped_mol, multiplicity=1):
 
     """
     # Check if molecule has map
-    if not is_mapped(mapped_mol):
+    if not is_mapped(mapped_mol) and atom_map is None:
         raise TypeError("molecule must have atom map. You can generate a mapped molecule with a mapped SMILES or SMARTS")
     symbols = []
     geometry = []
@@ -774,7 +774,11 @@ def to_mapped_QC_JSON_geometry(mapped_mol, multiplicity=1):
         raise RuntimeError("molecule {} does not have a 3D conformation".format(oechem.OEMolToSmiles(mapped_mol)))
 
     for mapping in range(1, mapped_mol.NumAtoms()+1):
-        atom = mapped_mol.GetAtom(oechem.OEHasMapIdx(mapping))
+        if is_mapped(mapped_mol):
+            atom = mapped_mol.GetAtom(oechem.OEHasMapIdx(mapping))
+        elif atom_map is not None:
+            idx = atom_map[mapping]
+            atom = mapped_mol.GetAtom(oechem.OEHasAtomIdx(idx))
         syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
         symbols.append(syb)
         for i in range(3):

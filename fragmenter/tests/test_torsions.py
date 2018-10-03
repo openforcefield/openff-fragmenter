@@ -22,9 +22,9 @@ class TestTorsions(unittest.TestCase):
         needed_torsion_scans = torsions.find_torsions(molecule=inp_mol)
         self.assertEqual(len(needed_torsion_scans['internal']), 1)
         self.assertEqual(len(needed_torsion_scans['terminal']), 2)
-        self.assertEqual(needed_torsion_scans['internal']['torsion_0'], (1, 3, 4, 2))
-        self.assertEqual(needed_torsion_scans['terminal']['torsion_0'], (4, 3, 1, 5))
-        self.assertEqual(needed_torsion_scans['terminal']['torsion_1'], (3, 4, 2, 8))
+        self.assertEqual(needed_torsion_scans['internal']['torsion_0'], (0, 2, 3, 1))
+        self.assertEqual(needed_torsion_scans['terminal']['torsion_0'], (3, 2, 0, 4))
+        self.assertEqual(needed_torsion_scans['terminal']['torsion_1'], (2, 3, 1, 7))
 
     @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_tagged_smiles(self):
@@ -125,8 +125,9 @@ class TestTorsions(unittest.TestCase):
         molecule = oechem.OEMol()
         oechem.OEReadMolecule(ifs, molecule)
         tagged_smiles = to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=True, mapped=True)
-        molecule, atom_map = chemi.get_atom_map(tagged_smiles, molecule)
-        mapped_geometry = chemi.to_mapped_QC_JSON_geometry(molecule, atom_map)
+        mapped_molecule = chemi.smiles_to_oemol(tagged_smiles)
+       # molecule, atom_map = chemi.get_atom_map(tagged_smiles, molecule)
+        mapped_geometry = chemi.to_mapped_QC_JSON_geometry(mapped_molecule)
 
         f = open(infile)
         line = f.readline()
@@ -168,7 +169,6 @@ class TestTorsions(unittest.TestCase):
                                      'version': '0.0.0+29.g7d02c4d.dirty'},
                       'tagged_SMARTS': '[H:5][C:1]([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])[H:14]'}
 
-        crank_job = torsions.define_crank_job(test_crank, terminal_torsion_resolution=30)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_0']['internal_torsions']['torsion_0'], 30)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsions']['torsion_0'], 30)
-        self.assertEqual(crank_job['crank_torsion_drives']['crank_job_1']['terminal_torsions']['torsion_1'], 30)
+        crank_job = torsions.define_torsiondrive_jobs(test_crank['needed_torsion_drives'], terminal_torsion_resolution=60)
+        self.assertEqual(crank_job['crank_job_0']['grid_spacing'], [30])
+        self.assertEqual(crank_job['crank_job_1']['grid_spacing'], [60, 60])
