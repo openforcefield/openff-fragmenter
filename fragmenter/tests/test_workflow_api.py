@@ -222,13 +222,15 @@ class TestWorkflow(unittest.TestCase):
         crank_jobs = workflow_api.generate_torsiondrive_input(fragment['CCCC'], workflow_id='workflow_1')
 
         key = '[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]'
+        expected_dih = [(0, 2, 3, 1), (3, 2, 0, 4), (2, 3, 1, 7)]
+        all_dih = crank_jobs[key]['torsiondrive_input']['job_0']['dihedrals'] + crank_jobs[key]['torsiondrive_input']['job_1']['dihedrals']
+        for dih in all_dih:
+            self.assertIn(dih, expected_dih)
 
+        self.assertEqual(len(crank_jobs), 1)
         self.assertEqual(len(crank_jobs[key]['torsiondrive_input']), 2)
-        self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_0']['dihedrals'][0], (0, 2, 3, 1))
-        self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_0']['grid_spacing'], [30])
-        terminal_dihs = {tuple(crank_jobs[key]['torsiondrive_input']['job_1']['dihedrals'][0]), tuple(crank_jobs[key]['torsiondrive_input']['job_1']['dihedrals'][1])}
-        self.assertCountEqual(terminal_dihs, {(3, 2, 0, 4), (2, 3, 1, 7)})
-        self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_1']['grid_spacing'], [30, 30])
+        self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_0']['grid_spacing'][0], 30)
+        self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_1']['grid_spacing'][0], 30)
 
     def test_workflow(self):
         """Test workflow"""
@@ -241,8 +243,7 @@ class TestWorkflow(unittest.TestCase):
         self.assertEqual(len(crank_jobs.keys()), 1)
         self.assertEqual(list(crank_jobs.keys())[0], key)
         self.assertEqual(len(crank_jobs[key].keys()), 2)
-        self.assertEqual(len(crank_jobs[key]['torsiondrive_input']['job_0']['dihedrals']), 1)
-        self.assertEqual(len(crank_jobs[key]['torsiondrive_input']['job_1']['dihedrals']), 2)
+
         #self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_0']['provenance'], crank_jobs[key]['torsiondrive_input']['job_1']['provenance'])
         self.assertEqual(len(crank_jobs[key]['torsiondrive_input']['job_0']['initial_molecule']['identifiers']), 7)
         self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_0']['initial_molecule']['identifiers']['canonical_isomeric_explicit_hydrogen_smiles'],
