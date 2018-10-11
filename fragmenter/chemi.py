@@ -683,21 +683,24 @@ def file_to_smiles_list(filename, return_titles=True, isomeric=True):
 def standardize_molecule(molecule, title=''):
 
     if isinstance(molecule, oechem.OEMol):
+        mol = molecule
         return molecule
 
-    mol = oechem.OEMol()
-    # First try reading as smiles
-    if not oechem.OESmilesToMol(mol, molecule):
-        # Try reading as input file
-        ifs = oechem.oemolistream()
-        if not ifs.open(molecule):
-            raise Warning('Could not parse molecule.')
+    if isinstance(molecule, str):
+        mol = oechem.OEMol()
+        # First try reading as smiles
+        if not oechem.OESmilesToMol(mol, molecule):
+            # Try reading as input file
+            ifs = oechem.oemolistream()
+            if not ifs.open(molecule):
+                raise Warning('Could not parse molecule.')
 
-    # normalize molecule
-    if not title:
-        title = mol.GetTitle()
-    molecule = normalize_molecule(mol, title=title)
-    return molecule
+        # normalize molecule
+        mol = normalize_molecule(mol, title=title)
+
+    else:
+        raise TypeError("Wrong type of input for molecule. Can be SMILES, filename or OEMol")
+    return mol
 
 
 def mol_to_tagged_smiles(infile, outfile):
@@ -729,7 +732,7 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def to_mapped_QC_JSON_geometry(molecule, atom_map, charge=0, multiplicity=1):
+def to_mapped_QC_JSON_geometry(mapped_mol, atom_map=None, multiplicity=1):
     """
     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
     tag on the SMILES to the atom idex in OEMol.
@@ -746,27 +749,49 @@ def to_mapped_QC_JSON_geometry(molecule, atom_map, charge=0, multiplicity=1):
     Returns
     -------
     dict: QC_JSON Molecule spec {symbols: [], geometry: [], 'molecular_charge': int, 'molecular_multiplicity': int}
+    geometry is in Bohr - QCJSON requirement
 
     """
+    # Check if molecule has map
+    if not is_mapped(mapped_mol) and atom_map is None:
+        raise TypeError("molecule must have atom map. You can generate a mapped molecule with a mapped SMILES or SMARTS")
     symbols = []
     geometry = []
-    if molecule.GetMaxConfIdx() != 1:
+
+    charge = get_charge(mapped_mol)
+
+    # Generate conformer
+    if not has_conformer(mapped_mol, check_two_dimension=True):
+        try:
+           mapped_oemol = generate_conformers(mapped_mol, max_confs=1, strict_stereo=True, strict_types=False, copy=False)
+        except RuntimeError:
+               logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
+                         "generated".format(mapped_mol.GetTitle()))
+
+    if mapped_mol.GetMaxConfIdx() != 1:
         raise Warning("The molecule must have at least and at most 1 conformation")
 
     # Check if coordinates are missing
-    if not has_conformer(molecule, check_two_dimension=True):
-        raise RuntimeError("molecule {} does not have a 3D conformation".format(oechem.OEMolToSmiles(molecule)))
+    if not has_conformer(mapped_mol, check_two_dimension=True):
+        raise RuntimeError("molecule {} does not have a 3D conformation".format(oechem.OEMolToSmiles(mapped_mol)))
 
-    for mapping in range(1, len(atom_map)+1):
-        idx = atom_map[mapping]
-        atom = molecule.GetAtom(oechem.OEHasAtomIdx(idx))
+    for mapping in range(1, mapped_mol.NumAtoms()+1):
+        if is_mapped(mapped_mol):
+            atom = mapped_mol.GetAtom(oechem.OEHasMapIdx(mapping))
+        elif atom_map is not None:
+            idx = atom_map[mapping]
+            atom = mapped_mol.GetAtom(oechem.OEHasAtomIdx(idx))
+        else:
+            raise RuntimeError("Molecule must have map")
         syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
         symbols.append(syb)
         for i in range(3):
-            geometry.append(molecule.GetCoords()[idx][i])
+            geometry.append(mapped_mol.GetCoords()[atom.GetIdx()][i]*1.8897261328856432)
+
+    connectivity = get_mapped_connectivity_table(mapped_mol, atom_map)
 
     return {'symbols': symbols, 'geometry': geometry, 'molecular_charge': charge,
-            'molecular_multiplicity': multiplicity}
+            'molecular_multiplicity': multiplicity, 'connectivity': connectivity}
 
 
 def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename=None):
@@ -787,7 +812,7 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
 
     Returns
     -------
-    str: elements and xyz coordinates in order of tagged SMILES
+    str: elements and xyz coordinates (in angstroms) in order of tagged SMILES
 
     """
     xyz = ""
@@ -814,6 +839,38 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
         file.write(xyz)
         file.close()
     return xyz
+
+
+def get_mapped_connectivity_table(molecule, atom_map=None):
+    """
+    generate a connectivity table with map indices
+
+    Parameters
+    ----------
+    mapped_molecule: oemol or string
+        A mapped molecule or a mapped SMILES
+    Returns
+    -------
+    connectivity_table: list
+        list of list of map indices of bond and order [[map_idx_1, map_idx_2, bond_order] ...]
+    """
+    # Should I allow mapped SMILES too?
+    if isinstance(molecule, str):
+        # Input is a SMILES
+        molecule = smiles_to_oemol(molecule)
+    if isinstance(molecule, oechem.OEMol):
+        if not is_mapped(molecule) and atom_map is None:
+            raise TypeError("Molecule must contain map indices. You can get this by generating a molecule from a mapped SMILES")
+
+    if atom_map is None:
+        connectivity_table = [[bond.GetBgn().GetMapIdx()-1, bond.GetEnd().GetMapIdx()-1, bond.GetOrder()]
+                              for bond in molecule.GetBonds()]
+    else:
+        # First convert mapping from map:idx to idx:map
+        inv_map = dict(zip(atom_map.values(), atom_map.keys()))
+        connectivity_table = [[inv_map[bond.GetBgnIdx()]-1, inv_map[bond.GetEndIdx()]-1, bond.GetOrder()]
+                              for bond in molecule.GetBonds()]
+    return connectivity_table
 
 
 """

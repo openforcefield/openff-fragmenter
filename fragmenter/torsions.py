@@ -66,12 +66,12 @@ def find_torsions(molecule):
     if h_tors:
         h_tors_min = one_torsion_per_rotatable_bond(h_tors)
         for i, tor in enumerate(h_tors_min):
-            tor_name = ((tor[0].GetMapIdx()), (tor[1].GetMapIdx()), (tor[2].GetMapIdx()), (tor[3].GetMapIdx()))
+            tor_name = ((tor[0].GetMapIdx() -1 ), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
             needed_torsion_scans['terminal']['torsion_{}'.format(str(i))] = tor_name
     if mid_tors:
         mid_tors_min = one_torsion_per_rotatable_bond(mid_tors)
         for i, tor in enumerate(mid_tors_min):
-            tor_name = ((tor[0].GetMapIdx()), (tor[1].GetMapIdx()), (tor[2].GetMapIdx()), (tor[3].GetMapIdx()))
+            tor_name = ((tor[0].GetMapIdx() - 1), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
             needed_torsion_scans['internal']['torsion_{}'.format(str(i))] = tor_name
 
     # Check that there are no duplicate torsions in mid and h_torsions
@@ -142,9 +142,8 @@ def one_torsion_per_rotatable_bond(torsion_list):
     return tors
 
 
-def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_torsion_resolution=0,
-                     scan_internal_terminal_combination=0, scan_dimension=2, qc_program='Psi4', method='B3LYP',
-                     basis='aug-cc-pVDZ', **kwargs):
+def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=30, terminal_torsion_resolution=0,
+                     scan_internal_terminal_combination=0, scan_dimension=2):
     """
     define crank jobs with torsions to drive and resolution to drive them at.
 
@@ -180,18 +179,11 @@ def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_tor
         raise Warning("If you are not scanning internal or terminal torsions, you must set scan_internal_terminal_"
                       "combinations to 0")
 
-    needed_torsion_drives = fragment_data['needed_torsion_drives']
-
     internal_torsions = needed_torsion_drives['internal']
     terminal_torsions = needed_torsion_drives['terminal']
     internal_dimension = len(internal_torsions)
     terminal_dimension = len(terminal_torsions)
     torsion_dimension = internal_dimension + terminal_dimension
-
-    model = {'method': method, 'basis': basis}
-    options = {'scf_type': 'df'}
-    if kwargs:
-        options = kwargs['options']
 
     crank_job = 0
     crank_jobs = dict()
@@ -199,50 +191,48 @@ def define_crank_job(fragment_data, internal_torsion_resolution=30, terminal_tor
     if not scan_internal_terminal_combination:
         if internal_torsion_resolution:
             for comb in itertools.combinations(internal_torsions, scan_dimension):
-                internal_grid = {torsion: internal_torsion_resolution for torsion in comb}
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                                'internal_torsions': internal_grid,
-                                                                'terminal_torsions': {}}
+                dihedrals = [internal_torsions[torsion] for torsion in comb]
+                grid = [internal_torsion_resolution]*len(dihedrals)
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
             if internal_dimension < scan_dimension:
-                internal_grid = {torsion: internal_torsion_resolution for torsion in internal_torsions}
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                                'internal_torsions': internal_grid,
-                                                                'terminal_torsions': {}}
+                dihedrals = [internal_torsions[torsion] for torsion in internal_torsions]
+                grid = [internal_torsion_resolution]*len(dihedrals)
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
 
         if terminal_torsion_resolution:
             for comb in itertools.combinations(terminal_torsions, scan_dimension):
-                terminal_grid = {torsion: terminal_torsion_resolution for torsion in comb}
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                                'internal_torsions': {},
-                                                                'terminal_torsions': terminal_grid}
+                dihedrals = [terminal_torsions[torsion] for torsion in comb]
+                grid = [terminal_torsion_resolution]*scan_dimension
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
             if terminal_dimension < scan_dimension:
-                terminal_grid = {torsion: internal_torsion_resolution for torsion in terminal_torsions}
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                                'internal_torsions': {},
-                                                                'terminal_torsions': terminal_grid}
+                dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
+                grid = [terminal_torsion_resolution]*len(dihedrals)
+                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
     else:
         # combine both internal and terminal torsions
         all_torsion_idx = np.arange(0, torsion_dimension)
         for comb in itertools.combinations(all_torsion_idx, scan_dimension):
-            internal_grid = {'torsion_{}'.format(i): internal_torsion_resolution for i in comb if i < internal_dimension}
-            terminal_grid = {'torsion_{}'.format(i-internal_dimension): terminal_torsion_resolution for i in comb if i >= internal_dimension}
-            crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                            'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
+            internal_torsions = [internal_torsions['torsion_{}'.format(i)] for i in comb if i < internal_dimension]
+            terminal_torsions = [terminal_torsions['torsion_{}'.format(i-internal_dimension)] for i in comb if i >= internal_dimension]
+            grid = [internal_torsion_resolution]*len(internal_torsions)
+            grid.extend([terminal_torsion_resolution]*len(terminal_torsions))
+            dihedrals = internal_torsions + terminal_torsions
+            crank_jobs['crank_job_{}'.format(crank_job)] = {'diherals': dihedrals, 'grid_spacing': grid}
             crank_job += 1
         if torsion_dimension < scan_dimension:
-            internal_grid = {'torsion_{}'.format(i): internal_torsion_resolution for i in all_torsion_idx if i < internal_dimension}
-            terminal_grid = {'torsion_{}'.format(i-internal_dimension): terminal_torsion_resolution for i in all_torsion_idx if i >= internal_dimension}
-            crank_jobs['crank_job_{}'.format(crank_job)] = {'crank_specs': {'model': model, 'options': options},
-                                                            'internal_torsions': internal_grid, 'terminal_torsions': terminal_grid}
+            internal_torsions = [internal_torsions['torsion_{}'.format(i)] for i in all_torsion_idx if i < internal_dimension]
+            terminal_torsions = [terminal_torsions['torsion_{}'.format(i-internal_dimension)] for i in all_torsion_idx if i >= internal_dimension]
+            grid = [internal_torsion_resolution]*len(internal_torsions)
+            grid.extend([terminal_torsion_resolution]*len(terminal_torsions))
+            dihedrals = internal_torsions + terminal_torsions
+            crank_jobs['crank_job_{}'.format(crank_job)] = {'diherals': dihedrals, 'grid_spacing': grid}
             crank_job += 1
 
-    fragment_data['crank_torsion_drives'] = crank_jobs
-
-    return fragment_data
+    return crank_jobs
 
 
 def get_initial_crank_state(fragment):
@@ -287,54 +277,3 @@ def get_initial_crank_state(fragment):
 
         crank_initial_states[job] = crank_state
     return crank_initial_states
-
-
-def to_crank_input(fragment, mol_name=None, path=None, crank_job='crank_job_1', launch=False, **kwargs):
-    """
-    Generate crank input files for a fragment (psi4 input file and dihedral file containing torsions that should
-    be restrained
-
-    Parameters
-    ----------
-    fragment: dict
-    mol_name: str
-        name for molecule. Will be used for filename and molecule name in psi4 input file so it should be a valid Python
-        identifier. If None, a name will be generated from SMILES with invalid characters converted to hex. Default is
-        None
-    path: str
-        path to write files to. If None, the directory will be created in current directory. Default None
-    crank_job: str
-        key to crank job in fragment. Default is crank_job_1
-    **kwargs: key arguments for generating psi4 input file
-
-    Returns
-    -------
-    path: str
-        path to where the files were written
-    inputfile: str
-        absolute path to psi4 input file
-    dihedralfile: str
-        absolute path to dihedral file
-
-    """
-    if not mol_name:
-        # Generate Python valid identifier string from smiles by converting forbidden characters to _hex_
-        smiles = fragment['canonical_isomeric_SMILES']
-        mol_name, namespace = utils.make_python_identifier(smiles, convert='hex')
-    if not path:
-        cwd = os.getcwd()
-        path = os.path.join(cwd, mol_name + '_{}'.format(crank_job))
-
-    # create folder to launch crank in
-    try:
-        os.mkdir(path)
-    except FileExistsError:
-        utils.logger().warning("Overwriting {}".format(path))
-
-    # Write out input files
-    inputfile = os.path.join(path, mol_name + '_{}.dat'.format(crank_job))
-    utils.to_psi4_input(fragment, molecule_name=mol_name, crank_job=crank_job, filename=inputfile, **kwargs)
-    dihedralfile = os.path.join(path, mol_name + '_{}.txt'.format(crank_job))
-    utils.to_dihedraltxt(fragment, crank_job=crank_job, filename=dihedralfile)
-
-    return path, inputfile, dihedralfile

@@ -12,109 +12,124 @@ class TestWorkflow(unittest.TestCase):
 
     def test_get_provenance(self):
         """Test get provenance"""
-        provenance = workflow_api._get_provenance(routine='enumerate_states')
-        default_kewyords = {'carbon_hybridization': True,
-                            'level': 0,
-                            'max_states': 200,
-                            'protonation': True,
-                            'reasonable': True,
-                            'stereoisomers': True,
-                            'suppress_hydrogen': True,
-                            'tautomers': False}
-        self.assertEqual(provenance['routine']['enumerate_states']['keywords'], default_kewyords)
-        self.assertEqual(provenance['routine']['enumerate_states']['version'], fragmenter.__version__)
+        provenance = workflow_api._get_provenance(workflow_id='workflow_1', routine='enumerate_states')
 
-        options = get_fn('options.yaml')
-        provenance = workflow_api._get_provenance(routine='enumerate_states', options=options)
-        self.assertTrue(provenance['routine']['enumerate_states']['keywords']['tautomers'])
-        self.assertFalse(provenance['routine']['enumerate_states']['keywords']['stereoisomers'])
+        self.assertIn('workflow_id', provenance)
+        self.assertIn('enumerate_states', provenance['routine'])
 
-        provenance = workflow_api._get_provenance(routine='enumerate_fragments', options=options)
-        self.assertTrue(provenance['routine']['enumerate_fragments']['keywords']['generate_visualization'])
-        self.assertFalse(provenance['routine']['enumerate_fragments']['keywords']['strict_stereo'])
+        provenance = workflow_api._get_provenance(workflow_id='workflow_1', routine='enumerate_fragments')
+        self.assertIn('workflow_id', provenance)
+        self.assertIn('enumerate_fragments', provenance['routine'])
+
+
+        # default_kewyords = {'carbon_hybridization': True,
+        #                     'level': 0,
+        #                     'max_states': 200,
+        #                     'protonation': True,
+        #                     'reasonable': True,
+        #                     'stereoisomers': True,
+        #                     'suppress_hydrogen': True,
+        #                     'tautomers': False}
+        # self.assertEqual(provenance['routine']['enumerate_states']['keywords'], default_kewyords)
+        # self.assertEqual(provenance['routine']['enumerate_states']['version'], fragmenter.__version__)
+        #
+        # #options = get_fn('options.yaml')
+        # provenance = workflow_api._get_provenance(workflow_id='workflow_1', routine='enumerate_states')
+        # self.assertTrue(provenance['routine']['enumerate_states']['keywords']['tautomers'])
+        # self.assertFalse(provenance['routine']['enumerate_states']['keywords']['stereoisomers'])
+        #
+        # provenance = workflow_api._get_provenance(workflow_id='workflow_1', routine='enumerate_fragments')
+        # self.assertTrue(provenance['routine']['enumerate_fragments']['keywords']['generate_visualization'])
+        # self.assertFalse(provenance['routine']['enumerate_fragments']['keywords']['strict_stereo'])
 
     def test_load_options(self):
         """Test load options"""
-        options = workflow_api._load_options('enumerate_states')
-        default_options_wf = workflow_api._default_options['enumerate_states']
-        default_options = {'carbon_hybridization': True,
-                            'level': 0,
-                            'max_states': 200,
-                            'protonation': True,
-                            'reasonable': True,
-                            'stereoisomers': True,
-                            'suppress_hydrogen': True,
-                            'tautomers': False}
-        self.assertEqual(options, default_options_wf)
-        self.assertEqual(default_options_wf, default_options)
-        self.assertEqual(options, default_options)
+        options_1 = workflow_api._get_options(workflow_id='workflow_1', all=True)
 
-        user_options = get_fn('options.yaml')
-        options = workflow_api._load_options(routine='enumerate_states', load_path=user_options)
-        self.assertTrue(options['tautomers'])
-        self.assertFalse(options['stereoisomers'])
+        fn = get_fn('workflows.json')
+        f = open(fn)
+        options_2 = json.load(f)['workflow_1']['fragmenter']
 
-        options = workflow_api._load_options('enumerate_fragments')
-        default_options_wf = workflow_api._default_options['enumerate_fragments']
-        default_options = {'strict_stereo': True,
-                            'combinatorial': True,
-                            'MAX_ROTORS': 2,
-                            'remove_map': True}
+        self.assertEqual(options_1, options_2)
+        # default_options_wf = workflow_api._default_options['enumerate_states']
+        # default_options = {'carbon_hybridization': True,
+        #                     'level': 0,
+        #                     'max_states': 200,
+        #                     'protonation': True,
+        #                     'reasonable': True,
+        #                     'stereoisomers': True,
+        #                     'suppress_hydrogen': True,
+        #                     'tautomers': False}
+        # self.assertEqual(options, default_options_wf)
+        # self.assertEqual(default_options_wf, default_options)
+        # self.assertEqual(options, default_options)
+        #
+        # user_options = get_fn('options.yaml')
+        # options = workflow_api._load_options(routine='enumerate_states', load_path=user_options)
+        # self.assertTrue(options['tautomers'])
+        # self.assertFalse(options['stereoisomers'])
+        #
+        # options = workflow_api._load_options('enumerate_fragments')
+        # default_options_wf = workflow_api._default_options['enumerate_fragments']
+        # default_options = {'strict_stereo': True,
+        #                     'combinatorial': True,
+        #                     'MAX_ROTORS': 2,
+        #                     'remove_map': True}
+        #
+        # self.assertEqual(options, default_options_wf)
+        # self.assertEqual(default_options_wf, default_options)
+        # self.assertEqual(options, default_options)
+        #
+        # options = workflow_api._load_options(routine='enumerate_fragments', load_path=user_options)
+        # self.assertFalse(options['strict_stereo'])
+        # self.assertTrue(options['generate_visualization'])
+        #
+        # options = workflow_api._load_options('generate_crank_jobs')
+        # default_options_wf = workflow_api._default_options['generate_crank_jobs']
+        # default_options = {'max_conf': 1,
+        #                     'terminal_torsion_resolution': 30,
+        #                     'internal_torsion_resolution': 30,
+        #                     'scan_internal_external_combination': 0,
+        #                     'scan_dimension': 2,
+        #                     'options':{
+        #                     'qc_program': 'psi4',
+        #                     'method': 'B3LYP',
+        #                     'basis': 'aug-cc-pVDZ'}}
+        #
+        # self.assertEqual(options, default_options_wf)
+        # self.assertEqual(default_options_wf, default_options)
+        # self.assertEqual(options, default_options)
+        #
+        # options = workflow_api._load_options(routine='generate_crank_jobs', load_path=user_options)
+        # self.assertEqual(options['terminal_torsion_resolution'], 0)
+        # self.assertEqual(options['internal_torsion_resolution'], 15)
 
-        self.assertEqual(options, default_options_wf)
-        self.assertEqual(default_options_wf, default_options)
-        self.assertEqual(options, default_options)
-
-        options = workflow_api._load_options(routine='enumerate_fragments', load_path=user_options)
-        self.assertFalse(options['strict_stereo'])
-        self.assertTrue(options['generate_visualization'])
-
-        options = workflow_api._load_options('generate_crank_jobs')
-        default_options_wf = workflow_api._default_options['generate_crank_jobs']
-        default_options = {'max_conf': 1,
-                            'terminal_torsion_resolution': 30,
-                            'internal_torsion_resolution': 30,
-                            'scan_internal_external_combination': 0,
-                            'scan_dimension': 2,
-                            'options':{
-                            'qc_program': 'psi4',
-                            'method': 'B3LYP',
-                            'basis': 'aug-cc-pVDZ'}}
-
-        self.assertEqual(options, default_options_wf)
-        self.assertEqual(default_options_wf, default_options)
-        self.assertEqual(options, default_options)
-
-        options = workflow_api._load_options(routine='generate_crank_jobs', load_path=user_options)
-        self.assertEqual(options['terminal_torsion_resolution'], 0)
-        self.assertEqual(options['internal_torsion_resolution'], 15)
-
-    def test_remove_extraneous_options(self):
-        """Test remove extraneous options"""
-
-        default_options = workflow_api._default_options
-        options = get_fn('options.yaml')
-        user_options = workflow_api._load_options(routine='enumerate_states', load_path=options)
-        needed_options = workflow_api._remove_extraneous_options(user_options, 'enumerate_states')
-
-        with self.assertRaises(KeyError):
-            self.assertTrue(needed_options['verbose'])
-            self.assertTrue(default_options['verbose'])
-
-        self.assertFalse(user_options['verbose'])
-
-        user_options = workflow_api._load_options(routine='enumerate_fragments', load_path=options)
-        needed_options = workflow_api._remove_extraneous_options(user_options, 'enumerate_fragments')
-        with self.assertRaises(KeyError):
-            self.assertTrue(needed_options['generate_visualization'])
+    # def test_remove_extraneous_options(self):
+    #     """Test remove extraneous options"""
+    #
+    #     default_options = workflow_api._default_options
+    #     options = get_fn('options.yaml')
+    #     user_options = workflow_api._load_options(routine='enumerate_states', load_path=options)
+    #     needed_options = workflow_api._remove_extraneous_options(user_options, 'enumerate_states')
+    #
+    #     with self.assertRaises(KeyError):
+    #         self.assertTrue(needed_options['verbose'])
+    #         self.assertTrue(default_options['verbose'])
+    #
+    #     self.assertFalse(user_options['verbose'])
+    #
+    #     user_options = workflow_api._load_options(routine='enumerate_fragments', load_path=options)
+    #     needed_options = workflow_api._remove_extraneous_options(user_options, 'enumerate_fragments')
+    #     with self.assertRaises(KeyError):
+    #         self.assertTrue(needed_options['generate_visualization'])
 
     def test_enumerate_states(self):
         """Test enumerate states"""
 
-        states = workflow_api.enumerate_states('CCC(C)(C)C(=O)O')
+        states = workflow_api.enumerate_states(molecule='CCC(C)(C)C(=O)O', workflow_id='workflow_1')
         smiles = {'states': {'CCC(C)(C)C(=O)O', 'CCC(C)(C)C(=O)[O-]'}}
         self.assertEqual(len(states['states']), 2)
-        self.assertEqual(states['provenance']['routine']['enumerate_states']['keywords'], workflow_api._default_options['enumerate_states'])
+        self.assertEqual(states['provenance']['routine']['enumerate_states']['parent_molecule'], 'CCC(C)(C)C(=O)O')
         self.assertEqual(states['provenance']['routine']['enumerate_states']['version'], fragmenter.__version__)
 
         states.pop('provenance')
@@ -124,7 +139,7 @@ class TestWorkflow(unittest.TestCase):
         """Test enumerate fragments"""
 
         mol_smiles = 'CCCCC'
-        fragments = workflow_api.enumerate_fragments(mol_smiles)
+        fragments = workflow_api.enumerate_fragments(molecule=mol_smiles, workflow_id='workflow_1')
         self.assertEqual(len(fragments), 1)
 
         molecule = {'geometry': [0.31914281845092773,
@@ -189,14 +204,14 @@ class TestWorkflow(unittest.TestCase):
         #                 molecule['geometry'])
 
         mol_smiles_iso = 'N[C@H](C)CCF'
-        frags_iso = fragmenter.workflow_api.enumerate_fragments(mol_smiles_iso)
+        frags_iso = fragmenter.workflow_api.enumerate_fragments(molecule=mol_smiles_iso, workflow_id='workflow_1')
 
         self.assertEqual(len(frags_iso.keys()), 2)
         iso_frag = frags_iso['CC[C@@H](C)N']
-        self.assertEqual(iso_frag['SMILES']['canonical_smiles'], 'CCC(C)N')
-        self.assertEqual(iso_frag['SMILES']['canonical_isomeric_explicit_hydrogen_smiles'],
+        self.assertEqual(iso_frag['identifiers']['canonical_smiles'], 'CCC(C)N')
+        self.assertEqual(iso_frag['identifiers']['canonical_isomeric_explicit_hydrogen_smiles'],
                          '[H][C@@](C([H])([H])[H])(C([H])([H])C([H])([H])[H])N([H])[H]')
-        self.assertEqual(iso_frag['SMILES']['canonical_explicit_hydrogen_smiles'],
+        self.assertEqual(iso_frag['identifiers']['canonical_explicit_hydrogen_smiles'],
                          '[H]C([H])([H])C([H])([H])C([H])(C([H])([H])[H])N([H])[H]')
 
     def test_generate_crank_jobs(self):
@@ -204,61 +219,64 @@ class TestWorkflow(unittest.TestCase):
 
         fragment = json.load(open(get_fn('CCCC.json'), 'r'))
 
-        crank_jobs = workflow_api.generate_crank_jobs(fragment['CCCC'])
+        crank_jobs = workflow_api.generate_torsiondrive_input(fragment['CCCC'], workflow_id='workflow_1')
 
-        self.assertEqual(len(crank_jobs), 2)
-        self.assertEqual(crank_jobs['crank_job_0']['dihedrals'][0], [0, 1, 2, 3])
-        self.assertEqual(crank_jobs['crank_job_0']['grid_spacing'], [30])
-        terminal_dihs = {tuple(crank_jobs['crank_job_1']['dihedrals'][0]), tuple( crank_jobs['crank_job_1']['dihedrals'][1])}
-        self.assertCountEqual(terminal_dihs, {(2, 1, 0, 4), (1, 2, 3, 11)})
-        self.assertEqual(crank_jobs['crank_job_1']['grid_spacing'], [30, 30])
+        key = '[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]'
+        expected_dih = [(0, 2, 3, 1), (3, 2, 0, 4), (2, 3, 1, 7)]
+        all_dih = crank_jobs[key]['torsiondrive_input']['job_0']['dihedrals'] + crank_jobs[key]['torsiondrive_input']['job_1']['dihedrals']
+        for dih in all_dih:
+            self.assertIn(dih, expected_dih)
 
-        with self.assertRaises(Warning):
-            workflow_api.generate_crank_jobs(fragment['CCCC'], options=get_fn('options.yaml'))
+        self.assertEqual(len(crank_jobs), 1)
+        self.assertEqual(len(crank_jobs[key]['torsiondrive_input']), 2)
+        self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_0']['grid_spacing'][0], 30)
+        self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_1']['grid_spacing'][0], 30)
 
     def test_workflow(self):
         """Test workflow"""
 
         smiles_list = ['CCCC', 'CCCCCC']
-        crank_jobs = workflow_api.workflow(smiles_list, write_json_crank_job=False)
+        crank_jobs = workflow_api.workflow(smiles_list, write_json_intermediate=False, workflow_id='workflow_1')
+
+        key = '[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]'
 
         self.assertEqual(len(crank_jobs.keys()), 1)
-        self.assertEqual(list(crank_jobs.keys())[0], 'CCCC')
-        self.assertEqual(len(crank_jobs['CCCC'].keys()), 2)
-        self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['dihedrals']), 1)
-        self.assertEqual(len(crank_jobs['CCCC']['crank_job_1']['dihedrals']), 2)
-        self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance'], crank_jobs['CCCC']['crank_job_1']['provenance'])
-        self.assertEqual(len(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']), 7)
-        self.assertEqual(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_smiles'],
-                         crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_explicit_hydrogen_smiles'])
+        self.assertEqual(list(crank_jobs.keys())[0], key)
+        self.assertEqual(len(crank_jobs[key].keys()), 2)
 
-    @unittest.skipUnless(has_crank, 'Cannot test without crank')
-    def test_crank(self):
-        """Test fragmenter interfacing with crank"""
+        #self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_0']['provenance'], crank_jobs[key]['torsiondrive_input']['job_1']['provenance'])
+        self.assertEqual(len(crank_jobs[key]['torsiondrive_input']['job_0']['initial_molecule']['identifiers']), 7)
+        self.assertEqual(crank_jobs[key]['torsiondrive_input']['job_0']['initial_molecule']['identifiers']['canonical_isomeric_explicit_hydrogen_smiles'],
+                         crank_jobs[key]['torsiondrive_input']['job_0']['initial_molecule']['identifiers']['canonical_explicit_hydrogen_smiles'])
 
-        from crank import crankAPI
-        crank_jobs = workflow_api.workflow(['CCCC'], write_json_crank_job=False)
-
-        for mol in crank_jobs:
-            for job in crank_jobs[mol]:
-                state = copy.deepcopy(crank_jobs[mol][job])
-                next_job = crankAPI.next_jobs_from_state(state)
-                crankAPI.update_state(state, next_job)
-
-                self.assertEqual(crank_jobs[mol][job]['dihedrals'], state['dihedrals'])
-                self.assertEqual(state['grid_status'], next_job)
+    # @unittest.skipUnless(has_crank, 'Cannot test without crank')
+    # def test_crank(self):
+    #     """Test fragmenter interfacing with crank"""
+    #
+    #     from crank import crankAPI
+    #     crank_jobs = workflow_api.workflow(['CCCC'], write_json_crank_job=False)
+    #
+    #     for mol in crank_jobs:
+    #         for job in crank_jobs[mol]:
+    #             state = copy.deepcopy(crank_jobs[mol][job])
+    #             next_job = crankAPI.next_jobs_from_state(state)
+    #             crankAPI.update_state(state, next_job)
+    #
+    #             self.assertEqual(crank_jobs[mol][job]['dihedrals'], state['dihedrals'])
+    #             self.assertEqual(state['grid_status'], next_job)
 
     @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
     def test_dihedral_numbering(self):
         """Test dihedral indices correspond to attached atoms"""
 
         from openeye import oechem
-        crank_jobs = workflow_api.workflow(['CCCC'], write_json_crank_job=False)
+        crank_jobs = workflow_api.workflow(['CCCC'], workflow_id='workflow_1')
+        key = '[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]'
 
-        mol_with_map = chemi.smiles_to_oemol(crank_jobs['CCCC']['crank_job_0']['provenance']['SMILES']['canonical_isomeric_explicit_hydrogen_mapped_smiles'])
+        mol_with_map = chemi.smiles_to_oemol(key)
 
-        for job in crank_jobs['CCCC']:
-            dihedrals = crank_jobs['CCCC'][job]['dihedrals']
+        for job in crank_jobs[key]['torsiondrive_input']:
+            dihedrals = crank_jobs[key]['torsiondrive_input'][job]['dihedrals']
             for dihedral in dihedrals:
                 prev_atom = mol_with_map.GetAtom(oechem.OEHasMapIdx(dihedral[0]+1))
                 for d in dihedral[1:]:
