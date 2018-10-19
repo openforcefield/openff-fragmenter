@@ -8,6 +8,43 @@ import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from openeye import oechem
 from cmiles import to_molecule_id
+import qcportal as portal
+
+
+class WorkFlow(object):
+
+    def __init__(self, workflow_id, client, workflow_json=None):
+        """
+
+        Parameters
+        ----------
+        id
+        client
+
+        Returns
+        -------
+
+        """
+        self.workflow_id = workflow_id
+
+        if workflow_json is not None:
+            with open(workflow_json) as file:
+                workflow_json = json.load(file)[workflow_id]
+        # Check that all fields exist
+
+        # Check if id already in database
+        try:
+            off_workflow = portal.collections.OpenFFWorkflow.from_server(client, workflow_id)
+            if workflow_json is not None:
+                # Check if workflows are the same
+                _check_workflow(workflow_json, off_workflow)
+                utils.logger().warning("The workflow ID provided already exits in the database. The options you "
+                                       "provided are the same as in the database. The database options will be used.")
+        except KeyError:
+            # Get workflow from json file and register
+            off_workflow = portal.collections.OpenFFWorkflow(workflow_id, options=workflow_json, client=client)
+
+        self.off_workflow = off_workflow
 
 
 def enumerate_states(molecule, workflow_id, options=None, title='', json_filename=None):
@@ -316,3 +353,20 @@ def combine_json_fragments(json_inputs, json_output=None):
     return fragments
 
 
+def register_workflow():
+    pass
+
+def pull_workflow():
+    pass
+
+
+def _check_workflow(workflow_json, off_workflow):
+
+    for key in workflow_json:
+        print(key)
+        print(workflow_json[key])
+        print(off_workflow.get_options(key))
+        if workflow_json[key] != off_workflow.get_options(key):
+            raise ValueError("The workflow ID provided already exists in the database. The options for {} are different"
+                             "in the registered workflow and provided workflow. The options provided are {} and "
+                             "the options in the database are {}".format(key, workflow_json[key], off_workflow.get_options(key), key))
