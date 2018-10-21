@@ -271,6 +271,8 @@ class WorkFlow(object):
         all_jobs = {}
         for frag in all_frags:
             crank_jobs = self.generate_torsiondrive_input(all_frags[frag])
+            if not crank_jobs:
+                continue
             all_jobs.update(crank_jobs)
         self.torsiondrive_jobs = all_jobs
 
@@ -281,6 +283,9 @@ class WorkFlow(object):
 
     def add_fragments_to_db(self):
         for frag in self.torsiondrive_jobs:
+            if not self.torsiondrive_jobs[frag]['torsiondrive_input']:
+                # No jobs were found for this fragments
+                continue
             self.off_workflow.add_fragment(frag, self.torsiondrive_jobs[frag]['torsiondrive_input'],
                                            self.torsiondrive_jobs[frag]['provenance'])
 
