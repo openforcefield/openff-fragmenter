@@ -279,7 +279,7 @@ class WorkFlow(object):
         if json_filename:
             with open(json_filename, 'w') as f:
                 json.dump(all_jobs, f, indent=2, sort_keys=True)
-        return all_jobs
+        #return all_jobs
 
     def add_fragments_to_db(self):
         for frag in self.torsiondrive_jobs:
