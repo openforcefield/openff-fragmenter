@@ -26,7 +26,7 @@ class WorkFlow(object):
 
         if workflow_json is not None:
             with open(workflow_json) as file:
-                workflow_json = json.load(file)[workflow_id]
+                workflow_json = json.load(file)[workflow_id]['fragmenter']
         # Check that all fields exist
 
         # Check if id already in database
@@ -39,7 +39,7 @@ class WorkFlow(object):
                                        "provided are the same as in the database. The database options will be used.")
         except KeyError:
             # Get workflow from json file and register
-            off_workflow = portal.collections.OpenFFWorkflow(workflow_id, options=workflow_json, client=client)
+            off_workflow = portal.collections.OpenFFWorkflow(workflow_id, client=client, options=workflow_json)
 
         self.off_workflow = off_workflow
         self.states = {}
@@ -198,7 +198,13 @@ class WorkFlow(object):
 
         identifier = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
         torsiondrive_inputs = {identifier: {'torsiondrive_input': {}, 'provenance': provenance}}
-        needed_torsion_drives = torsions.define_torsiondrive_jobs(torsions.find_torsions(mapped_mol), **options)
+        restricted = options.pop('restricted')
+        needed_torsions = torsions.find_torsions(mapped_mol, restricted)
+        if not restricted:
+            needed_torsion_drives = torsions.define_torsiondrive_jobs(needed_torsions, **options)
+        elif restricted:
+            # ToDo have a function generate input for restrained optimization
+            pass
         for i, job in enumerate(needed_torsion_drives):
             torsiondrive_input = dict()
             torsiondrive_input['initial_molecule'] = qm_mol
@@ -246,7 +252,6 @@ class WorkFlow(object):
         all_frags = {}
 
         for i, molecule_smile in enumerate(molecules_smiles):
-            print(molecule_smile)
             filename = None
             title = ''
             if molecule_titles:
@@ -257,14 +262,12 @@ class WorkFlow(object):
                 filename = 'states_{}.json'.format(utils.make_python_identifier(molecule_smile)[0])
             self.states = self.enumerate_states(molecule_smile, title=title, json_filename=filename)
             for j, state in enumerate(self.states['states']):
-                print(state)
                 if write_json_intermediate and title:
                     filename = 'fragments_{}_{}.json'.format(title, j)
                 if write_json_intermediate and not title:
                     filename = 'fragment_{}_{}.json'.format(utils.make_python_identifier(state)[0], j)
                 fragments = self.enumerate_fragments(state, title=title, mol_provenance=self.states['provenance'],
                                                 json_filename=filename, generate_vis=generate_vis)
-                print(fragments.keys())
                 all_frags.update(**fragments)
         self.fragments = all_frags
 

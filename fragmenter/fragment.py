@@ -238,12 +238,12 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Fal
         else:
             smiles = frag_to_smiles(frag_list, charged)
 
-        parent_smiles = oechem.OEMolToSmiles(molecule)
+        parent_smiles = to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=False, mapped=False)
         if smiles:
             fragments[parent_smiles] = list(smiles.keys())
         else:
             # Add molecule where no fragments were found for terminal torsions and / or rings and non rotatable bonds
-            fragments[parent_smiles] = [parent_smiles]
+            fragments[parent_smiles] = [to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=True, mapped=False)]
 
         if generate_visualization:
             IUPAC = oeiupac.OECreateIUPACName(molecule)
