@@ -16,7 +16,7 @@ from cmiles import to_canonical_smiles_oe
 warnings.simplefilter('always')
 
 
-def find_torsions(molecule, restricted=True):
+def find_torsions(molecule, restricted=False):
     """
     This function takes an OEMol (atoms must be tagged with index map) and finds the map indices for torsion that need
     to be driven.
@@ -44,6 +44,7 @@ def find_torsions(molecule, restricted=True):
         # ToDo: save the new tagged SMILES somewhere. Maybe return it?
 
     if restricted:
+        print(restricted)
         return _find_restricted_torsions(molecule)
 
     mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
