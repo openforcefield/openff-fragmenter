@@ -238,8 +238,12 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Fal
         else:
             smiles = frag_to_smiles(frag_list, charged)
 
-        parent_smiles = oechem.OEMolToSmiles(molecule)
-        fragments[parent_smiles] = list(smiles.keys())
+        parent_smiles = to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=False, mapped=False)
+        if smiles:
+            fragments[parent_smiles] = list(smiles.keys())
+        else:
+            # Add molecule where no fragments were found for terminal torsions and / or rings and non rotatable bonds
+            fragments[parent_smiles] = [to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=True, mapped=False)]
 
         if generate_visualization:
             IUPAC = oeiupac.OECreateIUPACName(molecule)
@@ -247,7 +251,6 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Fal
             if IUPAC == name:
                 name = make_python_identifier(oechem.OEMolToSmiles(molecule))[0]
             oname = '{}.pdf'.format(name)
-            print(oname)
             ToPdf(charged, oname, frags)
         del charged, frags
     if json_filename:
@@ -898,9 +901,9 @@ def ToPdf(mol, oname, frags):#, fragcombs):
 
     DepictMoleculeWithFragmentCombinations(report, mol, frags, opts)
 
-    oedepict.OEWriteReport(oname, report)
+    return oedepict.OEWriteReport(oname, report)
 
-    return 0
+    #return 0
 
 
 def OeMolToGraph(oemol):

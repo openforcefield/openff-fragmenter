@@ -16,7 +16,7 @@ from cmiles import to_canonical_smiles_oe
 warnings.simplefilter('always')
 
 
-def find_torsions(molecule):
+def find_torsions(molecule, restricted=False):
     """
     This function takes an OEMol (atoms must be tagged with index map) and finds the map indices for torsion that need
     to be driven.
@@ -42,6 +42,10 @@ def find_torsions(molecule):
         utils.logger().warning('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
         utils.logger().warning('The new tagged SMARTS is: {}'.format(tagged_smiles))
         # ToDo: save the new tagged SMILES somewhere. Maybe return it?
+
+    if restricted:
+        print(restricted)
+        return _find_restricted_torsions(molecule)
 
     mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
 
@@ -83,6 +87,32 @@ def find_torsions(molecule):
                       "your molecule and the atom mapping")
 
     return needed_torsion_scans
+
+
+def _find_restricted_torsions(molecule):
+
+    restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]' # This should capture double and triple bonds
+    qmol=oechem.OEQMol()
+    if not oechem.OEParseSmarts(qmol, restricted_smarts):
+        utils.logger().warning('OEParseSmarts failed')
+    ss = oechem.OESubSearch(qmol)
+    mol = oechem.OEMol(molecule)
+    restricted_tors = []
+    oechem.OEPrepareSearch(mol, ss)
+    unique = True
+    for match in ss.Match(mol, unique):
+        tor = []
+        for ma in match.GetAtoms():
+            tor.append(ma.target)
+        restricted_tors.append(tor)
+
+    restricted_torsion_scans = {'restricted_rotors': {}}
+    if restricted_tors:
+        non_rotor_min = one_torsion_per_rotatable_bond(restricted_tors)
+        for i, tor in enumerate(non_rotor_min):
+            tor_name = ((tor[0].GetMapIdx() - 1), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
+            restricted_torsion_scans['non_rotors']['torsion_{}'.format(str(i))] = tor_name
+    return restricted_torsion_scans
 
 
 def one_torsion_per_rotatable_bond(torsion_list):
@@ -195,7 +225,7 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
                 grid = [internal_torsion_resolution]*len(dihedrals)
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
-            if internal_dimension < scan_dimension:
+            if internal_dimension < scan_dimension and internal_dimension > 0:
                 dihedrals = [internal_torsions[torsion] for torsion in internal_torsions]
                 grid = [internal_torsion_resolution]*len(dihedrals)
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
@@ -207,7 +237,7 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
                 grid = [terminal_torsion_resolution]*scan_dimension
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
-            if terminal_dimension < scan_dimension:
+            if terminal_dimension < scan_dimension and terminal_dimension > 0:
                 dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
                 grid = [terminal_torsion_resolution]*len(dihedrals)
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}

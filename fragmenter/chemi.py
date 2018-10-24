@@ -259,7 +259,7 @@ def is_mapped(molecule):
     return IS_MAPPED
 
 
-def get_atom_map(tagged_smiles, molecule=None, strict_stereo=True, verbose=True):
+def get_atom_map(tagged_smiles, molecule=None, strict_stereo=True, verbose=False):
     """
     Returns a dictionary that maps tag on SMILES to atom index in molecule.
     Parameters
@@ -542,7 +542,7 @@ def new_output_stream(outname):
     return ofs
 
 
-def file_to_oemols(filename, title=True, verbose=True):
+def file_to_oemols(filename, title=True, verbose=False):
     """Create OEMol from file. If more than one mol in file, return list of OEMols.
 
     Parameters
