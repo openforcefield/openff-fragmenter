@@ -16,7 +16,7 @@ from cmiles import to_canonical_smiles_oe
 warnings.simplefilter('always')
 
 
-def find_torsions(molecule, restricted=False):
+def find_torsions(molecule, restricted=True, terminal=True):
     """
     This function takes an OEMol (atoms must be tagged with index map) and finds the map indices for torsion that need
     to be driven.
@@ -43,35 +43,25 @@ def find_torsions(molecule, restricted=False):
         utils.logger().warning('The new tagged SMARTS is: {}'.format(tagged_smiles))
         # ToDo: save the new tagged SMILES somewhere. Maybe return it?
 
-    if restricted:
-        print(restricted)
-        return _find_restricted_torsions(molecule)
-
-    mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
-
-    # This smarts should match terminal torsions such as -CH3, -NH2, -NH3+, -OH, and -SH
-
-    smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
-    qmol=oechem.OEQMol()
-    if not oechem.OEParseSmarts(qmol, smarts):
-        utils.logger().warning('OEParseSmarts failed')
-    ss = oechem.OESubSearch(qmol)
+    needed_torsion_scans = {'internal': {}, 'terminal': {}, 'restricted': {}}
     mol = oechem.OEMol(molecule)
-    h_tors = []
-    oechem.OEPrepareSearch(mol, ss)
-    unique = True
-    for match in ss.Match(mol, unique):
-        tor = []
-        for ma in match.GetAtoms():
-            tor.append(ma.target)
-        h_tors.append(tor)
+    if restricted:
+        smarts = '[*]~[C,c]=,@[C,c]~[*]' # This should capture double and triple bonds
+        restricted_tors = _find_torsions_from_smarts(molecule=mol, smarts=smarts)
+        restricted_tors_min = one_torsion_per_rotatable_bond(restricted_tors)
+        for i, tor in enumerate(restricted_tors_min):
+            tor_name = ((tor[0].GetMapIdx() - 1), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
+            needed_torsion_scans['restricted']['torsion_{}'.format(str(i))] = tor_name
 
-    needed_torsion_scans = {'internal': {}, 'terminal': {}}
-    if h_tors:
+    if terminal:
+        smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]' # This smarts should match terminal torsions such as -CH3, -NH2, -NH3+, -OH, and -SH
+        h_tors = _find_torsions_from_smarts(molecule=mol, smarts=smarts)
         h_tors_min = one_torsion_per_rotatable_bond(h_tors)
         for i, tor in enumerate(h_tors_min):
             tor_name = ((tor[0].GetMapIdx() -1 ), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
             needed_torsion_scans['terminal']['torsion_{}'.format(str(i))] = tor_name
+
+    mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(mol)]
     if mid_tors:
         mid_tors_min = one_torsion_per_rotatable_bond(mid_tors)
         for i, tor in enumerate(mid_tors_min):
@@ -89,30 +79,23 @@ def find_torsions(molecule, restricted=False):
     return needed_torsion_scans
 
 
-def _find_restricted_torsions(molecule):
+def _find_torsions_from_smarts(molecule, smarts):
 
-    restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]' # This should capture double and triple bonds
     qmol=oechem.OEQMol()
-    if not oechem.OEParseSmarts(qmol, restricted_smarts):
+    if not oechem.OEParseSmarts(qmol, smarts):
         utils.logger().warning('OEParseSmarts failed')
     ss = oechem.OESubSearch(qmol)
-    mol = oechem.OEMol(molecule)
-    restricted_tors = []
-    oechem.OEPrepareSearch(mol, ss)
+    #mol = oechem.OEMol(molecule)
+    tors = []
+    oechem.OEPrepareSearch(molecule, ss)
     unique = True
-    for match in ss.Match(mol, unique):
+    for match in ss.Match(molecule, unique):
         tor = []
         for ma in match.GetAtoms():
             tor.append(ma.target)
-        restricted_tors.append(tor)
+        tors.append(tor)
 
-    restricted_torsion_scans = {'restricted_rotors': {}}
-    if restricted_tors:
-        non_rotor_min = one_torsion_per_rotatable_bond(restricted_tors)
-        for i, tor in enumerate(non_rotor_min):
-            tor_name = ((tor[0].GetMapIdx() - 1), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
-            restricted_torsion_scans['non_rotors']['torsion_{}'.format(str(i))] = tor_name
-    return restricted_torsion_scans
+    return tors
 
 
 def one_torsion_per_rotatable_bond(torsion_list):
@@ -264,6 +247,20 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
 
     return crank_jobs
 
+
+def define_restricted_drive(needed_torsion_drives, grid_resolution=5, maximum_rotation=30):
+    """
+
+    Parameters
+    ----------
+    needed_torsion_drives
+    grid_resolution
+    maximum_rotation
+
+    Returns
+    -------
+
+    """
 
 def get_initial_crank_state(fragment):
     """
