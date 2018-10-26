@@ -7,7 +7,8 @@ except ImportError:
 from rdkit import Chem
 
 import cmiles
-from .utils import logger
+from .utils import logger, ANGSROM_2_BOHR
+from fragmenter import chemi
 
 import os
 import numpy as np
@@ -109,6 +110,7 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
         raise(ValueError('Not a valid option to keep_confs in get_charges.'))
 
     return charged_copy
+
 
 def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
                         can_order=True, copy=True):
@@ -732,7 +734,7 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def to_mapped_QC_JSON_geometry(mapped_mol, atom_map=None, multiplicity=1):
+def to_mapped_QC_JSON_geometry(mapped_mol, identifiers=None, atom_map=None, multiplicity=1):
     """
     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
     tag on the SMILES to the atom idex in OEMol.
@@ -752,9 +754,12 @@ def to_mapped_QC_JSON_geometry(mapped_mol, atom_map=None, multiplicity=1):
     geometry is in Bohr - QCJSON requirement
 
     """
+    if not identifiers:
+        identifiers = cmiles.to_molecule_id(mapped_mol, canonicalization='openeye')
     # Check if molecule has map
     if not is_mapped(mapped_mol) and atom_map is None:
-        raise TypeError("molecule must have atom map. You can generate a mapped molecule with a mapped SMILES or SMARTS")
+        # Generate a mapped molecule from identifiers
+        mapped_mol = chemi.smiles_to_oemol(identifiers['canonical_isomeric_explicit_hydrogen_mapped_smiles'])
     symbols = []
     geometry = []
 
@@ -762,18 +767,11 @@ def to_mapped_QC_JSON_geometry(mapped_mol, atom_map=None, multiplicity=1):
 
     # Generate conformer
     if not has_conformer(mapped_mol, check_two_dimension=True):
-        try:
-           mapped_oemol = generate_conformers(mapped_mol, max_confs=1, strict_stereo=True, strict_types=False, copy=False)
-        except RuntimeError:
-               logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
-                         "generated".format(mapped_mol.GetTitle()))
+        mapped_oemol = generate_conformers(mapped_mol, max_confs=1, strict_stereo=True, strict_types=False, copy=False,
+                                           can_order=True)
 
     if mapped_mol.GetMaxConfIdx() != 1:
         raise Warning("The molecule must have at least and at most 1 conformation")
-
-    # Check if coordinates are missing
-    if not has_conformer(mapped_mol, check_two_dimension=True):
-        raise RuntimeError("molecule {} does not have a 3D conformation".format(oechem.OEMolToSmiles(mapped_mol)))
 
     for mapping in range(1, mapped_mol.NumAtoms()+1):
         if is_mapped(mapped_mol):
@@ -786,12 +784,12 @@ def to_mapped_QC_JSON_geometry(mapped_mol, atom_map=None, multiplicity=1):
         syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
         symbols.append(syb)
         for i in range(3):
-            geometry.append(mapped_mol.GetCoords()[atom.GetIdx()][i]*1.8897261328856432)
+            geometry.append(mapped_mol.GetCoords()[atom.GetIdx()][i]*ANGSROM_2_BOHR)
 
     connectivity = get_mapped_connectivity_table(mapped_mol, atom_map)
 
     return {'symbols': symbols, 'geometry': geometry, 'molecular_charge': charge,
-            'molecular_multiplicity': multiplicity, 'connectivity': connectivity}
+            'molecular_multiplicity': multiplicity, 'connectivity': connectivity, 'identifiers': identifiers}
 
 
 def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename=None):

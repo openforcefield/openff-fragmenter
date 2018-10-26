@@ -5,6 +5,7 @@ import json
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import to_molecule_id, to_canonical_smiles_oe
+#import qcportal as portal
 try:
     import qcportal as portal
 except ImportError:
@@ -180,7 +181,7 @@ class WorkFlow(object):
 
         """
 
-        options = self.off_workflow.get_options('torsiondrive_input')['options']
+        options = self.off_workflow.get_options('torsiondrive_input')
         provenance = _get_provenance(workflow_id=self.workflow_id, routine='torsiondrive_input')
         frag['provenance']['routine']['torsiondrive_input'] = provenance['routine']['torsiondrive_input']
         provenance = frag['provenance']
@@ -190,7 +191,7 @@ class WorkFlow(object):
         mapped_smiles = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
         mapped_mol = chemi.smiles_to_oemol(mapped_smiles)
 
-        if options.pop('max_conf') == 1:
+        if options['torsiondrive_options'].pop('max_conf') == 1:
             # Generate 1 conformation for all jobs
             try:
                 qm_mol = chemi.to_mapped_QC_JSON_geometry(mapped_mol)
@@ -203,18 +204,26 @@ class WorkFlow(object):
         torsiondrive_inputs = {identifier: {'torsiondrive_input': {}, 'provenance': provenance}}
         restricted = options.pop('restricted')
         needed_torsions = torsions.find_torsions(mapped_mol, restricted)
-        if not restricted:
-            needed_torsion_drives = torsions.define_torsiondrive_jobs(needed_torsions, **options)
-        elif restricted:
-            # ToDo have a function generate input for restrained optimization
-            pass
-        for i, job in enumerate(needed_torsion_drives):
-            torsiondrive_input = dict()
+        restricted_torsions = needed_torsions.pop('restricted')
+        optimization_jobs = torsions.define_restricted_drive(qm_mol, restricted_torsions,
+                                                             **options['restricted_optimization_options'])
+        torsiondrive_jobs = torsions.define_torsiondrive_jobs(needed_torsions, **options['torsiondrive_options'])
+
+        for i, job in enumerate(torsiondrive_jobs):
+            torsiondrive_input = {'type': 'torsiondrive_input'}
             torsiondrive_input['initial_molecule'] = qm_mol
-            torsiondrive_input['initial_molecule']['identifiers'] = mol_id
-            torsiondrive_input['dihedrals'] = needed_torsion_drives[job]['dihedrals']
-            torsiondrive_input['grid_spacing'] = needed_torsion_drives[job]['grid_spacing']
-            torsiondrive_inputs[identifier]['torsiondrive_input']['job_{}'.format(i)] = torsiondrive_input
+            #torsiondrive_input['initial_molecule']['identifiers'] = mol_id
+            torsiondrive_input['dihedrals'] = torsiondrive_jobs[job]['dihedrals']
+            torsiondrive_input['grid_spacing'] = torsiondrive_jobs[job]['grid_spacing']
+            job_name = ''
+            for i, torsion in enumerate(torsiondrive_input['dihedrals']):
+                if i > 0:
+                    job_name += '_{}'.format(torsion)
+                else:
+                    job_name += '{}'.format(torsion)
+            torsiondrive_inputs[identifier]['torsiondrive_input'][job_name] = torsiondrive_input
+
+        torsiondrive_inputs[identifier]['optimization_input'] = optimization_jobs
 
         if json_filename:
             with open(json_filename, 'w') as f:
