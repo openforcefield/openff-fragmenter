@@ -48,7 +48,7 @@ class WorkFlow(object):
         self.off_workflow = off_workflow
         self.states = {}
         self.fragments = {}
-        self.torsiondrive_jobs = {}
+        self.qcfractal_jobs = {}
 
     def enumerate_states(self, molecule, title='', json_filename=None):
         """
@@ -289,7 +289,7 @@ class WorkFlow(object):
             if not crank_jobs:
                 continue
             all_jobs.update(crank_jobs)
-        self.torsiondrive_jobs = all_jobs
+        self.qcfractal_jobs = all_jobs
 
         if json_filename:
             with open(json_filename, 'w') as f:
