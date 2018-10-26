@@ -52,7 +52,7 @@
           "program": "rdkit"
         }
       },
-      "constrained_optimization_static_options":{
+      "optimization_static_options":{
         "optimization_meta": {
           "program": "geometric",
           "coordsys": "tric"
