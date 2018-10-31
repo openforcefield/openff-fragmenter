@@ -35,7 +35,7 @@
         },
         "restricted_optimization_options": {
           "maximum_rotation": 30,
-          "steps": 6
+          "interval": 5
         }
       },
       "torsiondrive_static_options": {
