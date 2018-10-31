@@ -7,10 +7,11 @@ except ImportError:
 import warnings
 import numpy as np
 import itertools
+from math import radians, degrees
 
 from . import utils, chemi
 from cmiles import to_canonical_smiles_oe
-
+from .utils import BOHR_2_ANGSTROM
 warnings.simplefilter('always')
 
 
@@ -284,9 +285,9 @@ def define_restricted_drive(qc_molecule, restricted_dihedrals, steps=6, maximum_
 
     """
     #ToDo extend to multi-dimensional scans
-    natoms = len(qc_molecule['symbols'])
+    #natoms = len(qc_molecule['symbols'])
     # Convert to 3D shape for
-    coords = np.array(qc_molecule['geometry'], dtype=float).reshape(natoms, 3) * utils.BOHR_2_ANGSTROM
+    #coords = np.array(qc_molecule['geometry'], dtype=float).reshape(natoms, 3) * utils.BOHR_2_ANGSTROM
     connectivity = np.asarray(qc_molecule['connectivity'])
 
     # Check dihedral indices are connected
@@ -299,24 +300,88 @@ def define_restricted_drive(qc_molecule, restricted_dihedrals, steps=6, maximum_
                 utils.logger().warning("torsion {} is not bonded. Skipping this torsion")
                 continue
         # measure dihedral angle
-        dihedral_angle = measure_dihedral_angle(restricted_dihedrals[torsion], coords)
+        dihedral_angle = measure_dihedral_angle(restricted_dihedrals[torsion], qc_molecule['geometry'])
         t_tuple = restricted_dihedrals[torsion]
         angle = round(dihedral_angle)
         optimization_jobs['{}_{}'.format(t_tuple, i)] = {
             'type': 'optimization_input',
             'initial_molecule': qc_molecule,
             'dihedrals': [restricted_dihedrals[torsion]],
-            'constrained_dict': {'scan': [('dihedral', str(t_tuple[0]), str(t_tuple[1]), str(t_tuple[2]),
+            'constraints': {'scan': [('dihedral', str(t_tuple[0]), str(t_tuple[1]), str(t_tuple[2]),
                                                str(t_tuple[3]), str(angle), str(angle + maximum_rotation),
                                                str(steps))]}}
         optimization_jobs['{}_{}'.format(t_tuple, i+1)] = {
             'type': 'optimization_input',
             'initial_molecule': qc_molecule,
             'dihedrals': [restricted_dihedrals[torsion]],
-            'constrained_dict': {'scan': [('dihedral', str(t_tuple[0]), str(t_tuple[1]), str(t_tuple[2]),
+            'constraints': {'scan': [('dihedral', str(t_tuple[0]), str(t_tuple[1]), str(t_tuple[2]),
                                                str(t_tuple[3]), str(angle), str(angle - maximum_rotation),
                                                str(steps))]}}
 
+    return optimization_jobs
+
+
+def generate_constraint_opt_input(qc_molecule, dihedrals, max_rot=30, interval=5, filename=None):
+    """
+
+    Parameters
+    ----------
+    qc_molecule
+    dihedrals
+
+    Returns
+    -------
+    QCFractal optimization jobs input
+
+    """
+
+    optimization_jobs = {}
+    tagged_smiles = qc_molecule['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
+    mol, atom_map = chemi.get_atom_map(tagged_smiles, generate_conformer=False)
+
+    coords = chemi.from_mapped_xyz_to_mol_idx_order(qc_molecule['geometry'], atom_map)
+
+    conf = mol.GetConfs().next()
+    conf.SetCoords(oechem.OEFloatArray(coords))
+
+    # new molecule for setting dihedral angles
+    mol_2 = oechem.OEMol(mol)
+    conf_2 = mol_2.GetConfs().next()
+    coords_2 = oechem.OEFloatArray(conf_2.GetMaxAtomIdx()*3)
+    conf.GetCoords(coords_2)
+    mol_2.DeleteConfs()
+
+    for dihedral in dihedrals:
+        dih_idx = dihedrals[dihedral]
+        tor = []
+        for i in dih_idx:
+            a = mol.GetAtom(oechem.OEHasMapIdx(i+1))
+            tor.append(a)
+        dih_angle = oechem.OEGetTorsion(conf, tor[0], tor[1], tor[2], tor[3])
+        max_rot = radians(max_rot)
+        interval = radians(interval)
+        for i, angle in enumerate(np.arange(dih_angle-max_rot, dih_angle+max_rot, interval)):
+            newconf = mol.NewConf(coords_2)
+            oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], angle)
+            if filename:
+                pdb = oechem.oemolostream("{}_{}.pdb".format(filename, i))
+                oechem.OEWritePDBFile(pdb, newconf)
+            symbols, geometry = chemi.to_mapped_geometry(newconf, atom_map)
+            qc_molecule['geometry'] = geometry
+            qc_molecule['symbols'] = symbols
+            degree = degrees(angle)
+            optimization_jobs['{}_{}'.format(dih_idx, int(round(degree)))] = {
+                'type': 'optimization_input',
+                'initial_molecule': qc_molecule,
+                'dihedral': dih_idx,
+                'constraints': {
+                    "set": [{
+                        "type": "dihedral",
+                        "indices": dih_idx,
+                        "value": degree
+                    }]
+                }
+            }
     return optimization_jobs
 
 
@@ -333,7 +398,7 @@ def measure_dihedral_angle(dihedral, coords):
     -------
 
     """
-
+    coords = np.array(coords, dtype=float).reshape(int(len(coords)/3), 3) * utils.BOHR_2_ANGSTROM
     a = coords[dihedral[0]]
     b = coords[dihedral[1]]
     c = coords[dihedral[2]]
