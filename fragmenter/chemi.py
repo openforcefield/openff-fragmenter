@@ -743,7 +743,7 @@ def mol_to_tagged_smiles(infile, outfile):
 def to_mapped_QC_JSON_geometry(mapped_mol, identifiers=None, atom_map=None, multiplicity=1):
     """
     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
-    tag on the SMILES to the atom idex in OEMol.
+    tag on the SMILES to the atom idex in OEMol. Coordinates will be converted from Angstrom to Bohr
     Parameters
     ----------
     molecule: OEMol with conformers
@@ -901,7 +901,7 @@ def from_mapped_xyz_to_mol_idx_order(mapped_coords, atom_map):
     """
     """
     # reshape
-    mapped_coords = np.array(mapped_coords, dtype=float).reshape(int(len(mapped_coords)/3), 3) * BOHR_2_ANGSTROM
+    mapped_coords = np.array(mapped_coords, dtype=float).reshape(int(len(mapped_coords)/3), 3)
     coords = np.zeros((mapped_coords.shape))
     for m in atom_map:
         coords[atom_map[m]] = mapped_coords[m-1]

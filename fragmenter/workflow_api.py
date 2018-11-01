@@ -5,12 +5,12 @@ import json
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import to_molecule_id, to_canonical_smiles_oe
-#import qcportal as portal
-try:
-    import qcportal as portal
-except ImportError:
-    pass
-
+# import qcportal as portal
+# try:
+#     import qcportal as portal
+# except ImportError:
+#     pass
+import qcfractal.interface as portal
 
 class WorkFlow(object):
 
@@ -43,7 +43,7 @@ class WorkFlow(object):
                                        "provided are the same as in the database. The database options will be used.")
         except KeyError:
             # Get workflow from json file and register
-            off_workflow = portal.collections.OpenFFWorkflow(workflow_id, client=client, options=workflow_json)
+            off_workflow = portal.collections.OpenFFWorkflow(workflow_id, client, **workflow_json)
 
         self.off_workflow = off_workflow
         self.states = {}
@@ -205,7 +205,7 @@ class WorkFlow(object):
         restricted = options.pop('restricted')
         needed_torsions = torsions.find_torsions(mapped_mol, restricted)
         restricted_torsions = needed_torsions.pop('restricted')
-        optimization_jobs = torsions.define_restricted_drive(qm_mol, restricted_torsions,
+        optimization_jobs = torsions.generate_constraint_opt_input(qm_mol, restricted_torsions,
                                                              **options['restricted_optimization_options'])
         torsiondrive_jobs = torsions.define_torsiondrive_jobs(needed_torsions, **options['torsiondrive_options'])
 

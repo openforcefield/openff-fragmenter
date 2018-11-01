@@ -8,10 +8,11 @@ import warnings
 import numpy as np
 import itertools
 from math import radians, degrees
+import copy
 
 from . import utils, chemi
 from cmiles import to_canonical_smiles_oe
-from .utils import BOHR_2_ANGSTROM
+from .utils import BOHR_2_ANGSTROM, logger
 warnings.simplefilter('always')
 
 
@@ -49,7 +50,8 @@ def find_torsions(molecule, restricted=True, terminal=True):
     needed_torsion_scans = {'internal': {}, 'terminal': {}, 'restricted': {}}
     mol = oechem.OEMol(molecule)
     if restricted:
-        smarts = '[*]~[C,c]=,@[C,c]~[*]' # This should capture double and triple bonds
+        smarts = '[*]~[C,c]=[C,c]~[*]' # This should capture double bonds (not capturing rings because OpenEye does not
+                                       # generate skewed conformations. ToDo: use scan in geometric or something else to get this done.
         restricted_tors = _find_torsions_from_smarts(molecule=mol, smarts=smarts)
         if len(restricted_tors) > 0:
             restricted_tors_min = one_torsion_per_rotatable_bond(restricted_tors)
@@ -80,7 +82,6 @@ def find_torsions(molecule, restricted=True, terminal=True):
     if not len(set_tor) == len(list_tor):
         raise Warning("There is a torsion defined in both mid and terminal torsions. This should not happen. Check "
                       "your molecule and the atom mapping")
-
     return needed_torsion_scans
 
 
@@ -207,7 +208,7 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
     """
 
     if not internal_torsion_resolution and not terminal_torsion_resolution:
-        utils.logger().warning("Resolution for internal and terminal torsions are 0. No torsions will be driven", Warning)
+        utils.logger().warning("Resolution for internal and terminal torsions are 0. No torsions will be driven")
 
     if scan_internal_terminal_combination and (not internal_torsion_resolution or not terminal_torsion_resolution):
         raise Warning("If you are not scanning internal or terminal torsions, you must set scan_internal_terminal_"
@@ -321,7 +322,7 @@ def define_restricted_drive(qc_molecule, restricted_dihedrals, steps=6, maximum_
     return optimization_jobs
 
 
-def generate_constraint_opt_input(qc_molecule, dihedrals, max_rot=30, interval=5, filename=None):
+def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, interval=5, filename=None):
     """
 
     Parameters
@@ -341,6 +342,8 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, max_rot=30, interval=5
 
     coords = chemi.from_mapped_xyz_to_mol_idx_order(qc_molecule['geometry'], atom_map)
 
+    # convert coord to Angstrom
+    coords = coords * BOHR_2_ANGSTROM
     conf = mol.GetConfs().next()
     conf.SetCoords(oechem.OEFloatArray(coords))
 
@@ -351,22 +354,32 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, max_rot=30, interval=5
     conf.GetCoords(coords_2)
     mol_2.DeleteConfs()
 
+    interval = radians(interval)
+    max_rot = radians(maximum_rotation)
     for dihedral in dihedrals:
+        j = 0
         dih_idx = dihedrals[dihedral]
         tor = []
         for i in dih_idx:
             a = mol.GetAtom(oechem.OEHasMapIdx(i+1))
             tor.append(a)
         dih_angle = oechem.OEGetTorsion(conf, tor[0], tor[1], tor[2], tor[3])
-        max_rot = radians(max_rot)
-        interval = radians(interval)
         for i, angle in enumerate(np.arange(dih_angle-max_rot, dih_angle+max_rot, interval)):
             newconf = mol.NewConf(coords_2)
             oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], angle)
+            new_angle = oechem.OEGetTorsion(newconf, tor[0], tor[1], tor[2], tor[3])
+            if new_angle == dih_angle:
+                j += 1
+                if j > 1:
+                    # One equivalent angle should be generated.
+                    logger().warning("Openeye did not generate a new conformer for torsion and angle {} {}. Will not generate"
+                                 "qcfractal optimizaiton input".format(dih_idx, angle))
+                    break
             if filename:
                 pdb = oechem.oemolostream("{}_{}.pdb".format(filename, i))
                 oechem.OEWritePDBFile(pdb, newconf)
             symbols, geometry = chemi.to_mapped_geometry(newconf, atom_map)
+            qc_molecule = copy.deepcopy(qc_molecule)
             qc_molecule['geometry'] = geometry
             qc_molecule['symbols'] = symbols
             degree = degrees(angle)
