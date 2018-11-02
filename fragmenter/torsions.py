@@ -50,7 +50,7 @@ def find_torsions(molecule, restricted=True, terminal=True):
     needed_torsion_scans = {'internal': {}, 'terminal': {}, 'restricted': {}}
     mol = oechem.OEMol(molecule)
     if restricted:
-        smarts = '[*]~[C,c]=[C,c]~[*]' # This should capture double bonds (not capturing rings because OpenEye does not
+        smarts = '[*]~[C,c]=,@[C,c]~[*]' # This should capture double bonds (not capturing rings because OpenEye does not
                                        # generate skewed conformations. ToDo: use scan in geometric or something else to get this done.
         restricted_tors = _find_torsions_from_smarts(molecule=mol, smarts=smarts)
         if len(restricted_tors) > 0:
@@ -368,13 +368,13 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
             newconf = mol.NewConf(coords_2)
             oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], angle)
             new_angle = oechem.OEGetTorsion(newconf, tor[0], tor[1], tor[2], tor[3])
-            if new_angle == dih_angle:
-                j += 1
-                if j > 1:
-                    # One equivalent angle should be generated.
-                    logger().warning("Openeye did not generate a new conformer for torsion and angle {} {}. Will not generate"
-                                 "qcfractal optimizaiton input".format(dih_idx, angle))
-                    break
+            # if new_angle == dih_angle:
+            #     j += 1
+            #     if j > 1:
+            #         # One equivalent angle should be generated.
+            #         logger().warning("Openeye did not generate a new conformer for torsion and angle {} {}. Will not generate"
+            #                      "qcfractal optimizaiton input".format(dih_idx, angle))
+            #         break
             if filename:
                 pdb = oechem.oemolostream("{}_{}.pdb".format(filename, i))
                 oechem.OEWritePDBFile(pdb, newconf)
