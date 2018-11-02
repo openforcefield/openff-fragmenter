@@ -297,12 +297,18 @@ class WorkFlow(object):
         #return all_jobs
 
     def add_fragments_to_db(self):
-        for frag in self.torsiondrive_jobs:
-            if not self.torsiondrive_jobs[frag]['torsiondrive_input']:
-                # No jobs were found for this fragments
-                continue
-            self.off_workflow.add_fragment(frag, self.torsiondrive_jobs[frag]['torsiondrive_input'],
-                                           self.torsiondrive_jobs[frag]['provenance'])
+        for frag in self.qcfractal_jobs:
+            torsiondrive_input = self.qcfractal_jobs[frag]['torsiondrive_input']
+            optimization_input = self.qcfractal_jobs[frag]['optimization_input']
+            # combine both dictionaries
+            input_data = {**torsiondrive_input, **optimization_input}
+            if input_data:
+                self.off_workflow.add_fragment(frag, input_data, self.qcfractal_jobs[frag]['provenance'])
+
+    def add_fragment_from_json(self, json_filenam):
+        with open(json_filenam) as f:
+            self.qcfractal_jobs = json.load(f)
+        self.add_fragments_to_db()
 
 
 def _get_provenance(workflow_id, routine):
