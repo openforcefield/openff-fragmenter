@@ -778,20 +778,6 @@ def to_mapped_QC_JSON_geometry(mapped_mol, identifiers=None, atom_map=None, mult
         raise Warning("The molecule must have at least and at most 1 conformation")
 
     symbols, geometry = to_mapped_geometry(mapped_mol, atom_map)
-
-    for mapping in range(1, mapped_mol.NumAtoms()+1):
-        if is_mapped(mapped_mol):
-            atom = mapped_mol.GetAtom(oechem.OEHasMapIdx(mapping))
-        elif atom_map is not None:
-            idx = atom_map[mapping]
-            atom = mapped_mol.GetAtom(oechem.OEHasAtomIdx(idx))
-        else:
-            raise RuntimeError("Molecule must have map")
-        syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
-        symbols.append(syb)
-        for i in range(3):
-            geometry.append(mapped_mol.GetCoords()[atom.GetIdx()][i]*ANGSROM_2_BOHR)
-
     connectivity = get_mapped_connectivity_table(mapped_mol, atom_map)
 
     return {'symbols': symbols, 'geometry': geometry, 'molecular_charge': charge,
@@ -1025,6 +1011,39 @@ def highlight_bonds(mol_copy, fname, conjugation=True, rotor=False, width=600, h
     return oedepict.OERenderMolecule(fname, disp)
 
 
+def highlight_torsion(mapped_molecule, dihedrals, fname, width=600, height=400):
+
+    mol = oechem.OEMol(mapped_molecule)
+    atoms_to_highlight = []
+    atom_bond_set = oechem.OEAtomBondSet()
+    for dihedral in dihedrals:
+        dih = []
+        for idx in dihedral:
+            a = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
+            dih.append(a)
+            atom_bond_set.AddAtom(a)
+        atoms_to_highlight.append(dih)
+
+    dopt = oedepict.OEPrepareDepictionOptions()
+    dopt.SetSuppressHydrogens(False)
+    oedepict.OEPrepareDepiction(mol, dopt)
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+
+    aroStyle = oedepict.OEHighlightStyle_Color
+    aroColor = oechem.OEColor(oechem.OEBlack)
+    oedepict.OEAddHighlighting(disp, aroColor, aroStyle,
+                               oechem.OEIsAromaticAtom(), oechem.OEIsAromaticBond() )
+    hstyle = oedepict.OEHighlightStyle_BallAndStick
+    hcolor = oechem.OEColor(oechem.OELightBlue)
+    oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+
+    return oedepict.OERenderMolecule(fname, disp)
+
+
 def bond_order_tag(molecule, atom_map, bond_order_array):
     """
     Add psi bond order to bond in molecule. This function adds a tag to the GetData dictionary
@@ -1158,4 +1177,29 @@ class LabelMayerPsiBondOrder(oedepict.OEDisplayBondPropBase):
 
     def CreateCopy(self):
         copy = LabelMayerPsiBondOrder()
+
         return copy.__disown__()
+
+def to_pdf(molecules, oname, rows=5, cols=3):
+    itf = oechem.OEInterface()
+    PageByPage = True
+
+    ropts = oedepict.OEReportOptions(rows, cols)
+    ropts.SetHeaderHeight(25)
+    ropts.SetFooterHeight(25)
+    ropts.SetCellGap(2)
+    ropts.SetPageMargins(10)
+    report = oedepict.OEReport(ropts)
+
+    cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
+    opts = oedepict.OE2DMolDisplayOptions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
+    oedepict.OESetup2DMolDisplayOptions(opts, itf)
+
+    for mol in molecules:
+        cell = report.NewCell()
+        oedepict.OEPrepareDepiction(mol)
+        disp = oedepict.OE2DMolDisplay(mol, opts)
+        oedepict.OERenderMolecule(cell, disp)
+        oedepict.OEDrawCurvedBorder(cell, oedepict.OELightGreyPen, 10.0)
+
+    oedepict.OEWriteReport(oname, report)
