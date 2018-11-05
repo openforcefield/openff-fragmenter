@@ -897,6 +897,42 @@ def from_mapped_xyz_to_mol_idx_order(mapped_coords, atom_map):
     return coords
 
 
+def _to_xyz(qcmol, filename=None, ret=True):
+    """
+    """
+    symbols = qcmol["symbols"]
+    geometry = qcmol["geometry"]
+    geometry = geometry
+    xyz = ""
+    xyz += "{}\n".format(len(symbols))
+    xyz += "{}\n".format(qcmol['identifiers']['molecular_formula'])
+    for i in range(len(symbols)):
+        xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(symbols[i],
+                                                                           geometry[i * 3] * BOHR_2_ANGSTROM,
+                                                                           geometry[i * 3 + 1] * BOHR_2_ANGSTROM,
+                                                                           geometry[i * 3 + 2] * BOHR_2_ANGSTROM)
+
+    if filename:
+        with open(filename, 'w') as f:
+            f.write(xyz)
+    if ret:
+        return xyz
+
+
+def qcmol_to_xyz(qc_molecules, job=None, filename=None, ret=False):
+    """
+    """
+    xyz = ""
+    for job in qc_molecules:
+        if job == job or job is None:
+            xyz += _to_xyz(qc_molecules[job], ret=True)
+    if filename:
+        with open(filename, 'w') as f:
+            f.write(xyz)
+    if ret:
+        return xyz
+
+
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Functions for molecule visualization
