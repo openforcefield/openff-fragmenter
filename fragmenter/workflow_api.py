@@ -6,12 +6,13 @@ import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import to_molecule_id, to_canonical_smiles_oe
 import copy
-# import qcportal as portal
-# try:
-#     import qcportal as portal
-# except ImportError:
-#     pass
-import qcfractal.interface as portal
+#import qcportal as portal
+# For Travis CI
+try:
+    import qcfractal.interface as portal
+except ImportError:
+    pass
+
 
 class WorkFlow(object):
 

@@ -19,7 +19,6 @@ requirements:
     - openeye-toolkits
     - rdkit
     - pyyaml
-    - qcfractal
 
 test:
   requires:
