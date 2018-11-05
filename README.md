@@ -24,8 +24,7 @@ python setup.py install
 ```
 
 # Dependencies
-* openmoltools - https://github.com/choderalab/openmoltools
-* OpenEye
+Dependencies are in [`meta.yaml`](https://github.com/openforcefield/fragmenter/blob/master/devtools/conda-recipe/meta.yaml)
 
 ### Copyright
 

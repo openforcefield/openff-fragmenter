@@ -5,15 +5,18 @@ import json
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import to_molecule_id, to_canonical_smiles_oe
+import copy
+#import qcportal as portal
+# For Travis CI
 try:
-    import qcportal as portal
+    import qcfractal.interface as portal
 except ImportError:
     pass
 
 
 class WorkFlow(object):
 
-    def __init__(self, workflow_id, client, workflow_json=None):
+    def __init__(self, workflow_id, client, workflow_json=None, verbose=False):
         """
 
         Parameters
@@ -26,6 +29,7 @@ class WorkFlow(object):
 
         """
         self.workflow_id = workflow_id
+        self.verbose = verbose
 
         if workflow_json is not None:
             with open(workflow_json) as file:
@@ -34,7 +38,7 @@ class WorkFlow(object):
 
         # Check if id already in database
         try:
-            off_workflow = portal.collections.OpenFFWorkflow.from_server(client, workflow_id)
+            off_workflow = client.get_collection(collection_name=workflow_id, collection_type='OpenFFWorkflow')
             if workflow_json is not None:
                 # Check if workflows are the same
                 _check_workflow(workflow_json, off_workflow)
@@ -42,12 +46,15 @@ class WorkFlow(object):
                                        "provided are the same as in the database. The database options will be used.")
         except KeyError:
             # Get workflow from json file and register
-            off_workflow = portal.collections.OpenFFWorkflow(workflow_id, client=client, options=workflow_json)
+            off_workflow = portal.collections.OpenFFWorkflow(workflow_id, client, **workflow_json)
 
         self.off_workflow = off_workflow
         self.states = {}
         self.fragments = {}
-        self.torsiondrive_jobs = {}
+        self.qcfractal_jobs = {}
+        self.final_energies = {}
+        self.final_geometries = {}
+        self.failed_jobs = {}
 
     def enumerate_states(self, molecule, title='', json_filename=None):
         """
@@ -180,7 +187,7 @@ class WorkFlow(object):
 
         """
 
-        options = self.off_workflow.get_options('torsiondrive_input')['options']
+        options = self.off_workflow.get_options('torsiondrive_input')
         provenance = _get_provenance(workflow_id=self.workflow_id, routine='torsiondrive_input')
         frag['provenance']['routine']['torsiondrive_input'] = provenance['routine']['torsiondrive_input']
         provenance = frag['provenance']
@@ -190,7 +197,7 @@ class WorkFlow(object):
         mapped_smiles = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
         mapped_mol = chemi.smiles_to_oemol(mapped_smiles)
 
-        if options.pop('max_conf') == 1:
+        if options['torsiondrive_options'].pop('max_conf') == 1:
             # Generate 1 conformation for all jobs
             try:
                 qm_mol = chemi.to_mapped_QC_JSON_geometry(mapped_mol)
@@ -203,18 +210,26 @@ class WorkFlow(object):
         torsiondrive_inputs = {identifier: {'torsiondrive_input': {}, 'provenance': provenance}}
         restricted = options.pop('restricted')
         needed_torsions = torsions.find_torsions(mapped_mol, restricted)
-        if not restricted:
-            needed_torsion_drives = torsions.define_torsiondrive_jobs(needed_torsions, **options)
-        elif restricted:
-            # ToDo have a function generate input for restrained optimization
-            pass
-        for i, job in enumerate(needed_torsion_drives):
-            torsiondrive_input = dict()
+        restricted_torsions = needed_torsions.pop('restricted')
+        optimization_jobs = torsions.generate_constraint_opt_input(qm_mol, restricted_torsions,
+                                                             **options['restricted_optimization_options'])
+        torsiondrive_jobs = torsions.define_torsiondrive_jobs(needed_torsions, **options['torsiondrive_options'])
+
+        for i, job in enumerate(torsiondrive_jobs):
+            torsiondrive_input = {'type': 'torsiondrive_input'}
             torsiondrive_input['initial_molecule'] = qm_mol
-            torsiondrive_input['initial_molecule']['identifiers'] = mol_id
-            torsiondrive_input['dihedrals'] = needed_torsion_drives[job]['dihedrals']
-            torsiondrive_input['grid_spacing'] = needed_torsion_drives[job]['grid_spacing']
-            torsiondrive_inputs[identifier]['torsiondrive_input']['job_{}'.format(i)] = torsiondrive_input
+            #torsiondrive_input['initial_molecule']['identifiers'] = mol_id
+            torsiondrive_input['dihedrals'] = torsiondrive_jobs[job]['dihedrals']
+            torsiondrive_input['grid_spacing'] = torsiondrive_jobs[job]['grid_spacing']
+            job_name = ''
+            for i, torsion in enumerate(torsiondrive_input['dihedrals']):
+                if i > 0:
+                    job_name += '_{}'.format(torsion)
+                else:
+                    job_name += '{}'.format(torsion)
+            torsiondrive_inputs[identifier]['torsiondrive_input'][job_name] = torsiondrive_input
+
+        torsiondrive_inputs[identifier]['optimization_input'] = optimization_jobs
 
         if json_filename:
             with open(json_filename, 'w') as f:
@@ -280,7 +295,7 @@ class WorkFlow(object):
             if not crank_jobs:
                 continue
             all_jobs.update(crank_jobs)
-        self.torsiondrive_jobs = all_jobs
+        self.qcfractal_jobs = all_jobs
 
         if json_filename:
             with open(json_filename, 'w') as f:
@@ -288,12 +303,79 @@ class WorkFlow(object):
         #return all_jobs
 
     def add_fragments_to_db(self):
-        for frag in self.torsiondrive_jobs:
-            if not self.torsiondrive_jobs[frag]['torsiondrive_input']:
-                # No jobs were found for this fragments
-                continue
-            self.off_workflow.add_fragment(frag, self.torsiondrive_jobs[frag]['torsiondrive_input'],
-                                           self.torsiondrive_jobs[frag]['provenance'])
+        for frag in self.qcfractal_jobs:
+            torsiondrive_input = self.qcfractal_jobs[frag]['torsiondrive_input']
+            optimization_input = self.qcfractal_jobs[frag]['optimization_input']
+            # combine both dictionaries
+            input_data = {**torsiondrive_input, **optimization_input}
+            if input_data:
+                self.off_workflow.add_fragment(frag, input_data, self.qcfractal_jobs[frag]['provenance'])
+
+    def add_fragment_from_json(self, json_filenam):
+        with open(json_filenam) as f:
+            self.qcfractal_jobs = json.load(f)
+        self.add_fragments_to_db()
+
+    def get_final_molecules(self, json_filename=None):
+        """
+        Get final molecule geometries and energies from db and serialize keys for JSON
+        Parameters
+        ----------
+        json_filename: str, optional. Default None
+            If name is given, final energies and geometries will be written out to a JSON file
+
+        """
+        final_energies = copy.deepcopy(self.off_workflow.list_final_energies())
+        self.final_energies = self._to_json_format(final_energies)
+        if json_filename:
+            filename = '{}_energies.json'.format(json_filename)
+            with open(filename, 'w') as f:
+                json.dump(self.final_energies, f, indent=2, sort_keys=True)
+
+        if self.verbose:
+            utils.logger().info("Pulling final geometries from database. This takes some time...")
+        final_geometries = copy.deepcopy(self.off_workflow.list_final_molecules())
+        self.final_geometries = self._to_json_format(final_geometries)
+        if json_filename:
+            filename = '{}_geometries.json'.format(json_filename)
+            with open(filename, 'w') as f:
+                json.dump(self.final_geometries, f, indent=2, sort_keys=True)
+
+    def _to_json_format(self, final_dict):
+
+        serialized_dict = {}
+        for frag in final_dict:
+            for job in final_dict[frag]:
+                if not final_dict[frag][job]:
+                    # job failed.
+                    if not frag in self.failed_jobs:
+                        self.failed_jobs[frag] = []
+                        if not job in self.failed_jobs[frag]:
+                            self.failed_jobs[frag].append(job)
+                    continue
+                if not isinstance(final_dict[frag][job], dict):
+                    # This is an optimization job. No serialization needed
+                    if frag not in serialized_dict:
+                        serialized_dict[frag] = {}
+                    serialized_dict[frag][job] = final_dict[frag][job]
+                    continue
+
+                for key in final_dict[frag][job]:
+                    value = final_dict[frag][job][key]
+                    new_key = self._serialize_key(key)
+                    if frag not in serialized_dict:
+                        serialized_dict[frag] = {}
+                    if job not in serialized_dict[frag]:
+                        serialized_dict[frag][job] = {}
+                    serialized_dict[frag][job][new_key] = value
+        return serialized_dict
+
+    def _serialize_key(self, key):
+        if isinstance(key, (int, float)):
+            key = (int(key), )
+
+        return json.dumps(key)
+
 
 
 def _get_provenance(workflow_id, routine):

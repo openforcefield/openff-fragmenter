@@ -4,6 +4,15 @@ import re
 import codecs
 import copy
 
+"""
+~~~~~~~~~~~~~~~~~~~
+Conversion factors
+~~~~~~~~~~~~~~~~~~~
+"""
+BOHR_2_ANGSTROM = 0.529177210
+ANGSROM_2_BOHR = 1. / BOHR_2_ANGSTROM
+
+
 def logger(name='fragmenter', pattern='%(asctime)s %(levelname)s %(name)s: %(message)s',
            date_format='%H:%M:%S', handler=logging.StreamHandler(sys.stdout)):
     """

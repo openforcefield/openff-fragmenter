@@ -1,0 +1,70 @@
+{
+  "example": {
+    "fragmenter": {
+      "enumerate_states": {
+        "version": "v0.0.1",
+        "options": {
+          "protonation": false,
+          "tautomers": false,
+          "stereoisomers": true,
+          "max_states": 200,
+          "level": 0,
+          "reasonable": true,
+          "carbon_hybridization": true,
+          "suppress_hydrogen": true
+        }
+      },
+      "enumerate_fragments": {
+        "version": "v0.0.1",
+        "options": {
+          "strict_stereo": true,
+          "combinatorial": true,
+          "MAX_ROTORS": 3,
+          "remove_map": true
+        }
+      },
+      "torsiondrive_input": {
+        "version": "v0.0.1",
+        "restricted": true,
+        "torsiondrive_options": {
+          "max_conf": 1,
+          "terminal_torsion_resolution": 30,
+          "internal_torsion_resolution": 30,
+          "scan_internal_terminal_combination": 0,
+          "scan_dimension": 1
+        },
+        "restricted_optimization_options": {
+          "maximum_rotation": 30,
+          "interval": 5
+        }
+      },
+      "torsiondrive_static_options": {
+        "torsiondrive_meta": {},
+        "optimization_meta": {
+          "program": "geometric",
+          "coordsys": "tric"
+        },
+        "qc_meta": {
+          "driver": "gradient",
+          "method": "UFF",
+          "basis": "",
+          "options": "none",
+          "program": "rdkit"
+        }
+      },
+      "optimization_static_options":{
+        "optimization_meta": {
+          "program": "geometric",
+          "coordsys": "tric"
+        },
+        "qc_meta":{
+          "driver": "gradient",
+          "method": "UFF",
+          "basis": "",
+          "options": "none",
+          "program": "rdkit"
+        }
+      }
+    }
+  }
+}

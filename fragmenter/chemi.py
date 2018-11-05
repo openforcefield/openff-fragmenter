@@ -7,7 +7,8 @@ except ImportError:
 from rdkit import Chem
 
 import cmiles
-from .utils import logger
+from .utils import logger, ANGSROM_2_BOHR, BOHR_2_ANGSTROM
+from fragmenter import chemi
 
 import os
 import numpy as np
@@ -109,6 +110,7 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
         raise(ValueError('Not a valid option to keep_confs in get_charges.'))
 
     return charged_copy
+
 
 def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
                         can_order=True, copy=True):
@@ -239,102 +241,6 @@ def has_conformer(molecule, check_two_dimension=False):
             if values.all():
                 conformer_bool = False
     return conformer_bool
-
-
-def is_mapped(molecule):
-    """
-    Check if atoms are mapped. If any atom is missing a tag, this will return False
-    Parameters
-    ----------
-    molecule: OEMol
-
-    Returns
-    -------
-    Bool: True if mapped. False otherwise
-    """
-    IS_MAPPED = True
-    for atom in molecule.GetAtoms():
-        if atom.GetMapIdx() == 0:
-            IS_MAPPED = False
-    return IS_MAPPED
-
-
-def get_atom_map(tagged_smiles, molecule=None, strict_stereo=True, verbose=False):
-    """
-    Returns a dictionary that maps tag on SMILES to atom index in molecule.
-    Parameters
-    ----------
-    tagged_smiles: str
-        index-tagged explicit hydrogen SMILES string
-    molecule: OEMol
-        molecule to generate map for. If None, a new OEMol will be generated from the tagged SMILES, the map will map to
-        this molecule and it will be returned.
-    is_mapped: bool
-        Default: False
-        When an OEMol is generated from SMART string with tags, the tag will be stored in atom.GetMapIdx(). The index-tagged
-        explicit-hydrogen SMILES are tagges SMARTS. Therefore, if a molecule was generated with the tagged SMILES, there is
-        no reason to do a substructure search to get the right order of the atoms. If is_mapped is True, the atom map will be
-        generated from atom.GetMapIdx().
-
-
-    Returns
-    -------
-    molecule: OEMol
-        The molecule for the atom_map. If a molecule was provided, it's that molecule.
-    atom_map: dict
-        a dictionary that maps tag to atom index {tag:idx}
-    """
-    if molecule is None:
-        molecule = smiles_to_oemol(tagged_smiles)
-        # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
-
-    # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
-    # map won't be correct
-    if not has_conformer(molecule):
-    # if molecule.GetMaxConfIdx() <= 1:
-    #     for conf in molecule.GetConfs():
-    #         values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
-    #                             range(conf.GetCoords().__len__())])
-    #     if values.all():
-        # Generate an Omega conformer
-        try:
-            molecule = generate_conformers(molecule, max_confs=1, strict_stereo=strict_stereo, strict_types=False, copy=False)
-            # Omega can change the ordering so whatever map existed is not there anymore
-        except RuntimeError:
-            logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
-                          "generated".format(molecule.GetTitle()))
-
-    # Check if molecule is mapped
-    mapped = is_mapped(molecule)
-    if mapped:
-        atom_map = {}
-        for atom in molecule.GetAtoms():
-            atom_map[atom.GetMapIdx()] = atom.GetIdx()
-        return molecule, atom_map
-
-    ss = oechem.OESubSearch(tagged_smiles)
-    oechem.OEPrepareSearch(molecule, ss)
-    ss.SetMaxMatches(1)
-
-    atom_map = {}
-    t1 = time.time()
-    matches = [m for m in ss.Match(molecule)]
-    t2 = time.time()
-    seconds = t2-t1
-    logger().debug("Substructure search took {} seconds".format(seconds))
-    if not matches:
-        logger().info("MCSS failed for {}, smiles: {}".format(molecule.GetTitle(), tagged_smiles))
-        return False
-    for match in matches:
-        for ma in match.GetAtoms():
-            atom_map[ma.pattern.GetMapIdx()] = ma.target.GetIdx()
-
-    # sanity check
-    mol = oechem.OEGraphMol()
-    oechem.OESubsetMol(mol, match, True)
-    logger().debug("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
-
-    return molecule, atom_map
 
 
 # def mol_to_graph(molecule):
@@ -701,6 +607,108 @@ def standardize_molecule(molecule, title=''):
     else:
         raise TypeError("Wrong type of input for molecule. Can be SMILES, filename or OEMol")
     return mol
+"""
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Functions to work with mapped SMILES
+These functions are used to keep the orders atoms consistent across different molecule graphs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+"""
+
+
+def is_mapped(molecule):
+    """
+    Check if atoms are mapped. If any atom is missing a tag, this will return False
+    Parameters
+    ----------
+    molecule: OEMol
+
+    Returns
+    -------
+    Bool: True if mapped. False otherwise
+    """
+    IS_MAPPED = True
+    for atom in molecule.GetAtoms():
+        if atom.GetMapIdx() == 0:
+            IS_MAPPED = False
+    return IS_MAPPED
+
+
+def get_atom_map(tagged_smiles, molecule=None, strict_stereo=True, verbose=False, generate_conformer=True):
+    """
+    Returns a dictionary that maps tag on SMILES to atom index in molecule.
+    Parameters
+    ----------
+    tagged_smiles: str
+        index-tagged explicit hydrogen SMILES string
+    molecule: OEMol
+        molecule to generate map for. If None, a new OEMol will be generated from the tagged SMILES, the map will map to
+        this molecule and it will be returned.
+    is_mapped: bool
+        Default: False
+        When an OEMol is generated from SMART string with tags, the tag will be stored in atom.GetMapIdx(). The index-tagged
+        explicit-hydrogen SMILES are tagges SMARTS. Therefore, if a molecule was generated with the tagged SMILES, there is
+        no reason to do a substructure search to get the right order of the atoms. If is_mapped is True, the atom map will be
+        generated from atom.GetMapIdx().
+
+
+    Returns
+    -------
+    molecule: OEMol
+        The molecule for the atom_map. If a molecule was provided, it's that molecule.
+    atom_map: dict
+        a dictionary that maps tag to atom index {tag:idx}
+    """
+    if molecule is None:
+        molecule = smiles_to_oemol(tagged_smiles)
+        # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
+
+    # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
+    # map won't be correct
+    if not has_conformer(molecule) and generate_conformer:
+    # if molecule.GetMaxConfIdx() <= 1:
+    #     for conf in molecule.GetConfs():
+    #         values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
+    #                             range(conf.GetCoords().__len__())])
+    #     if values.all():
+        # Generate an Omega conformer
+        try:
+            molecule = generate_conformers(molecule, max_confs=1, strict_stereo=strict_stereo, strict_types=False, copy=False)
+            # Omega can change the ordering so whatever map existed is not there anymore
+        except RuntimeError:
+            logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
+                          "generated".format(molecule.GetTitle()))
+
+    # Check if molecule is mapped
+    mapped = is_mapped(molecule)
+    if mapped:
+        atom_map = {}
+        for atom in molecule.GetAtoms():
+            atom_map[atom.GetMapIdx()] = atom.GetIdx()
+        return molecule, atom_map
+
+    ss = oechem.OESubSearch(tagged_smiles)
+    oechem.OEPrepareSearch(molecule, ss)
+    ss.SetMaxMatches(1)
+
+    atom_map = {}
+    t1 = time.time()
+    matches = [m for m in ss.Match(molecule)]
+    t2 = time.time()
+    seconds = t2-t1
+    logger().debug("Substructure search took {} seconds".format(seconds))
+    if not matches:
+        logger().info("MCSS failed for {}, smiles: {}".format(molecule.GetTitle(), tagged_smiles))
+        return False
+    for match in matches:
+        for ma in match.GetAtoms():
+            atom_map[ma.pattern.GetMapIdx()] = ma.target.GetIdx()
+
+    # sanity check
+    mol = oechem.OEGraphMol()
+    oechem.OESubsetMol(mol, match, True)
+    logger().debug("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
+
+    return molecule, atom_map
 
 
 def mol_to_tagged_smiles(infile, outfile):
@@ -732,10 +740,10 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def to_mapped_QC_JSON_geometry(mapped_mol, atom_map=None, multiplicity=1):
+def to_mapped_QC_JSON_geometry(mapped_mol, identifiers=None, atom_map=None, multiplicity=1):
     """
     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
-    tag on the SMILES to the atom idex in OEMol.
+    tag on the SMILES to the atom idex in OEMol. Coordinates will be converted from Angstrom to Bohr
     Parameters
     ----------
     molecule: OEMol with conformers
@@ -752,29 +760,34 @@ def to_mapped_QC_JSON_geometry(mapped_mol, atom_map=None, multiplicity=1):
     geometry is in Bohr - QCJSON requirement
 
     """
+    if not identifiers:
+        identifiers = cmiles.to_molecule_id(mapped_mol, canonicalization='openeye')
     # Check if molecule has map
     if not is_mapped(mapped_mol) and atom_map is None:
-        raise TypeError("molecule must have atom map. You can generate a mapped molecule with a mapped SMILES or SMARTS")
-    symbols = []
-    geometry = []
+        # Generate a mapped molecule from identifiers
+        mapped_mol = chemi.smiles_to_oemol(identifiers['canonical_isomeric_explicit_hydrogen_mapped_smiles'])
 
     charge = get_charge(mapped_mol)
 
     # Generate conformer
     if not has_conformer(mapped_mol, check_two_dimension=True):
-        try:
-           mapped_oemol = generate_conformers(mapped_mol, max_confs=1, strict_stereo=True, strict_types=False, copy=False)
-        except RuntimeError:
-               logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
-                         "generated".format(mapped_mol.GetTitle()))
+        mapped_oemol = generate_conformers(mapped_mol, max_confs=1, strict_stereo=True, strict_types=False, copy=False,
+                                           can_order=True)
 
     if mapped_mol.GetMaxConfIdx() != 1:
         raise Warning("The molecule must have at least and at most 1 conformation")
 
-    # Check if coordinates are missing
-    if not has_conformer(mapped_mol, check_two_dimension=True):
-        raise RuntimeError("molecule {} does not have a 3D conformation".format(oechem.OEMolToSmiles(mapped_mol)))
+    symbols, geometry = to_mapped_geometry(mapped_mol, atom_map)
+    connectivity = get_mapped_connectivity_table(mapped_mol, atom_map)
 
+    return {'symbols': symbols, 'geometry': geometry, 'molecular_charge': charge,
+            'molecular_multiplicity': multiplicity, 'connectivity': connectivity, 'identifiers': identifiers}
+
+
+def to_mapped_geometry(mapped_mol, atom_map=None):
+
+    symbols = []
+    geometry = []
     for mapping in range(1, mapped_mol.NumAtoms()+1):
         if is_mapped(mapped_mol):
             atom = mapped_mol.GetAtom(oechem.OEHasMapIdx(mapping))
@@ -786,12 +799,9 @@ def to_mapped_QC_JSON_geometry(mapped_mol, atom_map=None, multiplicity=1):
         syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
         symbols.append(syb)
         for i in range(3):
-            geometry.append(mapped_mol.GetCoords()[atom.GetIdx()][i]*1.8897261328856432)
+            geometry.append(mapped_mol.GetCoords()[atom.GetIdx()][i]*ANGSROM_2_BOHR)
 
-    connectivity = get_mapped_connectivity_table(mapped_mol, atom_map)
-
-    return {'symbols': symbols, 'geometry': geometry, 'molecular_charge': charge,
-            'molecular_multiplicity': multiplicity, 'connectivity': connectivity}
+    return (symbols, geometry)
 
 
 def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename=None):
@@ -871,6 +881,20 @@ def get_mapped_connectivity_table(molecule, atom_map=None):
         connectivity_table = [[inv_map[bond.GetBgnIdx()]-1, inv_map[bond.GetEndIdx()]-1, bond.GetOrder()]
                               for bond in molecule.GetBonds()]
     return connectivity_table
+
+
+def from_mapped_xyz_to_mol_idx_order(mapped_coords, atom_map):
+    """
+    """
+    # reshape
+    mapped_coords = np.array(mapped_coords, dtype=float).reshape(int(len(mapped_coords)/3), 3)
+    coords = np.zeros((mapped_coords.shape))
+    for m in atom_map:
+        coords[atom_map[m]] = mapped_coords[m-1]
+
+    # flatten
+    coords = coords.flatten()
+    return coords
 
 
 """
@@ -983,6 +1007,39 @@ def highlight_bonds(mol_copy, fname, conjugation=True, rotor=False, width=600, h
     hstyle = oedepict.OEHighlightStyle_BallAndStick
     hcolor = oechem.OEColor(oechem.OELightBlue)
     oedepict.OEAddHighlighting(disp, hcolor, hstyle, atomBondSet)
+
+    return oedepict.OERenderMolecule(fname, disp)
+
+
+def highlight_torsion(mapped_molecule, dihedrals, fname, width=600, height=400):
+
+    mol = oechem.OEMol(mapped_molecule)
+    atoms_to_highlight = []
+    atom_bond_set = oechem.OEAtomBondSet()
+    for dihedral in dihedrals:
+        dih = []
+        for idx in dihedral:
+            a = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
+            dih.append(a)
+            atom_bond_set.AddAtom(a)
+        atoms_to_highlight.append(dih)
+
+    dopt = oedepict.OEPrepareDepictionOptions()
+    dopt.SetSuppressHydrogens(False)
+    oedepict.OEPrepareDepiction(mol, dopt)
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+
+    aroStyle = oedepict.OEHighlightStyle_Color
+    aroColor = oechem.OEColor(oechem.OEBlack)
+    oedepict.OEAddHighlighting(disp, aroColor, aroStyle,
+                               oechem.OEIsAromaticAtom(), oechem.OEIsAromaticBond() )
+    hstyle = oedepict.OEHighlightStyle_BallAndStick
+    hcolor = oechem.OEColor(oechem.OELightBlue)
+    oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
 
     return oedepict.OERenderMolecule(fname, disp)
 
@@ -1120,4 +1177,29 @@ class LabelMayerPsiBondOrder(oedepict.OEDisplayBondPropBase):
 
     def CreateCopy(self):
         copy = LabelMayerPsiBondOrder()
+
         return copy.__disown__()
+
+def to_pdf(molecules, oname, rows=5, cols=3):
+    itf = oechem.OEInterface()
+    PageByPage = True
+
+    ropts = oedepict.OEReportOptions(rows, cols)
+    ropts.SetHeaderHeight(25)
+    ropts.SetFooterHeight(25)
+    ropts.SetCellGap(2)
+    ropts.SetPageMargins(10)
+    report = oedepict.OEReport(ropts)
+
+    cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
+    opts = oedepict.OE2DMolDisplayOptions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
+    oedepict.OESetup2DMolDisplayOptions(opts, itf)
+
+    for mol in molecules:
+        cell = report.NewCell()
+        oedepict.OEPrepareDepiction(mol)
+        disp = oedepict.OE2DMolDisplay(mol, opts)
+        oedepict.OERenderMolecule(cell, disp)
+        oedepict.OEDrawCurvedBorder(cell, oedepict.OELightGreyPen, 10.0)
+
+    oedepict.OEWriteReport(oname, report)

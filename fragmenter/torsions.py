@@ -6,17 +6,17 @@ except ImportError:
     pass
 import warnings
 import numpy as np
-import os
-import json
 import itertools
+from math import radians, degrees
+import copy
 
 from . import utils, chemi
 from cmiles import to_canonical_smiles_oe
-
+from .utils import BOHR_2_ANGSTROM, logger
 warnings.simplefilter('always')
 
 
-def find_torsions(molecule, restricted=False):
+def find_torsions(molecule, restricted=True, terminal=True):
     """
     This function takes an OEMol (atoms must be tagged with index map) and finds the map indices for torsion that need
     to be driven.
@@ -25,11 +25,15 @@ def find_torsions(molecule, restricted=False):
     ----------
     molecule : OEMol
         The atoms in the molecule need to be tagged with map indices
+    restricted: bool, optional, default True
+        If True, will find restricted torsions such as torsions in rings and double bonds.
+    terminal: bool, optional, default True
+        If True, will find terminal torsions
 
     Returns
     -------
     needed_torsion_scans: dict
-        a dictionary that maps internal and terminal torsions to map indices of torsion atoms
+        a dictionary that maps internal, terminal and restricted torsions to map indices of torsion atoms
 
     """
     # Check if molecule has map
@@ -43,35 +47,28 @@ def find_torsions(molecule, restricted=False):
         utils.logger().warning('The new tagged SMARTS is: {}'.format(tagged_smiles))
         # ToDo: save the new tagged SMILES somewhere. Maybe return it?
 
-    if restricted:
-        print(restricted)
-        return _find_restricted_torsions(molecule)
-
-    mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
-
-    # This smarts should match terminal torsions such as -CH3, -NH2, -NH3+, -OH, and -SH
-
-    smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
-    qmol=oechem.OEQMol()
-    if not oechem.OEParseSmarts(qmol, smarts):
-        utils.logger().warning('OEParseSmarts failed')
-    ss = oechem.OESubSearch(qmol)
+    needed_torsion_scans = {'internal': {}, 'terminal': {}, 'restricted': {}}
     mol = oechem.OEMol(molecule)
-    h_tors = []
-    oechem.OEPrepareSearch(mol, ss)
-    unique = True
-    for match in ss.Match(mol, unique):
-        tor = []
-        for ma in match.GetAtoms():
-            tor.append(ma.target)
-        h_tors.append(tor)
+    if restricted:
+        smarts = '[*]~[C,c]=,@[C,c]~[*]' # This should capture double bonds (not capturing rings because OpenEye does not
+                                       # generate skewed conformations. ToDo: use scan in geometric or something else to get this done.
+        restricted_tors = _find_torsions_from_smarts(molecule=mol, smarts=smarts)
+        if len(restricted_tors) > 0:
+            restricted_tors_min = one_torsion_per_rotatable_bond(restricted_tors)
+            for i, tor in enumerate(restricted_tors_min):
+                tor_name = ((tor[0].GetMapIdx() - 1), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
+                needed_torsion_scans['restricted']['torsion_{}'.format(str(i))] = tor_name
 
-    needed_torsion_scans = {'internal': {}, 'terminal': {}}
-    if h_tors:
-        h_tors_min = one_torsion_per_rotatable_bond(h_tors)
-        for i, tor in enumerate(h_tors_min):
-            tor_name = ((tor[0].GetMapIdx() -1 ), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
-            needed_torsion_scans['terminal']['torsion_{}'.format(str(i))] = tor_name
+    if terminal:
+        smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]' # This smarts should match terminal torsions such as -CH3, -NH2, -NH3+, -OH, and -SH
+        h_tors = _find_torsions_from_smarts(molecule=mol, smarts=smarts)
+        if len(h_tors) > 0:
+            h_tors_min = one_torsion_per_rotatable_bond(h_tors)
+            for i, tor in enumerate(h_tors_min):
+                tor_name = ((tor[0].GetMapIdx() -1 ), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
+                needed_torsion_scans['terminal']['torsion_{}'.format(str(i))] = tor_name
+
+    mid_tors = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(mol)]
     if mid_tors:
         mid_tors_min = one_torsion_per_rotatable_bond(mid_tors)
         for i, tor in enumerate(mid_tors_min):
@@ -85,34 +82,42 @@ def find_torsions(molecule, restricted=False):
     if not len(set_tor) == len(list_tor):
         raise Warning("There is a torsion defined in both mid and terminal torsions. This should not happen. Check "
                       "your molecule and the atom mapping")
-
     return needed_torsion_scans
 
 
-def _find_restricted_torsions(molecule):
+def _find_torsions_from_smarts(molecule, smarts):
+    """
+    Do a substrcutre search on provided SMARTS to find torsions that match the SAMRTS
 
-    restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]' # This should capture double and triple bonds
+    Parameters
+    ----------
+    molecule: OEMol
+        molecule to search on
+    smarts: str
+        SMARTS pattern to search for
+
+    Returns
+    -------
+    tors: list
+        list of torsions that match the SMARTS string
+
+    """
+
+    #ToDO use MDL aromaticity model
     qmol=oechem.OEQMol()
-    if not oechem.OEParseSmarts(qmol, restricted_smarts):
+    if not oechem.OEParseSmarts(qmol, smarts):
         utils.logger().warning('OEParseSmarts failed')
     ss = oechem.OESubSearch(qmol)
-    mol = oechem.OEMol(molecule)
-    restricted_tors = []
-    oechem.OEPrepareSearch(mol, ss)
+    tors = []
+    oechem.OEPrepareSearch(molecule, ss)
     unique = True
-    for match in ss.Match(mol, unique):
+    for match in ss.Match(molecule, unique):
         tor = []
         for ma in match.GetAtoms():
             tor.append(ma.target)
-        restricted_tors.append(tor)
+        tors.append(tor)
 
-    restricted_torsion_scans = {'restricted_rotors': {}}
-    if restricted_tors:
-        non_rotor_min = one_torsion_per_rotatable_bond(restricted_tors)
-        for i, tor in enumerate(non_rotor_min):
-            tor_name = ((tor[0].GetMapIdx() - 1), (tor[1].GetMapIdx() - 1), (tor[2].GetMapIdx() - 1), (tor[3].GetMapIdx() - 1))
-            restricted_torsion_scans['non_rotors']['torsion_{}'.format(str(i))] = tor_name
-    return restricted_torsion_scans
+    return tors
 
 
 def one_torsion_per_rotatable_bond(torsion_list):
@@ -203,7 +208,7 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
     """
 
     if not internal_torsion_resolution and not terminal_torsion_resolution:
-        utils.logger().warning("Resolution for internal and terminal torsions are 0. No torsions will be driven", Warning)
+        utils.logger().warning("Resolution for internal and terminal torsions are 0. No torsions will be driven")
 
     if scan_internal_terminal_combination and (not internal_torsion_resolution or not terminal_torsion_resolution):
         raise Warning("If you are not scanning internal or terminal torsions, you must set scan_internal_terminal_"
@@ -263,6 +268,162 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
             crank_job += 1
 
     return crank_jobs
+
+
+def define_restricted_drive(qc_molecule, restricted_dihedrals, steps=6, maximum_rotation=30, scan_dimension=1):
+    """
+
+    Parameters
+    ----------
+    qc_molecule: molecule in QC_JSON format. This comes with a geometry, connectivity table, identifiers that also has
+    a mapped SMILES so it can be checked.
+    needed_torsion_drives
+    grid_resolution
+    maximum_rotation
+
+    Returns
+    -------
+
+    """
+    #ToDo extend to multi-dimensional scans
+    #natoms = len(qc_molecule['symbols'])
+    # Convert to 3D shape for
+    #coords = np.array(qc_molecule['geometry'], dtype=float).reshape(natoms, 3) * utils.BOHR_2_ANGSTROM
+    connectivity = np.asarray(qc_molecule['connectivity'])
+
+    # Check dihedral indices are connected
+    bond_tuples = list(zip(connectivity[:, :2].T[0], connectivity[:, :2].T[1]))
+    optimization_jobs = {}
+    i = 0
+    for torsion in restricted_dihedrals:
+        for a1, a2 in zip(restricted_dihedrals[torsion], restricted_dihedrals[torsion][1:]):
+            if (a1, a2) not in bond_tuples and (a2, a1) not in bond_tuples:
+                utils.logger().warning("torsion {} is not bonded. Skipping this torsion")
+                continue
+        # measure dihedral angle
+        dihedral_angle = measure_dihedral_angle(restricted_dihedrals[torsion], qc_molecule['geometry'])
+        t_tuple = restricted_dihedrals[torsion]
+        angle = round(dihedral_angle)
+        optimization_jobs['{}_{}'.format(t_tuple, i)] = {
+            'type': 'optimization_input',
+            'initial_molecule': qc_molecule,
+            'dihedrals': [restricted_dihedrals[torsion]],
+            'constraints': {'scan': [('dihedral', str(t_tuple[0]), str(t_tuple[1]), str(t_tuple[2]),
+                                               str(t_tuple[3]), str(angle), str(angle + maximum_rotation),
+                                               str(steps))]}}
+        optimization_jobs['{}_{}'.format(t_tuple, i+1)] = {
+            'type': 'optimization_input',
+            'initial_molecule': qc_molecule,
+            'dihedrals': [restricted_dihedrals[torsion]],
+            'constraints': {'scan': [('dihedral', str(t_tuple[0]), str(t_tuple[1]), str(t_tuple[2]),
+                                               str(t_tuple[3]), str(angle), str(angle - maximum_rotation),
+                                               str(steps))]}}
+
+    return optimization_jobs
+
+
+def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, interval=5, filename=None):
+    """
+
+    Parameters
+    ----------
+    qc_molecule
+    dihedrals
+
+    Returns
+    -------
+    QCFractal optimization jobs input
+
+    """
+
+    optimization_jobs = {}
+    tagged_smiles = qc_molecule['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
+    mol, atom_map = chemi.get_atom_map(tagged_smiles, generate_conformer=False)
+
+    coords = chemi.from_mapped_xyz_to_mol_idx_order(qc_molecule['geometry'], atom_map)
+
+    # convert coord to Angstrom
+    coords = coords * BOHR_2_ANGSTROM
+    conf = mol.GetConfs().next()
+    conf.SetCoords(oechem.OEFloatArray(coords))
+
+    # new molecule for setting dihedral angles
+    mol_2 = oechem.OEMol(mol)
+    conf_2 = mol_2.GetConfs().next()
+    coords_2 = oechem.OEFloatArray(conf_2.GetMaxAtomIdx()*3)
+    conf.GetCoords(coords_2)
+    mol_2.DeleteConfs()
+
+    interval = radians(interval)
+    max_rot = radians(maximum_rotation)
+    for dihedral in dihedrals:
+        j = 0
+        dih_idx = dihedrals[dihedral]
+        tor = []
+        for i in dih_idx:
+            a = mol.GetAtom(oechem.OEHasMapIdx(i+1))
+            tor.append(a)
+        dih_angle = oechem.OEGetTorsion(conf, tor[0], tor[1], tor[2], tor[3])
+        for i, angle in enumerate(np.arange(dih_angle-max_rot, dih_angle+max_rot, interval)):
+            newconf = mol.NewConf(coords_2)
+            oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], angle)
+            new_angle = oechem.OEGetTorsion(newconf, tor[0], tor[1], tor[2], tor[3])
+            # if new_angle == dih_angle:
+            #     j += 1
+            #     if j > 1:
+            #         # One equivalent angle should be generated.
+            #         logger().warning("Openeye did not generate a new conformer for torsion and angle {} {}. Will not generate"
+            #                      "qcfractal optimizaiton input".format(dih_idx, angle))
+            #         break
+            if filename:
+                pdb = oechem.oemolostream("{}_{}.pdb".format(filename, i))
+                oechem.OEWritePDBFile(pdb, newconf)
+            symbols, geometry = chemi.to_mapped_geometry(newconf, atom_map)
+            qc_molecule = copy.deepcopy(qc_molecule)
+            qc_molecule['geometry'] = geometry
+            qc_molecule['symbols'] = symbols
+            degree = degrees(angle)
+            optimization_jobs['{}_{}'.format(dih_idx, int(round(degree)))] = {
+                'type': 'optimization_input',
+                'initial_molecule': qc_molecule,
+                'dihedral': dih_idx,
+                'constraints': {
+                    "set": [{
+                        "type": "dihedral",
+                        "indices": dih_idx,
+                        "value": degree
+                    }]
+                }
+            }
+    return optimization_jobs
+
+
+def measure_dihedral_angle(dihedral, coords):
+    """
+    calculate the dihedral angle in degrees
+
+    Parameters
+    ----------
+    dihedral
+    coords
+
+    Returns
+    -------
+
+    """
+    coords = np.array(coords, dtype=float).reshape(int(len(coords)/3), 3) * utils.BOHR_2_ANGSTROM
+    a = coords[dihedral[0]]
+    b = coords[dihedral[1]]
+    c = coords[dihedral[2]]
+    d = coords[dihedral[3]]
+    v1 = b-a
+    v2 = c-b
+    v3 = d-c
+    t1 = np.linalg.norm(v2)*np.dot(v1, np.cross(v2, v3))
+    t2 = np.dot(np.cross(v1, v2), np.cross(v2, v3))
+    phi = np.arctan2(t1, t2)
+    degree = phi * 180 / np.pi
+    return degree
 
 
 def get_initial_crank_state(fragment):
