@@ -5,6 +5,7 @@ import json
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import to_molecule_id, to_canonical_smiles_oe
+import copy
 # import qcportal as portal
 # try:
 #     import qcportal as portal
@@ -14,7 +15,7 @@ import qcfractal.interface as portal
 
 class WorkFlow(object):
 
-    def __init__(self, workflow_id, client, workflow_json=None):
+    def __init__(self, workflow_id, client, workflow_json=None, verbose=False):
         """
 
         Parameters
@@ -27,6 +28,7 @@ class WorkFlow(object):
 
         """
         self.workflow_id = workflow_id
+        self.verbose = verbose
 
         if workflow_json is not None:
             with open(workflow_json) as file:
@@ -35,7 +37,7 @@ class WorkFlow(object):
 
         # Check if id already in database
         try:
-            off_workflow = portal.collections.OpenFFWorkflow.from_server(client, workflow_id)
+            off_workflow = client.get_collection(collection_name=workflow_id, collection_type='OpenFFWorkflow')
             if workflow_json is not None:
                 # Check if workflows are the same
                 _check_workflow(workflow_json, off_workflow)
@@ -49,6 +51,9 @@ class WorkFlow(object):
         self.states = {}
         self.fragments = {}
         self.qcfractal_jobs = {}
+        self.final_energies = {}
+        self.final_geometries = {}
+        self.failed_jobs = {}
 
     def enumerate_states(self, molecule, title='', json_filename=None):
         """
@@ -309,6 +314,67 @@ class WorkFlow(object):
         with open(json_filenam) as f:
             self.qcfractal_jobs = json.load(f)
         self.add_fragments_to_db()
+
+    def get_final_molecules(self, json_filename=None):
+        """
+        Get final molecule geometries and energies from db and serialize keys for JSON
+        Parameters
+        ----------
+        json_filename: str, optional. Default None
+            If name is given, final energies and geometries will be written out to a JSON file
+
+        """
+        final_energies = copy.deepcopy(self.off_workflow.list_final_energies())
+        self.final_energies = self._to_json_format(final_energies)
+        if json_filename:
+            filename = '{}_energies.json'.format(json_filename)
+            with open(filename, 'w') as f:
+                json.dump(self.final_energies, f, indent=2, sort_keys=True)
+
+        if self.verbose:
+            utils.logger().info("Pulling final geometries from database. This takes some time...")
+        final_geometries = copy.deepcopy(self.off_workflow.list_final_molecules())
+        self.final_geometries = self._to_json_format(final_geometries)
+        if json_filename:
+            filename = '{}_geometries.json'.format(json_filename)
+            with open(filename, 'w') as f:
+                json.dump(self.final_geometries, f, indent=2, sort_keys=True)
+
+    def _to_json_format(self, final_dict):
+
+        serialized_dict = {}
+        for frag in final_dict:
+            for job in final_dict[frag]:
+                if not final_dict[frag][job]:
+                    # job failed.
+                    if not frag in self.failed_jobs:
+                        self.failed_jobs[frag] = []
+                        if not job in self.failed_jobs[frag]:
+                            self.failed_jobs[frag].append(job)
+                    continue
+                if not isinstance(final_dict[frag][job], dict):
+                    # This is an optimization job. No serialization needed
+                    if frag not in serialized_dict:
+                        serialized_dict[frag] = {}
+                    serialized_dict[frag][job] = final_dict[frag][job]
+                    continue
+
+                for key in final_dict[frag][job]:
+                    value = final_dict[frag][job][key]
+                    new_key = self._serialize_key(key)
+                    if frag not in serialized_dict:
+                        serialized_dict[frag] = {}
+                    if job not in serialized_dict[frag]:
+                        serialized_dict[frag][job] = {}
+                    serialized_dict[frag][job][new_key] = value
+        return serialized_dict
+
+    def _serialize_key(self, key):
+        if isinstance(key, (int, float)):
+            key = (int(key), )
+
+        return json.dumps(key)
+
 
 
 def _get_provenance(workflow_id, routine):
