@@ -938,6 +938,9 @@ def qcmol_to_xyz(qc_molecules, job=None, filename=None, ret=False):
 Functions for molecule visualization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 """
+_KELLYS_COLORS = ['#ebce2b', '#702c8c', '#db6917', '#96cde6', '#ba1c30', '#c0bd7f', '#7f7e80',
+                  '#5fa641', '#d485b2', '#4277b6', '#df8461', '#463397', '#e1a11a', '#91218c', '#e8e948', '#7e1510',
+                  '#92ae31', '#6f340d', '#d32b1e', '#2b3514']
 
 
 def tag_conjugated_bond(mol, tautomers=None, tag=None, threshold=1.05):
@@ -1050,15 +1053,18 @@ def highlight_bonds(mol_copy, fname, conjugation=True, rotor=False, width=600, h
 def highlight_torsion(mapped_molecule, dihedrals, fname, width=600, height=400):
 
     mol = oechem.OEMol(mapped_molecule)
-    atoms_to_highlight = []
-    atom_bond_set = oechem.OEAtomBondSet()
+    atom_bond_sets = []
     for dihedral in dihedrals:
-        dih = []
-        for idx in dihedral:
-            a = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
-            dih.append(a)
-            atom_bond_set.AddAtom(a)
-        atoms_to_highlight.append(dih)
+        atom_bond_set = oechem.OEAtomBondSet()
+        a = mol.GetAtom(oechem.OEHasMapIdx(dihedral[0]+1))
+        atom_bond_set.AddAtom(a)
+        for idx in dihedral[1:]:
+            a2 = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
+            atom_bond_set.AddAtom((a2))
+            bond = mol.GetBond(a, a2)
+            atom_bond_set.AddBond(bond)
+            a = a2
+        atom_bond_sets.append(atom_bond_set)
 
     dopt = oedepict.OEPrepareDepictionOptions()
     dopt.SetSuppressHydrogens(False)
@@ -1069,13 +1075,9 @@ def highlight_torsion(mapped_molecule, dihedrals, fname, width=600, height=400):
 
     disp = oedepict.OE2DMolDisplay(mol, opts)
 
-    aroStyle = oedepict.OEHighlightStyle_Color
-    aroColor = oechem.OEColor(oechem.OEBlack)
-    oedepict.OEAddHighlighting(disp, aroColor, aroStyle,
-                               oechem.OEIsAromaticAtom(), oechem.OEIsAromaticBond() )
-    hstyle = oedepict.OEHighlightStyle_BallAndStick
-    hcolor = oechem.OEColor(oechem.OELightBlue)
-    oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+    highlight = oedepict.OEHighlightOverlayByBallAndStick(oechem.OEGetContrastColors())
+
+    oedepict.OEAddHighlightOverlay(disp, highlight, atom_bond_sets)
 
     return oedepict.OERenderMolecule(fname, disp)
 
