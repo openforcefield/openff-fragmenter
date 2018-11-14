@@ -3,19 +3,23 @@ language: python
 # Run jobs on container-based infrastructure, can be overridden per job
 dist: trusty
 
+services:
+  - mongodb
+
+addons:
+  apt:
+    sources:
+    - mongodb-3.0-precise
+    packages:
+    - mongodb-org-server
+
 matrix:
   include:
     # Extra includes for OSX since python language is not available by default on OSX
     - os: osx
       language: generic
-      env: PYTHON_VER=3.5
-    - os: osx
-      language: generic
       env: PYTHON_VER=3.6
 
-    - os: linux
-      python: 3.5
-      env: PYTHON_VER=3.5
     - os: linux
       python: 3.6
       env: PYTHON_VER=3.6

@@ -12,12 +12,13 @@ import warnings
 import copy
 import pytest
 import qcfractal.interface as portal
+from qcfractal import testing
 from qcfractal.testing import dask_server_fixture, recursive_dict_merge
 
 @testing.using_rdkit
 @testing.using_geometric
 @testing.using_torsiondrive
-def torsiondrive_run(dask_server_fixture):
+def test_torsiondrive_run(dask_server_fixture):
 
     # Cannot use this fixture without these services. Also cannot use `mark` and `fixture` decorators
     pytest.importorskip("torsiondrive")
