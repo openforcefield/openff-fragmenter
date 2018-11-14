@@ -1116,7 +1116,7 @@ def bond_order_tag(molecule, atom_map, bond_order_array):
             bond.SetData(tag, mbo)
 
 
-def png_atoms_labeled(smiles, fname, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
+def png_atoms_labeled(smiles, fname, map=True, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
     """Write out png file of molecule with atoms labeled with their map index.
 
     Parameters
@@ -1133,7 +1133,10 @@ def png_atoms_labeled(smiles, fname, width=600, height=400, label_scale=2.0, sca
     oedepict.OEPrepareDepiction(mol)
 
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
-    opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
+    if map:
+        opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
+    if not map:
+        opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
     opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
     opts.SetAtomPropLabelFontScale(label_scale)
     opts.SetBondWidthScaling(scale_bondwidth)
