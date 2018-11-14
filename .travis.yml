@@ -38,29 +38,15 @@ before_install:
   - if [ "$TRAVIS_SECURE_ENV_VARS" == false ]; then echo "OpenEye license will not be installed in forks."; fi
 
 install:
-
-script:
-
     # Create test environment for package
-  - conda create --yes -n test python=$PYTHON_VER pip pytest pytest-cov
+  - python devtools/scripts/conda_env.py -n=test -p=$PYTHON_VER devtools/conda-envs/meta.yaml
   - source activate test
 
-    # Install pip only modules
-  - pip install codecov
-
-    # Add omnia, ommia-dev and conda-forge channels
-  - conda config --add channels omnia
-  - conda config --add channels omnia/label/dev
-  - conda config --add channels conda-forge
-  - conda config --add channels openeye
-
-  # Install OpenEye toolkit
-  #- conda install --yes -c openeye openeye-toolkits && python -c "import openeye; print(openeye.__version__)"
-
     # Build and install package
-  - conda build --python=$PYTHON_VER devtools/conda-recipe
-  - conda install --yes --use-local fragmenter
+  - python setup.py develop --no-deps
 
+
+script:
   - pytest -v --cov=fragmenter fragmenter/tests/
 
 notifications:
