@@ -51,7 +51,8 @@ install:
 
 
 script:
-  - pytest -vvv --cov=fragmenter fragmenter/tests/
+  - export OE_LICENSE=`pwd`"/oe_license.txt"
+  - pytest -vs --cov=fragmenter fragmenter/tests/
 
 notifications:
     email: false
