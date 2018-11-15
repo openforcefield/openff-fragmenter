@@ -51,7 +51,7 @@ install:
 
 
 script:
-  - pytest -v --cov=fragmenter fragmenter/tests/
+  - pytest -vvv --cov=fragmenter fragmenter/tests/
 
 notifications:
     email: false
