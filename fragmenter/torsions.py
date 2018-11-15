@@ -426,41 +426,6 @@ def measure_dihedral_angle(dihedral, coords):
     return degree
 
 
-def equiv_torsions(mapped_smiles, restricted=False, central_bonds=None):
-    """
-    Find all torsions of a central bond
-
-    Parameters
-    ----------
-    mapped_smiles
-    restricted
-    central_bonds
-
-    Returns
-    -------
-
-    """
-    mapped_mol = chemi.smiles_to_oemol(mapped_smiles)
-    mol = oechem.OEMol(mapped_mol)
-    terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
-    terminal_torsions = _find_torsions_from_smarts(mol, terminal_smarts)
-    mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(mapped_mol)]
-    all_torsions = terminal_torsions + mid_torsions
-    if restricted:
-        restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]'
-        restricted_torsions = _find_torsions_from_smarts(mol, restricted_smarts)
-        all_torsions = all_torsions + restricted_torsions
-    tor_idx = []
-    for tor in all_torsions:
-        tor_name = (tor[0].GetMapIdx()-1, tor[1].GetMapIdx()-1, tor[2].GetMapIdx()-1, tor[3].GetMapIdx()-1)
-        tor_idx.append(tor_name)
-    if not central_bonds:
-        central_bonds = set((tor[1], tor[2]) for tor in tor_idx)
-    eq_torsions = {cb: [tor for tor in tor_idx if cb == (tor[1], tor[2]) or  cb ==(tor[2], tor[1])] for cb in
-                        central_bonds}
-    return eq_torsions
-
-
 def get_initial_crank_state(fragment):
     """
     Generate initial crank state JSON for each crank job in fragment
