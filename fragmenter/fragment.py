@@ -1,7 +1,7 @@
 from itertools import combinations
 import openeye as oe
 from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
-from cmiles import to_canonical_smiles_oe
+from cmiles.utils import mol_to_smiles
 
 import yaml
 import os
@@ -9,6 +9,8 @@ from pkg_resources import resource_filename
 import copy
 import itertools
 import json
+import warnings
+import networkx as nx
 
 from .utils import logger, make_python_identifier
 from .chemi import to_smi, normalize_molecule, get_charges
@@ -87,7 +89,7 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
         #states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
         # Not using create mapped SMILES because OEMol is needed but state is OEMolBase.
         #states.add(oechem.OEMolToSmiles(molecule))
-        states.add(to_canonical_smiles_oe(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
+        states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=True))
 
     logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 
@@ -180,6 +182,298 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
                 states.append(enantiomer)
 
     return states
+
+
+class Fragmenter(object):
+
+    def __init__(self, molecule):
+        #ToDo remove map from molecule.
+        self.molecule = molecule
+        self._nx_graph = self._mol_to_graph()
+        self._fragments = list()  # all possible fragments without breaking rings
+
+        self._fragment_combinations = list() # AtomBondSets of combined fragments. Used internally to generate PDF
+        self.fragment_combinations = {} # Dict that maps SMILES to all equal combined fragments
+
+    @property
+    def n_rotors(self):
+        rotors = 0
+        for bond in self.molecule.GetBonds():
+            if bond.IsRotor():
+                rotors += 1
+        return rotors
+
+    def _mol_to_graph(self):
+
+        G = nx.Graph()
+        for atom in self.molecule.GetAtoms():
+            G.add_node(atom.GetIdx(), name=oechem.OEGetAtomicSymbol(atom.GetAtomicNum()), halogen=atom.IsHalogen())
+        for bond in self.molecule.GetBonds():
+            G.add_edge(bond.GetBgnIdx(), bond.GetEndIdx(),  index=bond.GetIdx(),
+                       aromatic=bond.IsAromatic(), in_ring=bond.IsInRing(), bond_order=bond.GetOrder(),
+                       rotor=bond.IsRotor())
+        return G
+
+    def _fragment_graph(self):
+        """
+        Fragment all bonds that are not in rings
+        Parameters
+        ----------
+        G: NetworkX graph
+        bondOrderThreshold: int
+            thershold for fragmenting graph. Default 1.2
+
+        Returns
+        -------
+        subgraphs: list of subgraphs
+        """
+        import networkx as nx
+
+        ebunch = []
+        for node in self._nx_graph.edges:
+            if not self._nx_graph.edges[node]['aromatic'] and not self._nx_graph.edges[node]['in_ring'] \
+                    and not (self._nx_graph.node[node[0]]['name'] == 'H' or self._nx_graph.node[node[-1]]['name'] == 'H'):
+                ebunch.append(node)
+
+        # Cut molecule
+        self._nx_graph.remove_edges_from(ebunch)
+        # Generate fragments
+        subgraphs = list(nx.connected_component_subgraphs(self._nx_graph))
+        return subgraphs
+
+    def _subgraphs_to_atom_bond_sets(self, subgraphs):
+        """
+        Build Openeye AtomBondSet from subrgaphs for enumerating fragments recipe
+
+        Parameters
+        ----------
+        graph: NetworkX graph
+        subgraph: NetworkX subgraph
+        oemol: Openeye OEMolGraph
+
+        Returns
+        ------
+        atomBondSet: Openeye oechem atomBondSet
+        """
+        # Build openeye atombondset from subgraphs
+        for subgraph in subgraphs:
+            atom_bond_set = oechem.OEAtomBondSet()
+            for node in subgraph.node:
+                atom_bond_set.AddAtom(self.molecule.GetAtom(oechem.OEHasAtomIdx(node)))
+            for node1, node2 in subgraph.edges():
+                a1 = self.molecule.GetAtom(oechem.OEHasAtomIdx(node1))
+                a2 = self.molecule.GetAtom(oechem.OEHasAtomIdx(node2))
+                bond = self.molecule.GetBond(a1, a2)
+                atom_bond_set.AddBond(bond)
+            self._fragments.append(atom_bond_set)
+
+    def fragment_all_bonds_not_in_ring_systems(self):
+        subgraphs = self._fragment_graph()
+        self._subgraphs_to_atom_bond_sets(subgraphs)
+
+    def _get_atom_bond_set_combinations(self, max_rotors=3, min_rotors=1):
+
+        fragcombs = []
+
+        nrfrags = len(self._fragments)
+        for n in range(1, nrfrags):
+
+            for fragcomb in combinations(self._fragments, n):
+
+                if self._is_combination_adjacent(fragcomb):
+
+                    frag = self._combine_and_connect_atom_bond_sets(fragcomb)
+
+                    if (self._count_rotors_in_fragment(frag) <= max_rotors) and \
+                            (self._count_rotors_in_fragment(frag) >= min_rotors):
+                        fragcombs.append(frag)
+
+        return fragcombs
+
+    def combine_fragments(self, adjust_hcount=True, **kwargs):
+        """
+        Convert fragments (AtomBondSet) to canonical isomeric SMILES string
+        Parameters
+        ----------
+        frags: list
+        mol: OEMol
+        OESMILESFlag: str
+            Either 'ISOMERIC' or 'DEFAULT'. This flag determines which OE function to use to generate SMILES string
+
+        Returns
+        -------
+        smiles: dict of smiles to frag
+
+        """
+        fragment_combinations = self._get_atom_bond_set_combinations(**kwargs)
+
+        for frag in fragment_combinations:
+            fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
+            fragbondpred = oechem.OEIsBondMember(frag.GetBonds())
+
+            fragment = oechem.OEMol()
+            adjustHCount = adjust_hcount
+            oechem.OESubsetMol(fragment, self.molecule, fragatompred, fragbondpred, adjustHCount)
+
+            oechem.OEPerceiveChiral(fragment)
+            # sanity check that all atoms are bonded
+            for atom in fragment.GetAtoms():
+                if not list(atom.GetBonds()):
+                    warnings.warn("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
+                                  "You probably ran into a bug. Please report the input molecule to the issue tracker")
+
+            smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=False, isomeric=True)
+
+            if smiles not in self.fragment_combinations:
+                self.fragment_combinations[smiles] = []
+            self.fragment_combinations[smiles].append(frag)
+
+    def _is_combination_adjacent(self, frag_combination):
+        """
+        This function was taken from Openeye cookbook
+        https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
+        """
+
+        parts = [0] * len(frag_combination)
+        nrparts = 0
+
+        for idx, frag in enumerate(frag_combination):
+            if parts[idx] != 0:
+                continue
+
+            nrparts += 1
+            parts[idx] = nrparts
+            self._traverse_fragments(frag, frag_combination, parts, nrparts)
+
+        return nrparts == 1
+
+    def _traverse_fragments(self, acting_fragment, frag_combination, parts, nrparts):
+        """
+        This function was taken from openeye cookbook
+        https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
+        """
+        for idx, frag in enumerate(frag_combination):
+            if parts[idx] != 0:
+                continue
+
+            if not self._are_atom_bond_sets_adjacent(acting_fragment, frag):
+                continue
+
+            parts[idx] = nrparts
+            self._traverse_fragments(frag, frag_combination, parts, nrparts)
+
+    @staticmethod
+    def _are_atom_bond_sets_adjacent(frag_a, frag_b):
+
+        for atom_a in frag_a.GetAtoms():
+            for atom_b in frag_b.GetAtoms():
+                if atom_a.GetBond(atom_b) is not None:
+                    return True
+        return False
+
+    @staticmethod
+    def _combine_and_connect_atom_bond_sets(adjacent_frag_list):
+        """
+        This function was taken from OpeneEye Cookbook
+        https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
+        """
+
+        # combine atom and bond sets
+
+        combined = oechem.OEAtomBondSet()
+        for frag in adjacent_frag_list:
+            for atom in frag.GetAtoms():
+                combined.AddAtom(atom)
+            for bond in frag.GetBonds():
+                combined.AddBond(bond)
+
+        # add connecting bonds
+
+        for atom_a in combined.GetAtoms():
+            for atom_b in combined.GetAtoms():
+                if atom_a.GetIdx() < atom_b.GetIdx():
+                    continue
+
+                bond = atom_a.GetBond(atom_b)
+                if bond is None:
+                    continue
+                if combined.HasBond(bond):
+                    continue
+
+                combined.AddBond(bond)
+
+        return combined
+
+    @staticmethod
+    def _count_rotors_in_fragment(fragment):
+        return sum([bond.IsRotor() for bond in fragment.GetBonds()])
+
+    def depict_fragment_combinations(self, fname, line_width=0.75):
+
+        itf = oechem.OEInterface()
+        oedepict.OEConfigure2DMolDisplayOptions(itf)
+        oedepict.OEConfigureReportOptions(itf)
+
+        oedepict.OEPrepareDepiction(self.molecule)
+
+
+        ropts = oedepict.OEReportOptions()
+        oedepict.OESetupReportOptions(ropts, itf)
+        ropts.SetFooterHeight(25.0)
+        ropts.SetHeaderHeight(ropts.GetPageHeight() / 4.0)
+        report = oedepict.OEReport(ropts)
+
+        opts = oedepict.OE2DMolDisplayOptions()
+        oedepict.OESetup2DMolDisplayOptions(opts, itf)
+        cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
+        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
+        opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
+        opts.SetAtomLabelFontScale(1.2)
+
+        # add index to keep track of bonds
+        idx_tag = 'fragment_idx'
+        tag = oechem.OEGetTag(idx_tag)
+        for f_idx, frag in enumerate(self._fragments):
+            for atom in frag.GetAtoms():
+                atom.SetData(tag, f_idx)
+
+        # setup depiction style
+        n_frags = len(self._fragments)
+        colors = [c for c in oechem.OEGetLightColors()]
+        if len(colors) < n_frags:
+            n = n_frags - len(colors)
+            colors.extend([c for c in oechem.OEGetColors(oechem.OEBlueTint, oechem.OERed, n)])
+
+        atom_glyph = ColorAtomByFragmentIndex(colors, tag)
+        fade_hightlight = oedepict.OEHighlightByColor(oechem.OEGrey, line_width)
+
+        for frag in self.fragment_combinations:
+            cell = report.NewCell()
+            display = oedepict.OE2DMolDisplay(self.molecule, opts)
+
+            frag_atoms = oechem.OEIsAtomMember(self.fragment_combinations[frag][0].GetAtoms())
+            frag_bonds = oechem.OEIsBondMember(self.fragment_combinations[frag][0].GetBonds())
+
+            not_fragment_atoms = oechem.OENotAtom(frag_atoms)
+            not_fragment_bonds = oechem.OENotBond(frag_bonds)
+
+            oedepict.OEAddHighlighting(display, fade_hightlight, not_fragment_atoms, not_fragment_bonds)
+            oegrapheme.OEAddGlyph(display, atom_glyph, frag_atoms)
+
+            oedepict.OERenderMolecule(cell, display)
+        cellwidth, cellheight = report.GetHeaderWidth(), report.GetHeaderHeight()
+        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
+        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
+        disp = oedepict.OE2DMolDisplay(self.molecule, opts)
+        oegrapheme.OEAddGlyph(disp, atom_glyph, oechem.OEIsTrueAtom())
+
+        headerpen = oedepict.OEPen(oechem.OEWhite, oechem.OELightGrey, oedepict.OEFill_Off, 2.0)
+        for header in report.GetHeaders():
+            oedepict.OERenderMolecule(header, disp)
+            oedepict.OEDrawBorder(header, headerpen)
+
+        return oedepict.OEWriteReport(fname, report)
 
 
 def generate_fragments(molecule, generate_visualization=False, strict_stereo=False, combinatorial=True, MAX_ROTORS=2,
@@ -774,7 +1068,7 @@ def _ring_substiuents(mol, bond, rotor_bond, tagged_rings, ring_idx, fgroup_tagg
     return rs_atoms, rs_bonds
 
 
-def frag_to_smiles(frags, mol):
+def frag_to_smiles(frags, mol, adjust_hcount=True):
     """
     Convert fragments (AtomBondSet) to canonical isomeric SMILES string
     Parameters
@@ -797,18 +1091,18 @@ def frag_to_smiles(frags, mol):
 
         #fragment = oechem.OEGraphMol()
         fragment = oechem.OEMol()
-        adjustHCount = True
+        adjustHCount = adjust_hcount
         oechem.OESubsetMol(fragment, mol, fragatompred, fragbondpred, adjustHCount)
 
         oechem.OEPerceiveChiral(fragment)
         # sanity check that all atoms are bonded
         for atom in fragment.GetAtoms():
             if not list(atom.GetBonds()):
-                raise Warning("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
+                warnings.warn("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
         #s = oechem.OEMolToSmiles(fragment)
         #s2 = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=False)
-        s = to_canonical_smiles_oe(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
+        s = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
 
         if s not in smiles:
             smiles[s] = []
@@ -904,89 +1198,6 @@ def ToPdf(mol, oname, frags):#, fragcombs):
     return oedepict.OEWriteReport(oname, report)
 
     #return 0
-
-
-def OeMolToGraph(oemol):
-    """
-    Convert charged molecule to networkX graph and add WiberBondOrder as edge weight
-
-    Parameters
-    ----------
-    mol: charged OEMolGraph
-
-    Returns
-    -------
-    G: NetworkX Graph of molecule
-
-    """
-    import networkx as nx
-    G = nx.Graph()
-    for atom in oemol.GetAtoms():
-        G.add_node(atom.GetIdx(), name=atom.GetName())
-    for bond in oemol.GetBonds():
-        try:
-            fgroup = bond.GetData('fgroup')
-        except:
-            fgroup = False
-        G.add_edge(bond.GetBgnIdx(), bond.GetEndIdx(), weight=bond.GetData("WibergBondOrder"), index=bond.GetIdx(),
-                   aromatic=bond.IsAromatic(), in_ring=bond.IsInRing(), fgroup=fgroup)
-    return G
-
-
-def FragGraph(G, bondOrderThreshold=1.2):
-    """
-    Fragment all bonds with Wiberg Bond Order less than threshold
-
-    Parameters
-    ----------
-    G: NetworkX graph
-    bondOrderThreshold: int
-        thershold for fragmenting graph. Default 1.2
-
-    Returns
-    -------
-    subgraphs: list of subgraphs
-    """
-    import networkx as nx
-
-    ebunch = []
-    for node in G.edge:
-        if G.degree(node) <= 1:
-            continue
-        for node2 in G.edge[node]:
-            if G.edge[node][node2]['weight'] < bondOrderThreshold and G.degree(node2) >1 \
-                    and not G.edge[node][node2]['aromatic'] and not G.edge[node][node2]['in_ring']\
-                    and not G.edge[node][node2]['fgroup']:
-                ebunch.append((node, node2))
-    # Cut molecule
-    G.remove_edges_from(ebunch)
-    # Generate fragments
-    subgraphs = list(nx.connected_component_subgraphs(G))
-    return subgraphs
-
-
-def subgraphToAtomBondSet(graph, subgraph, oemol):
-    """
-    Build Openeye AtomBondSet from subrgaphs for enumerating fragments recipe
-
-    Parameters
-    ----------
-    graph: NetworkX graph
-    subgraph: NetworkX subgraph
-    oemol: Openeye OEMolGraph
-
-    Returns
-    ------
-    atomBondSet: Openeye oechem atomBondSet
-    """
-    # Build openeye atombondset from subgraphs
-    atomBondSet = oechem.OEAtomBondSet()
-    for node in subgraph.node:
-        atomBondSet.AddAtom(oemol.GetAtom(oechem.OEHasAtomIdx(node)))
-    for node1, node2 in subgraph.edges():
-        index = graph.edge[node1][node2]['index']
-        atomBondSet.AddBond(oemol.GetBond(oechem.OEHasBondIdx(index)))
-    return atomBondSet
 
 
 def SmilesToFragments(smiles, fgroup_smarts, bondOrderThreshold=1.2, chargesMol=True):
@@ -1127,6 +1338,40 @@ class ColorBondByFragmentIndex(oegrapheme.OEBondGlyphBase):
     def ColorBondByFragmentIndex(self):
         return ColorBondByFragmentIndex(self.colorlist, self.tag).__disown__()
 
+
+class ColorAtomByFragmentIndex(oegrapheme.OEAtomGlyphBase):
+    """
+    This class was taken from OpeneEye cookbook
+    https://docs.eyesopen.com/toolkits/cookbook/python/depiction/enumfrags.html
+    """
+    def __init__(self, colorlist, tag):
+        oegrapheme.OEAtomGlyphBase.__init__(self)
+        self.colorlist = colorlist
+        self.tag = tag
+
+    def RenderGlyph(self, disp, atom):
+
+        a_disp = disp.GetAtomDisplay(atom)
+        if a_disp is None or not a_disp.IsVisible():
+            return False
+
+        if not atom.HasData(self.tag):
+            return False
+
+        linewidth = disp.GetScale() / 1.5
+        color = self.colorlist[atom.GetData(self.tag)]
+        radius = disp.GetScale() / 4.8
+        pen = oedepict.OEPen(color, color, oedepict.OEFill_Off, linewidth)
+
+        layer = disp.GetLayer(oedepict.OELayerPosition_Below)
+        oegrapheme.OEDrawCircle(layer, oegrapheme.OECircleStyle_Default, a_disp.GetCoords(), radius, pen)
+
+        return True
+
+    def ColorAtomByFragmentIndex(self):
+        return ColorAtomByFragmentIndex(self.colorlist, self.tag).__disown__()
+
+
 class LabelBondOrder(oedepict.OEDisplayBondPropBase):
     def __init__(self):
         oedepict.OEDisplayBondPropBase.__init__(self)
@@ -1139,121 +1384,3 @@ class LabelBondOrder(oedepict.OEDisplayBondPropBase):
     def CreateCopy(self):
         copy = LabelBondOrder()
         return copy.__disown__()
-
-def IsAdjacentAtomBondSets(fragA, fragB):
-    """
-    This function was taken from Openeye cookbook
-    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
-    """
-    for atomA in fragA.GetAtoms():
-        for atomB in fragB.GetAtoms():
-            if atomA.GetBond(atomB) is not None:
-                return True
-    return False
-
-def CountRotorsInFragment(fragment):
-    return sum([bond.IsRotor() for bond in fragment.GetBonds()])
-
-def IsAdjacentAtomBondSetCombination(fraglist):
-    """
-    This function was taken from Openeye cookbook
-    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
-    """
-
-    parts = [0] * len(fraglist)
-    nrparts = 0
-
-    for idx, frag in enumerate(fraglist):
-        if parts[idx] != 0:
-            continue
-
-        nrparts += 1
-        parts[idx] = nrparts
-        TraverseFragments(frag, fraglist, parts, nrparts)
-
-    return (nrparts == 1)
-
-
-def TraverseFragments(actfrag, fraglist, parts, nrparts):
-    """
-    This function was taken from openeye cookbook
-    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
-    """
-    for idx, frag in enumerate(fraglist):
-        if parts[idx] != 0:
-            continue
-
-        if not IsAdjacentAtomBondSets(actfrag, frag):
-            continue
-
-        parts[idx] = nrparts
-        TraverseFragments(frag, fraglist, parts, nrparts)
-
-
-def CombineAndConnectAtomBondSets(fraglist):
-    """
-    This function was taken from OpeneEye Cookbook
-    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
-    """
-
-    # combine atom and bond sets
-
-    combined = oechem.OEAtomBondSet()
-    for frag in fraglist:
-        for atom in frag.GetAtoms():
-            combined.AddAtom(atom)
-        for bond in frag.GetBonds():
-            combined.AddBond(bond)
-
-    # add connecting bonds
-
-    for atomA in combined.GetAtoms():
-        for atomB in combined.GetAtoms():
-            if atomA.GetIdx() < atomB.GetIdx():
-                continue
-
-            bond = atomA.GetBond(atomB)
-            if bond is None:
-                continue
-            if combined.HasBond(bond):
-                continue
-
-            combined.AddBond(bond)
-
-    return combined
-
-
-def GetFragmentAtomBondSetCombinations(fraglist, MAX_ROTORS=2, MIN_ROTORS=1):
-    """
-    This function was taken from OpeneEye cookbook 
-    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
-    Enumerate connected combinations from list of fragments
-    Parameters
-    ----------
-    mol: OEMolGraph
-    fraglist: list of OE AtomBondSet
-    MAX_ROTORS: int
-        min rotors in each fragment combination
-    MIN_ROTORS: int
-        max rotors in each fragment combination
-
-    Returns
-    -------
-    fragcombs: list of connected combinations (OE AtomBondSet)
-    """
-
-    fragcombs = []
-
-    nrfrags = len(fraglist)
-    for n in range(1, nrfrags):
-
-        for fragcomb in combinations(fraglist, n):
-
-            if IsAdjacentAtomBondSetCombination(fragcomb):
-
-                frag = CombineAndConnectAtomBondSets(fragcomb)
-
-                if (CountRotorsInFragment(frag) <= MAX_ROTORS) and (CountRotorsInFragment(frag) >= MIN_ROTORS):
-                    fragcombs.append(frag)
-
-    return fragcombs
