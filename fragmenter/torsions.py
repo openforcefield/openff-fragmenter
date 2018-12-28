@@ -11,7 +11,7 @@ from math import radians, degrees
 import copy
 
 from . import utils, chemi
-from cmiles import to_canonical_smiles_oe
+from cmiles.utils import mol_to_smiles
 from .utils import BOHR_2_ANGSTROM, logger
 # warnings.simplefilter('always')
 
@@ -40,7 +40,7 @@ def find_torsions(molecule, restricted=True, terminal=True):
     is_mapped = chemi.is_mapped(molecule)
     if not is_mapped:
         utils.logger().warning('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
-        tagged_smiles = to_canonical_smiles_oe(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
+        tagged_smiles = mol_to_smiles(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
         # Generate new molecule with tags
         molecule = chemi.smiles_to_oemol(tagged_smiles)
         utils.logger().warning('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')
@@ -228,6 +228,7 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
             for comb in itertools.combinations(internal_torsions, scan_dimension):
                 dihedrals = [internal_torsions[torsion] for torsion in comb]
                 grid = [internal_torsion_resolution]*len(dihedrals)
+                job_name = ''
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
             if internal_dimension < scan_dimension and internal_dimension > 0:
@@ -237,16 +238,22 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
                 crank_job +=1
 
         if terminal_torsion_resolution:
-            for comb in itertools.combinations(terminal_torsions, scan_dimension):
-                dihedrals = [terminal_torsions[torsion] for torsion in comb]
-                grid = [terminal_torsion_resolution]*scan_dimension
+            # If scanning terminal torsions separately, only do 1D torsion scans
+            for torsion in terminal_torsions:
+                dihedrals = [terminal_torsions[torsion]]
+                grid = [terminal_torsion_resolution]
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
-            if terminal_dimension < scan_dimension and terminal_dimension > 0:
-                dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
-                grid = [terminal_torsion_resolution]*len(dihedrals)
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
-                crank_job +=1
+            # for comb in itertools.combinations(terminal_torsions, scan_dimension):
+            #     dihedrals = [terminal_torsions[torsion] for torsion in comb]
+            #     grid = [terminal_torsion_resolution]*scan_dimension
+            #     crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
+            #     crank_job +=1
+            # if terminal_dimension < scan_dimension and terminal_dimension > 0:
+            #     dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
+            #     grid = [terminal_torsion_resolution]*len(dihedrals)
+            #     crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
+            #     crank_job +=1
     else:
         # combine both internal and terminal torsions
         all_torsion_idx = np.arange(0, torsion_dimension)
