@@ -20,7 +20,7 @@ OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 
 def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=True, max_states=200, level=0, reasonable=True,
-                  carbon_hybridization=True, suppress_hydrogen=True, verbose=True, filename=None,
+                  carbon_hybridization=True, suppress_hydrogen=True, verbose=False, filename=None,
                   return_smiles_list=False, return_molecules=False):
     """
     Expand molecule states (choice of protonation, tautomers and/or stereoisomers).
@@ -152,8 +152,8 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
             formal_charge_options = oequacpac.OEFormalChargeOptions()
             formal_charge_options.SetMaxCount(max_states)
             formal_charge_options.SetVerbose(verbose)
-            if verbose:
-                logger().debug("Enumerating protonation states...")
+            #if verbose:
+            #    logger().debug("Enumerating protonation states...")
             for protonation_state in oequacpac.OEEnumerateFormalCharges(molecule, formal_charge_options):
                 states_enumerated += 1
                 oechem.OEWriteMolecule(ostream, protonation_state)
@@ -197,11 +197,7 @@ class Fragmenter(object):
 
     @property
     def n_rotors(self):
-        rotors = 0
-        for bond in self.molecule.GetBonds():
-            if bond.IsRotor():
-                rotors += 1
-        return rotors
+        return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
 
     def _mol_to_graph(self):
 
@@ -271,26 +267,26 @@ class Fragmenter(object):
         subgraphs = self._fragment_graph()
         self._subgraphs_to_atom_bond_sets(subgraphs)
 
-    def _get_atom_bond_set_combinations(self, max_rotors=3, min_rotors=1):
-
-        fragcombs = []
-
+    def combine_fragments(self, max_rotors=3, min_rotors=1, min_heavy_atoms=5, **kwargs):
         nrfrags = len(self._fragments)
         for n in range(1, nrfrags):
-
             for fragcomb in combinations(self._fragments, n):
-
                 if self._is_combination_adjacent(fragcomb):
-
                     frag = self._combine_and_connect_atom_bond_sets(fragcomb)
-
                     if (self._count_rotors_in_fragment(frag) <= max_rotors) and \
                             (self._count_rotors_in_fragment(frag) >= min_rotors):
-                        fragcombs.append(frag)
+                        if self._count_heavy_atoms_in_fragment(frag) >= min_heavy_atoms:
+                            self._fragment_combinations.append(frag)
+                            # convert to smiles
+                            smiles = self.frag_to_smiles(frag, **kwargs)
+                            if not isinstance(smiles, list):
+                                smiles = [smiles]
+                            for sm in smiles:
+                                if sm not in self.fragment_combinations:
+                                    self.fragment_combinations[sm] = []
+                                self.fragment_combinations[sm].append(frag)
 
-        return fragcombs
-
-    def combine_fragments(self, adjust_hcount=True, **kwargs):
+    def frag_to_smiles(self, frag, adjust_hcount=True, explicit_hydrogens=True, expand_stereoisomers=True):
         """
         Convert fragments (AtomBondSet) to canonical isomeric SMILES string
         Parameters
@@ -305,28 +301,35 @@ class Fragmenter(object):
         smiles: dict of smiles to frag
 
         """
-        fragment_combinations = self._get_atom_bond_set_combinations(**kwargs)
+        fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
+        fragbondpred = oechem.OEIsBondMember(frag.GetBonds())
 
-        for frag in fragment_combinations:
-            fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
-            fragbondpred = oechem.OEIsBondMember(frag.GetBonds())
+        fragment = oechem.OEMol()
+        adjustHCount = adjust_hcount
+        oechem.OESubsetMol(fragment, self.molecule, fragatompred, fragbondpred, adjustHCount)
 
-            fragment = oechem.OEMol()
-            adjustHCount = adjust_hcount
-            oechem.OESubsetMol(fragment, self.molecule, fragatompred, fragbondpred, adjustHCount)
+        oechem.OEPerceiveChiral(fragment)
+        # sanity check that all atoms are bonded
+        for atom in fragment.GetAtoms():
+            if not list(atom.GetBonds()):
+                warnings.warn("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
+                              "You probably ran into a bug. Please report the input molecule to the issue tracker")
 
-            oechem.OEPerceiveChiral(fragment)
-            # sanity check that all atoms are bonded
-            for atom in fragment.GetAtoms():
-                if not list(atom.GetBonds()):
-                    warnings.warn("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
-                                  "You probably ran into a bug. Please report the input molecule to the issue tracker")
+        try:
+            smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=True)
+        except ValueError:
+            print('missing steroe')
+            if expand_stereoisomers:
+                # Generate stereoisomers
+                smiles = list()
+                enantiomers = _expand_states(fragment, enumerate='stereoisomers')
+                for mol in enantiomers:
+                    smiles.append(mol_to_smiles(mol, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=True))
+            else:
+                # generate non isomeric smiles
+                smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=False)
 
-            smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=False, isomeric=True)
-
-            if smiles not in self.fragment_combinations:
-                self.fragment_combinations[smiles] = []
-            self.fragment_combinations[smiles].append(frag)
+        return smiles
 
     def _is_combination_adjacent(self, frag_combination):
         """
@@ -407,6 +410,10 @@ class Fragmenter(object):
     @staticmethod
     def _count_rotors_in_fragment(fragment):
         return sum([bond.IsRotor() for bond in fragment.GetBonds()])
+
+    @staticmethod
+    def _count_heavy_atoms_in_fragment(fragment):
+        return sum([not atom.IsHydrogen() for atom in fragment.GetAtoms()])
 
     def depict_fragment_combinations(self, fname, line_width=0.75):
 

@@ -4,7 +4,8 @@ import getpass
 import json
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
-from cmiles import to_molecule_id, to_canonical_smiles_oe
+from cmiles import to_molecule_id
+from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema
 import copy
 #import qcportal as portal
 # For Travis CI
@@ -37,14 +38,13 @@ class WorkFlow(object):
         # Check that all fields exist
 
         # Check if id already in database
-        try:
-            off_workflow = client.get_collection(collection_name=workflow_id, collection_type='OpenFFWorkflow')
-            if workflow_json is not None:
-                # Check if workflows are the same
-                _check_workflow(workflow_json, off_workflow)
-                utils.logger().warning("The workflow ID provided already exits in the database. The options you "
+        off_workflow = client.get_collection(collection_name=workflow_id, collection_type='OpenFFWorkflow')
+        if off_workflow:
+            # workflow has was already registered. Check that options are the same as in json input file
+            _check_workflow(workflow_json, off_workflow)
+            utils.logger().warning("The workflow ID provided already exits in the database. The options you "
                                        "provided are the same as in the database. The database options will be used.")
-        except KeyError:
+        else:
             # Get workflow from json file and register
             off_workflow = portal.collections.OpenFFWorkflow(workflow_id, client, **workflow_json)
 
@@ -86,10 +86,10 @@ class WorkFlow(object):
         #     options = _get_options(workflow_id, routine)
 
         molecule = chemi.standardize_molecule(molecule, title=title)
-        can_iso_smiles = to_canonical_smiles_oe(molecule, isomeric=True, mapped=False, explicit_hydrogen=False)
+        can_smiles = mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=False)
         states = fragment.expand_states(molecule, **options)
 
-        provenance['routine']['enumerate_states']['parent_molecule'] = can_iso_smiles
+        provenance['routine']['enumerate_states']['parent_molecule'] = can_smiles
         provenance['routine']['enumerate_states']['parent_molecule_name'] = molecule.GetTitle()
         json_dict = {'provenance': provenance, 'states': states}
 
@@ -134,12 +134,27 @@ class WorkFlow(object):
         options = self.off_workflow.get_options('enumerate_fragments')['options']
 
         parent_molecule = chemi.standardize_molecule(molecule, title)
-        parent_molecule_smiles = to_canonical_smiles_oe(parent_molecule, isomeric=True, explicit_hydrogen=False,
+        parent_molecule_smiles = mol_to_smiles(parent_molecule, isomeric=True, explicit_hydrogen=False,
                                                         mapped=False)
         provenance['routine']['enumerate_fragments']['parent_molecule_name'] = parent_molecule.GetTitle()
         provenance['routine']['enumerate_fragments']['parent_molecule'] = parent_molecule_smiles
 
-        fragments = fragment.generate_fragments(parent_molecule, generate_vis, **options)
+        fragmenter = fragment.Fragmenter(parent_molecule)
+        if options['combinatorial']:
+            fragmenter.fragment_all_bonds_not_in_ring_systems()
+            min_rotors = options['combinatorial']['min_rotors']
+            max_rotors = options['combinatorial']['max_rotors']
+            if not max_rotors:
+                max_rotors = fragmenter.n_rotors + 1
+            min_heavy_atoms = options['combinatorial']['min_heavy_atoms']
+            methyl_cap = options['combinatorial']['cap']
+            fragmenter.combine_fragments(min_rotors=min_rotors, max_rotors=max_rotors, min_heavy_atoms=min_heavy_atoms)
+            if generate_vis:
+                fname = '{}.pdf'.format(parent_molecule.GetTitle())
+                fragmenter.depict_fragment_combinations(fname=fname)
+            fragments = list(fragmenter.fragment_combinations.keys())
+        else:
+            fragments = fragment.generate_fragments(parent_molecule, generate_vis, **options)
 
         if self.states:
             # Check if current state exists
@@ -150,15 +165,15 @@ class WorkFlow(object):
 
         # Generate identifiers for fragments
         fragments_json_dict = {}
-        for fragm in fragments:
-            for i, frag in enumerate(fragments[fragm]):
-                fragment_mol = chemi.smiles_to_oemol(frag)
-                identifiers = to_molecule_id(fragment_mol, canonicalization='openeye')
+        for frag in fragments:
+            #for i, frag in enumerate(fragments[fragm]):
+                #fragment_mol = chemi.smiles_to_oemol(frag)
+            identifiers = to_molecule_id(frag, canonicalization='openeye', strict=True)
 
-                frag = identifiers['canonical_isomeric_smiles']
-                fragments_json_dict[frag] = {'identifiers': identifiers}
-                fragments_json_dict[frag]['provenance'] = provenance
-                fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
+            frag = identifiers['canonical_isomeric_explicit_hydrogen_smiles']
+            fragments_json_dict[frag] = {'identifiers': identifiers}
+            fragments_json_dict[frag]['provenance'] = provenance
+            fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
 
         if json_filename:
             with open(json_filename, 'w') as f:
@@ -200,7 +215,8 @@ class WorkFlow(object):
         if options['torsiondrive_options'].pop('max_conf') == 1:
             # Generate 1 conformation for all jobs
             try:
-                qm_mol = chemi.to_mapped_QC_JSON_geometry(mapped_mol)
+                mol_conf = chemi.generate_conformers(mapped_mol, max_confs=1, strict_stereo=True)
+                qm_mol = mol_to_map_ordered_qcschema(mol_conf, mol_id)
             except RuntimeError:
                 utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
                               "{} will not be included in fragments dictionary".format(
@@ -266,6 +282,9 @@ class WorkFlow(object):
         # Check input
         if not isinstance(molecules_smiles, list):
             molecules_smiles = [molecules_smiles]
+        if molecule_titles:
+            if not isinstance(molecule_titles, list):
+                molecule_titles = [molecule_titles]
 
         all_frags = {}
 
@@ -311,7 +330,7 @@ class WorkFlow(object):
             if input_data:
                 self.off_workflow.add_fragment(frag, input_data, self.qcfractal_jobs[frag]['provenance'])
 
-    def add_fragment_from_json(self, json_filenam):
+    def add_fragments_from_json(self, json_filenam):
         with open(json_filenam) as f:
             self.qcfractal_jobs = json.load(f)
         self.add_fragments_to_db()
