@@ -19,7 +19,7 @@ from .chemi import to_smi, normalize_molecule, get_charges
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 
-def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=True, max_states=200, level=0, reasonable=True,
+def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers=True, max_states=200, level=0, reasonable=True,
                   carbon_hybridization=True, suppress_hydrogen=True, verbose=False, filename=None,
                   return_smiles_list=False, return_molecules=False):
     """
@@ -67,9 +67,9 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
     states: set of SMILES for enumerated states
 
     """
-    title = molecule.GetTitle()
+    title = inp_molecule.GetTitle()
     states = set()
-    molecules = [molecule]
+    molecules = [inp_molecule]
     if verbose:
         logger().info("Enumerating states for {}".format(title))
     if protonation:
@@ -85,6 +85,8 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
         logger().info("Enumerating stereoisomers for {}".format(title))
         molecules.extend(_expand_states(molecules, enumerate='stereoisomers', max_states=max_states, verbose=verbose))
 
+    if stereoisomers:
+        molecules.remove(inp_molecule)
     for molecule in molecules:
         #states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
         # Not using create mapped SMILES because OEMol is needed but state is OEMolBase.
