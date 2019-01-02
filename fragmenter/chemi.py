@@ -14,6 +14,7 @@ import os
 import numpy as np
 import time
 import itertools
+import warnings
 
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -112,7 +113,7 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     return charged_copy
 
 
-def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
+def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=False,
                         can_order=True, copy=True):
     """Generate conformations for the supplied molecule
     Parameters
@@ -556,19 +557,27 @@ def smiles_to_oemol(smiles, name='', normalize=True):
     return molecule
 
 
-def oemols_to_smiles_list(OEMols, isomeric=True):
+def oemols_to_smiles_list(OEMols, isomeric=True, strict=False):
 
     if not isinstance(OEMols, list):
         OEMols = [OEMols]
 
     SMILES = []
     for mol in OEMols:
-        SMILES.append(cmiles.to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=False, isomeric=isomeric))
+        try:
+            SMILES.append(cmiles.utils.mol_to_smiles(mol, mapped=False, explicit_hydrogen=False, isomeric=isomeric))
+        except ValueError:
+            if strict:
+                raise ValueError("SMILES does not have stereo defined")
+            s = oechem.OEMolToSmiles(mol)
+            SMILES.append(s)
+            warnings.warn("SMILES will be missing steroe. {}".format(s))
+
 
     return SMILES
 
 
-def file_to_smiles_list(filename, return_titles=True, isomeric=True):
+def file_to_smiles_list(filename, return_titles=True, **kwargs):
 
     oemols = file_to_oemols(filename)
     # Check if oemols have names
@@ -579,7 +588,7 @@ def file_to_smiles_list(filename, return_titles=True, isomeric=True):
             if not title:
                 logger().warning("an oemol does not have a name. Adding an empty str to the titles list")
             names.append(title)
-    smiles_list = oemols_to_smiles_list(oemols, isomeric=isomeric)
+    smiles_list = oemols_to_smiles_list(oemols, **kwargs)
 
     if return_titles:
         return smiles_list, names
