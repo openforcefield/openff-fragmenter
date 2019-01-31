@@ -304,7 +304,6 @@ class WorkFlow(object):
             title = ''
             if molecule_titles:
                 title = molecule_titles[i]
-                print(title)
             if write_json_intermediate and title:
                 filename = 'states_{}.json'.format(title)
             if write_json_intermediate and not title:
