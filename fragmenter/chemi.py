@@ -897,6 +897,39 @@ def from_mapped_xyz_to_mol_idx_order(mapped_coords, atom_map):
     return coords
 
 
+def qcschema_to_xyz_format(qcschema, name=None):
+    xyz = ""
+    symbols = qcschema['symbols']
+    coords = qcschema['geometry']
+    coords = np.asarray(coords)*BOHR_2_ANGSTROM
+    xyz += "{}\n".format(len(symbols))
+    xyz += "{}\n".format(name)
+    for i, s in enumerate(symbols):
+        xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(s,
+                                                                  coords[i * 3],
+                                                                  coords[i * 3 + 1],
+                                                                  coords[i * 3 + 2])
+    return xyz
+
+
+def qcschema_to_xyz_traj(final_molecule_grid, filename=None):
+    """
+    Generate an xyz trajectory from QCArchive final molecule output from torsion drive.
+    The input should be the grid for one torsiondrive job. Remember to deserialize the output from QCArchive
+    This function assumes a 1D torsion scan
+    """
+    xyz = ""
+    angles = sorted(list(final_molecule_grid.keys()))
+    for angle in angles:
+        molecule = final_molecule_grid[angle]
+        name = str(angle)
+        xyz += qcschema_to_xyz_format(molecule, name)
+    if filename:
+        with open(filename, 'w') as f:
+            f.write(xyz)
+    else:
+        return xyz
+
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Functions for molecule visualization
