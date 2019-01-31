@@ -4,7 +4,8 @@ import getpass
 import json
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
-from cmiles import to_molecule_id, to_canonical_smiles_oe
+from cmiles import to_molecule_id
+from cmiles.utils import mol_to_smiles
 import copy
 #import qcportal as portal
 # For Travis CI
@@ -86,7 +87,7 @@ class WorkFlow(object):
         #     options = _get_options(workflow_id, routine)
 
         molecule = chemi.standardize_molecule(molecule, title=title)
-        can_iso_smiles = to_canonical_smiles_oe(molecule, isomeric=True, mapped=False, explicit_hydrogen=False)
+        can_iso_smiles = mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False)
         states = fragment.expand_states(molecule, **options)
 
         provenance['routine']['enumerate_states']['parent_molecule'] = can_iso_smiles
