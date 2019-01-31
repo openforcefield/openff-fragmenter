@@ -3,6 +3,9 @@ import sys
 import re
 import codecs
 import copy
+import numpy as np
+from PIL import Image
+
 
 """
 ~~~~~~~~~~~~~~~~~~~
@@ -218,3 +221,96 @@ Util functions for manipulating QCFractal output
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 """
 
+
+def grid_id_from_str(grid_id_str):
+    """
+    Only works for 1D grids
+    Parameters
+    ----------
+    grid_id_str
+
+    Returns
+    -------
+
+    """
+    return int(grid_id_str.split('[')[-1].split(']')[0])
+
+
+def sort_energies(final_energies):
+    for frag in final_energies:
+        for job in final_energies[frag]:
+            angles = []
+            energies = []
+            for angle in final_energies[frag][job]:
+                energy = final_energies[frag][job][angle]
+                angle = grid_id_from_str(angle)
+                angles.append(angle)
+                energies.append(energy)
+            energies = np.asarray(energies)
+            energies = energies * HARTREE_2_KJMOL
+            rel_energies = energies - energies.min()
+            sorted_energies = [x for _, x in sorted(zip(angles, rel_energies))]
+            sorted_angles = sorted(angles)
+            final_energies[frag][job] = (sorted_angles, sorted_energies)
+
+
+def deserialze_molecules(final_molecules):
+    deserialized = {}
+    for frag in final_molecules:
+        deserialized[frag] = {}
+        for job in final_molecules[frag]:
+            deserialized[frag][job] = {}
+            for angle in final_molecules[frag][job]:
+                molecule = final_molecules[frag][job][angle]
+                angle_int = grid_id_from_str(angle)
+                deserialized[frag][job][angle_int] = molecule
+    return deserialized
+
+"""
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Movie making functions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+"""
+
+
+def merge_images(file1, file2, filename):
+    """Merge two images into one, displayed side by side
+    :param file1: path to first image file
+    :param file2: path to second image file
+    :return: the merged Image object
+    """
+    image1 = Image.open(file1)
+    image2 = Image.open(file2)
+
+    (width1, height1) = image1.size
+    (width2, height2) = image2.size
+
+    result_width = width1 + width2 - 500 # play with the number here
+    result_height = max(height1, height2)
+
+    result = Image.new('RGB', (result_width, result_height), color='white')
+    result.paste(im=image2, box=(width1-250, 0)) # play with the number here
+    result.paste(im=image1, box=(0, int(result_height/2) - int(height1/2)))
+    result.save(filename)
+
+
+def make_movie(files, fps=15, filename='movie'):
+    """
+    Make movie from list of files
+
+    Parameters
+    ----------
+    files: list of paths to files
+    fps: files per second, int, optional
+        defualt 15
+    filename: str, optional
+        default 'movie
+
+    """
+    try:
+        import moviepy.editor as mpy
+    except ImportError:
+        raise ImportError("You need to install moviepy to use this function")
+
+    im = mpy.ImageSequenceClip(files, fps=fps)
+    im.write_videofile('{}.mp4'.format(filename), fps=fps)
