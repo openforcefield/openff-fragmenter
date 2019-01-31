@@ -5,8 +5,9 @@ import json
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import to_molecule_id
-from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema
+from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema, has_stereo_defined
 import copy
+import warnings
 #import qcportal as portal
 # For Travis CI
 try:
@@ -86,7 +87,10 @@ class WorkFlow(object):
         #     options = _get_options(workflow_id, routine)
 
         molecule = chemi.standardize_molecule(molecule, title=title)
-        can_smiles = mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=False)
+        if not options['stereoisomers']:
+            can_smiles = mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False)
+        else:
+            can_smiles = mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=False)
         states = fragment.expand_states(molecule, **options)
 
         provenance['routine']['enumerate_states']['parent_molecule'] = can_smiles
@@ -153,8 +157,13 @@ class WorkFlow(object):
                 fname = '{}.pdf'.format(parent_molecule.GetTitle())
                 fragmenter.depict_fragment_combinations(fname=fname)
             fragments = list(fragmenter.fragment_combinations.keys())
-        else:
-            fragments = fragment.generate_fragments(parent_molecule, generate_vis, **options)
+        elif options['depth_first_search']:
+            fragments = fragment.generate_fragments(parent_molecule, generate_vis, **options['depth_first_search'])
+            if not fragments:
+                warnings.warn("No fragments were generated for {}".format(parent_molecule_smiles))
+                return
+            # convert to list
+            fragments = fragments[list(fragments.keys())[0]]
 
         if self.states:
             # Check if current state exists
@@ -221,6 +230,7 @@ class WorkFlow(object):
                 utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
                               "{} will not be included in fragments dictionary".format(
                         mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
+                return None
 
         identifier = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
         torsiondrive_inputs = {identifier: {'torsiondrive_input': {}, 'provenance': provenance}}
@@ -229,6 +239,7 @@ class WorkFlow(object):
         restricted_torsions = needed_torsions.pop('restricted')
         optimization_jobs = torsions.generate_constraint_opt_input(qm_mol, restricted_torsions,
                                                              **options['restricted_optimization_options'])
+
         torsiondrive_jobs = torsions.define_torsiondrive_jobs(needed_torsions, **options['torsiondrive_options'])
 
         for i, job in enumerate(torsiondrive_jobs):
@@ -238,8 +249,8 @@ class WorkFlow(object):
             torsiondrive_input['dihedrals'] = torsiondrive_jobs[job]['dihedrals']
             torsiondrive_input['grid_spacing'] = torsiondrive_jobs[job]['grid_spacing']
             job_name = ''
-            for i, torsion in enumerate(torsiondrive_input['dihedrals']):
-                if i > 0:
+            for j, torsion in enumerate(torsiondrive_input['dihedrals']):
+                if j > 0:
                     job_name += '_{}'.format(torsion)
                 else:
                     job_name += '{}'.format(torsion)
@@ -293,6 +304,7 @@ class WorkFlow(object):
             title = ''
             if molecule_titles:
                 title = molecule_titles[i]
+                print(title)
             if write_json_intermediate and title:
                 filename = 'states_{}.json'.format(title)
             if write_json_intermediate and not title:
@@ -305,6 +317,8 @@ class WorkFlow(object):
                     filename = 'fragment_{}_{}.json'.format(utils.make_python_identifier(state)[0], j)
                 fragments = self.enumerate_fragments(state, title=title, mol_provenance=self.states['provenance'],
                                                 json_filename=filename, generate_vis=generate_vis)
+                if not fragments:
+                    continue
                 all_frags.update(**fragments)
         self.fragments = all_frags
 
