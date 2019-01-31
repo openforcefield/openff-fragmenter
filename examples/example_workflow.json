@@ -17,10 +17,13 @@
       "enumerate_fragments": {
         "version": "v0.0.1",
         "options": {
-          "strict_stereo": true,
-          "combinatorial": true,
-          "MAX_ROTORS": 3,
-          "remove_map": true
+          "combinatorial": {
+            "min_rotors": 1,
+            "max_rotors": 0,
+            "min_heavy_atoms": 4,
+            "cap": false
+          },
+          "depth_first_search": {}
         }
       },
       "torsiondrive_input": {
