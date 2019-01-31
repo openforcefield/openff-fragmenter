@@ -1020,18 +1020,22 @@ def highlight_bonds(mol_copy, fname, conjugation=True, rotor=False, width=600, h
     return oedepict.OERenderMolecule(fname, disp)
 
 
-def highlight_torsion(mapped_molecule, dihedrals, fname, width=600, height=400):
-
+def highltigh_torsion_by_cluster(mapped_molecule, clustered_dihedrals, fname, width=600, height=400):
     mol = oechem.OEMol(mapped_molecule)
-    atoms_to_highlight = []
-    atom_bond_set = oechem.OEAtomBondSet()
-    for dihedral in dihedrals:
-        dih = []
-        for idx in dihedral:
-            a = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
-            dih.append(a)
+    atom_bond_sets = []
+
+    for cluster in clustered_dihedrals:
+        atom_bond_set = oechem.OEAtomBondSet()
+        for dihedral in clustered_dihedrals[cluster]:
+            a = mol.GetAtom(oechem.OEHasMapIdx(dihedral[0]+1))
             atom_bond_set.AddAtom(a)
-        atoms_to_highlight.append(dih)
+            for idx in dihedral[1:]:
+                a2 = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
+                atom_bond_set.AddAtom(a2)
+                bond = mol.GetBond(a, a2)
+                atom_bond_set.AddBond(bond)
+                a=a2
+        atom_bond_sets.append(atom_bond_set)
 
     dopt = oedepict.OEPrepareDepictionOptions()
     dopt.SetSuppressHydrogens(False)
@@ -1047,8 +1051,94 @@ def highlight_torsion(mapped_molecule, dihedrals, fname, width=600, height=400):
     oedepict.OEAddHighlighting(disp, aroColor, aroStyle,
                                oechem.OEIsAromaticAtom(), oechem.OEIsAromaticBond() )
     hstyle = oedepict.OEHighlightStyle_BallAndStick
-    hcolor = oechem.OEColor(oechem.OELightBlue)
-    oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+
+    # if color:
+    #     highlight = oechem.OEColor(color)
+    #     # combine all atom_bond_sets
+    #     atom_bond_set = oechem.OEAtomBondSet()
+    #     for ab_set in atom_bond_sets:
+    #         for a in ab_set.GetAtoms():
+    #             atom_bond_set.AddAtom(a)
+    #         for b in ab_set.GetBonds():
+    #             atom_bond_set.AddBond(b)
+    #     oedepict.OEAddHighlighting(disp, highlight, hstyle, atom_bond_set)
+    # else:
+    highlight = oedepict.OEHighlightOverlayByBallAndStick(oechem.OEGetContrastColors())
+    oedepict.OEAddHighlightOverlay(disp, highlight, atom_bond_sets)
+    #hcolor = oechem.OEColor(oechem.OELightBlue)
+    #oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_sets)
+
+    return oedepict.OERenderMolecule(fname, disp)
+
+
+def highlight_torsion(mapped_molecule, dihedrals, fname, width=600, height=400, combine_central_bond=True, color=None):
+
+    mol = oechem.OEMol(mapped_molecule)
+
+    atom_bond_sets = []
+
+    if combine_central_bond:
+        central_bonds = [(tor[1], tor[2]) for tor in dihedrals]
+        eq_torsions = {cb : [tor for tor in dihedrals if cb == (tor[1], tor[2]) or cb ==(tor[2], tor[1])] for cb in central_bonds}
+
+        for cb in eq_torsions:
+            atom_bond_set = oechem.OEAtomBondSet()
+            for dihedral in eq_torsions[cb]:
+                a = mol.GetAtom(oechem.OEHasMapIdx(dihedral[0]+1))
+                atom_bond_set.AddAtom(a)
+
+                for idx in dihedral[1:]:
+                    a2 = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
+                    atom_bond_set.AddAtom((a2))
+                    bond = mol.GetBond(a, a2)
+                    atom_bond_set.AddBond(bond)
+                    a = a2
+            atom_bond_sets.append(atom_bond_set)
+
+    if not combine_central_bond:
+        for dihedral in dihedrals:
+            atom_bond_set = oechem.OEAtomBondSet()
+            a = mol.GetAtom(oechem.OEHasMapIdx(dihedral[0]+1))
+            atom_bond_set.AddAtom(a)
+
+            for idx in dihedral[1:]:
+                a2 = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
+                atom_bond_set.AddAtom((a2))
+                bond = mol.GetBond(a, a2)
+                atom_bond_set.AddBond(bond)
+                a = a2
+            atom_bond_sets.append(atom_bond_set)
+
+    dopt = oedepict.OEPrepareDepictionOptions()
+    dopt.SetSuppressHydrogens(False)
+    oedepict.OEPrepareDepiction(mol, dopt)
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+
+    aroStyle = oedepict.OEHighlightStyle_Color
+    aroColor = oechem.OEColor(oechem.OEBlack)
+    oedepict.OEAddHighlighting(disp, aroColor, aroStyle,
+                               oechem.OEIsAromaticAtom(), oechem.OEIsAromaticBond() )
+    hstyle = oedepict.OEHighlightStyle_BallAndStick
+
+    if color:
+        highlight = oechem.OEColor(color)
+        # combine all atom_bond_sets
+        atom_bond_set = oechem.OEAtomBondSet()
+        for ab_set in atom_bond_sets:
+            for a in ab_set.GetAtoms():
+                atom_bond_set.AddAtom(a)
+            for b in ab_set.GetBonds():
+                atom_bond_set.AddBond(b)
+        oedepict.OEAddHighlighting(disp, highlight, hstyle, atom_bond_set)
+    else:
+        highlight = oedepict.OEHighlightOverlayByBallAndStick(oechem.OEGetContrastColors())
+        oedepict.OEAddHighlightOverlay(disp, highlight, atom_bond_sets)
+    #hcolor = oechem.OEColor(oechem.OELightBlue)
+    #oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_sets)
 
     return oedepict.OERenderMolecule(fname, disp)
 
@@ -1138,10 +1228,44 @@ def png_bond_labels(mol, fname, width=600, height=400, label='WibergBondOrder'):
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
     # opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
     # opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
+    for b in mol.GetBonds():
+        if not label in b.GetData():
+            raise KeyError("Missing BO")
     bond_label = {'WibergBondOrder': LabelWibergBondOrder, 'Wiberg_psi4': LabelWibergPsiBondOrder,
                   'Mayer_psi4': LabelMayerPsiBondOrder}
     bondlabel = bond_label[label]
     opts.SetBondPropertyFunctor(bondlabel())
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+    return oedepict.OERenderMolecule(fname, disp)
+
+def png_bond_idx(mol, fname, width=600, height=400):
+    """
+    Generate png figure of molecule. Bonds should include bond order defined in label
+
+    Parameters
+    ----------
+    mol: OpenEye OEMol
+    fname: str
+        filename for png
+    width: int
+    height: int
+    label: str
+        Which label to print. Options are WibergBondOrder, Wiberg_psi4 and Mayer_psi4
+
+    Returns
+    -------
+    bool:
+    """
+
+    oedepict.OEPrepareDepiction(mol)
+
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    # opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
+    # opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
+
+    opts.SetBondPropertyFunctor(oedepict.OEDisplayBondIdx())
 
     disp = oedepict.OE2DMolDisplay(mol, opts)
     return oedepict.OERenderMolecule(fname, disp)
