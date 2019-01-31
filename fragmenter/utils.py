@@ -11,6 +11,8 @@ Conversion factors
 """
 BOHR_2_ANGSTROM = 0.529177210
 ANGSROM_2_BOHR = 1. / BOHR_2_ANGSTROM
+HARTREE_2_KJMOL = 2625.50
+KJMOL_2_HARTREE = 1. / HARTREE_2_KJMOL
 
 
 def logger(name='fragmenter', pattern='%(asctime)s %(levelname)s %(name)s: %(message)s',
@@ -209,3 +211,10 @@ def make_python_identifier(string, namespace=None, reserved_words=None,
     namespace[string] = s
 
     return s, namespace
+
+"""
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Util functions for manipulating QCFractal output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+"""
+
