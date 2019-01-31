@@ -1,7 +1,7 @@
 from itertools import combinations
 import openeye as oe
 from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
-from cmiles.utils import mol_to_smiles
+from cmiles.utils import mol_to_smiles, has_stereo_defined
 
 import yaml
 import os
@@ -21,7 +21,7 @@ OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers=True, max_states=200, level=0, reasonable=True,
                   carbon_hybridization=True, suppress_hydrogen=True, verbose=False, filename=None,
-                  return_smiles_list=False, return_molecules=False):
+                  return_smiles_list=False, return_molecules=False, strict=False):
     """
     Expand molecule states (choice of protonation, tautomers and/or stereoisomers).
     Protonation states expands molecules to protonation of protonation sites (Some states might only be reasonable in
@@ -83,15 +83,24 @@ def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers
                                         suppress_hydrogen=suppress_hydrogen))
     if stereoisomers:
         logger().info("Enumerating stereoisomers for {}".format(title))
-        molecules.extend(_expand_states(molecules, enumerate='stereoisomers', max_states=max_states, verbose=verbose))
+        molecules.extend(_expand_states(molecules, enumerate='stereoisomers', max_states=max_states, verbose=verbose,
+                                        suppress_hydrogen=False))
 
-    if stereoisomers:
-        molecules.remove(inp_molecule)
+    # if stereoisomers:
+    #     molecules.remove(inp_molecule)
     for molecule in molecules:
         #states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
         # Not using create mapped SMILES because OEMol is needed but state is OEMolBase.
         #states.add(oechem.OEMolToSmiles(molecule))
-        states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=True))
+        try:
+            states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=True))
+        except ValueError:
+            if stereoisomers:
+                continue
+            elif not strict:
+                states.add(mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=True ))
+            else:
+                raise ValueError("molecule is missing stereochemistry")
 
     logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 
@@ -310,6 +319,7 @@ class Fragmenter(object):
         adjustHCount = adjust_hcount
         oechem.OESubsetMol(fragment, self.molecule, fragatompred, fragbondpred, adjustHCount)
 
+        oechem.OEAddExplicitHydrogens(fragment)
         oechem.OEPerceiveChiral(fragment)
         # sanity check that all atoms are bonded
         for atom in fragment.GetAtoms():
@@ -317,16 +327,24 @@ class Fragmenter(object):
                 warnings.warn("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
 
+        # check for stereo defined
+        if not has_stereo_defined(fragment):
+            # Try to convert to smiles and back. A molecule might look like it's missing stereo because of submol
+            new_smiles = oechem.OEMolToSmiles(fragment)
+            fragment = oechem.OEMol()
+            oechem.OESmilesToMol(fragment, new_smiles)
+            # add explicit H
+            oechem.OEAddExplicitHydrogens(fragment)
+            oechem.OEPerceiveChiral(fragment)
         try:
-            smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=True)
+            smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
         except ValueError:
-            print('missing steroe')
             if expand_stereoisomers:
                 # Generate stereoisomers
                 smiles = list()
                 enantiomers = _expand_states(fragment, enumerate='stereoisomers')
                 for mol in enantiomers:
-                    smiles.append(mol_to_smiles(mol, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=True))
+                    smiles.append(mol_to_smiles(mol, mapped=False, explicit_hydrogen=True, isomeric=True))
             else:
                 # generate non isomeric smiles
                 smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=False)
@@ -541,12 +559,12 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Fal
         else:
             smiles = frag_to_smiles(frag_list, charged)
 
-        parent_smiles = to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=False, mapped=False)
+        parent_smiles = mol_to_smiles(molecule, isomeric=True, explicit_hydrogen=False, mapped=False)
         if smiles:
             fragments[parent_smiles] = list(smiles.keys())
         else:
             # Add molecule where no fragments were found for terminal torsions and / or rings and non rotatable bonds
-            fragments[parent_smiles] = [to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=True, mapped=False)]
+            fragments[parent_smiles] = [mol_to_smiles(molecule, isomeric=True, explicit_hydrogen=True, mapped=False)]
 
         if generate_visualization:
             IUPAC = oeiupac.OECreateIUPACName(molecule)
@@ -914,7 +932,7 @@ def _build_frag(bond, mol, tagged_fgroups, tagged_rings):
     return atoms, bonds
 
 
-def iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, i=0):
+def iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, i=0, threshold=1.05):
     """
     This function iterates over neighboring atoms and checks if it's part of a functional group, ring, or if the next
     bond has a Wiberg bond order > 1.2.
@@ -938,7 +956,7 @@ def iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, i
     atoms, bonds: sets of atom and bond indices of the fragment
 
     """
-    def _iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, atoms_2, bonds_2, i=0):
+    def _iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, atoms_2, bonds_2, i=0, threshold=threshold):
 
         for a in atom.GetAtoms():
             if a.GetIdx() == pair.GetIdx():
@@ -975,7 +993,7 @@ def iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, i
 
             if i > 0:
                 wiberg = next_bond.GetData('WibergBondOrder')
-                if wiberg < 1.2:
+                if wiberg < threshold:
                     #atoms_2.remove(a_idx)
                     continue
 
@@ -1000,7 +1018,7 @@ def iterate_nbratoms(mol, rotor_bond, atom, pair, fgroup_tagged, tagged_rings, i
 
             for nb_a in a.GetAtoms():
                 nn_bond = mol.GetBond(a, nb_a)
-                if (nn_bond.GetData('WibergBondOrder') > 1.2) and (not nn_bond.IsInRing()) and (not nn_bond.GetIdx() in bonds_2):
+                if (nn_bond.GetData('WibergBondOrder') > threshold) and (not nn_bond.IsInRing()) and (not nn_bond.GetIdx() in bonds_2):
                     # Check the degree of the atoms in the bond
                     deg_1 = a.GetDegree()
                     deg_2 = nb_a.GetDegree()
@@ -1077,7 +1095,7 @@ def _ring_substiuents(mol, bond, rotor_bond, tagged_rings, ring_idx, fgroup_tagg
     return rs_atoms, rs_bonds
 
 
-def frag_to_smiles(frags, mol, adjust_hcount=True):
+def frag_to_smiles(frags, mol, adjust_hcount=True, expand_stereoisomers=True):
     """
     Convert fragments (AtomBondSet) to canonical isomeric SMILES string
     Parameters
@@ -1103,6 +1121,8 @@ def frag_to_smiles(frags, mol, adjust_hcount=True):
         adjustHCount = adjust_hcount
         oechem.OESubsetMol(fragment, mol, fragatompred, fragbondpred, adjustHCount)
 
+        # Add explicit H
+        oechem.OEAddExplicitHydrogens(fragment)
         oechem.OEPerceiveChiral(fragment)
         # sanity check that all atoms are bonded
         for atom in fragment.GetAtoms():
@@ -1111,11 +1131,37 @@ def frag_to_smiles(frags, mol, adjust_hcount=True):
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
         #s = oechem.OEMolToSmiles(fragment)
         #s2 = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=False)
-        s = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
+        if not has_stereo_defined(fragment):
+            # Try to convert to smiles and back. A molecule might look like it's missing stereo because of submol
+            new_smiles = oechem.OEMolToSmiles(fragment)
+            fragment = oechem.OEMol()
+            oechem.OESmilesToMol(fragment, new_smiles)
+            # add explicit H
+            oechem.OEAddExplicitHydrogens(fragment)
+            oechem.OEPerceiveChiral(fragment)
+        try:
+            s = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
+        except ValueError:
+            if expand_stereoisomers:
+                # Generate stereoisomers
+                s = list()
+                enantiomers = _expand_states(fragment, enumerate='stereoisomers')
+                for mol in enantiomers:
+                    sm = mol_to_smiles(mol, mapped=False, explicit_hydrogen=True, isomeric=True)
+                    s.append(sm)
+            else:
+                # generate non isomeric smiles
+                s = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=False)
 
-        if s not in smiles:
-            smiles[s] = []
-        smiles[s].append(frag)
+        #s = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
+        if not isinstance(s, list):
+            if not s:
+                continue
+            s = [s]
+        for sm in s:
+            if sm not in smiles:
+                smiles[sm] = []
+            smiles[sm].append(frag)
 
     return smiles
 
@@ -1251,6 +1297,7 @@ def DepictMoleculeWithFragmentCombinations(report, mol, frags, opts): #fragcombs
     stag = "fragment idx"
     itag = oechem.OEGetTag(stag)
     for fidx, frag in enumerate(frags):
+        print(fidx, frag)
         for bond in frags[frag].GetBonds():
             bond.SetData(itag, fidx)
 
@@ -1393,3 +1440,120 @@ class LabelBondOrder(oedepict.OEDisplayBondPropBase):
     def CreateCopy(self):
         copy = LabelBondOrder()
         return copy.__disown__()
+
+def IsAdjacentAtomBondSets(fragA, fragB):
+    """
+    This function was taken from Openeye cookbook
+    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
+    """
+    for atomA in fragA.GetAtoms():
+        for atomB in fragB.GetAtoms():
+            if atomA.GetBond(atomB) is not None:
+                return True
+    return False
+
+def CountRotorsInFragment(fragment):
+    return sum([bond.IsRotor() for bond in fragment.GetBonds()])
+
+def IsAdjacentAtomBondSetCombination(fraglist):
+    """
+    This function was taken from Openeye cookbook
+    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
+    """
+
+    parts = [0] * len(fraglist)
+    nrparts = 0
+
+    for idx, frag in enumerate(fraglist):
+        if parts[idx] != 0:
+            continue
+
+        nrparts += 1
+        parts[idx] = nrparts
+        TraverseFragments(frag, fraglist, parts, nrparts)
+
+    return (nrparts == 1)
+
+
+def TraverseFragments(actfrag, fraglist, parts, nrparts):
+    """
+    This function was taken from openeye cookbook
+    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
+    """
+    for idx, frag in enumerate(fraglist):
+        if parts[idx] != 0:
+            continue
+
+        if not IsAdjacentAtomBondSets(actfrag, frag):
+            continue
+
+        parts[idx] = nrparts
+        TraverseFragments(frag, fraglist, parts, nrparts)
+
+
+def CombineAndConnectAtomBondSets(fraglist):
+    """
+    This function was taken from OpeneEye Cookbook
+    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
+    """
+
+    # combine atom and bond sets
+
+    combined = oechem.OEAtomBondSet()
+    for frag in fraglist:
+        for atom in frag.GetAtoms():
+            combined.AddAtom(atom)
+        for bond in frag.GetBonds():
+            combined.AddBond(bond)
+
+    # add connecting bonds
+
+    for atomA in combined.GetAtoms():
+        for atomB in combined.GetAtoms():
+            if atomA.GetIdx() < atomB.GetIdx():
+                continue
+
+            bond = atomA.GetBond(atomB)
+            if bond is None:
+                continue
+            if combined.HasBond(bond):
+                continue
+
+            combined.AddBond(bond)
+
+    return combined
+
+
+def GetFragmentAtomBondSetCombinations(fraglist, MAX_ROTORS=2, MIN_ROTORS=1):
+    """
+    This function was taken from OpeneEye cookbook
+    https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
+    Enumerate connected combinations from list of fragments
+    Parameters
+    ----------
+    mol: OEMolGraph
+    fraglist: list of OE AtomBondSet
+    MAX_ROTORS: int
+        min rotors in each fragment combination
+    MIN_ROTORS: int
+        max rotors in each fragment combination
+    Returns
+    -------
+    fragcombs: list of connected combinations (OE AtomBondSet)
+    """
+
+    fragcombs = []
+
+    nrfrags = len(fraglist)
+    for n in range(1, nrfrags):
+
+        for fragcomb in combinations(fraglist, n):
+
+            if IsAdjacentAtomBondSetCombination(fragcomb):
+
+                frag = CombineAndConnectAtomBondSets(fragcomb)
+
+                if (CountRotorsInFragment(frag) <= MAX_ROTORS) and (CountRotorsInFragment(frag) >= MIN_ROTORS):
+                    fragcombs.append(frag)
+
+    return fragcombs
