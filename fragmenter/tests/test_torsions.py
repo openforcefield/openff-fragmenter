@@ -2,12 +2,12 @@
 
 import unittest
 import json
-from fragmenter.tests.utils import get_fn, has_openeye
+from fragmenter.tests.utils import get_fn, has_openeye, using_openeye
 import fragmenter.torsions as torsions
 from fragmenter import utils, chemi
-from cmiles.utils import mol_to_smiles
+from cmiles.utils import mol_to_smiles, load_molecule
 import warnings
-
+import pytest
 
 class TestTorsions(unittest.TestCase):
 
@@ -199,3 +199,40 @@ class TestTorsions(unittest.TestCase):
         crank_job = torsions.define_torsiondrive_jobs(test_crank['needed_torsion_drives'], terminal_torsion_resolution=60)
         self.assertEqual(crank_job['crank_job_0']['grid_spacing'], [30])
         self.assertEqual(crank_job['crank_job_1']['grid_spacing'], [60, 60])
+
+@using_openeye
+@pytest.mark.parametrize('central_bond', [(0, 1), (0, 2), (1, 3)])
+def test_equivelant_torsions(central_bond):
+    oemol = load_molecule('[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]')
+
+    expected = {(0, 1): [(4, 0, 1, 6),
+                (4, 0, 1, 7),
+                (4, 0, 1, 3),
+                (5, 0, 1, 6),
+                (5, 0, 1, 7),
+                (5, 0, 1, 3),
+                (2, 0, 1, 6),
+                (2, 0, 1, 7),
+                (2, 0, 1, 3)],
+                (1, 3): [(0, 1, 3, 9), (6, 1, 3, 9), (7, 1, 3, 9)],
+                (0, 2): [(4, 0, 2, 8), (5, 0, 2, 8), (1, 0, 2, 8)]}
+    eq_torsions = torsions.find_equivelant_torsions(oemol, central_bonds=central_bond)
+    assert eq_torsions[central_bond] == expected[central_bond]
+
+@using_openeye
+def test_all_equivelant_torsions():
+    oemol = load_molecule('[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]')
+
+    expected = {(0, 1): [(4, 0, 1, 6),
+                (4, 0, 1, 7),
+                (4, 0, 1, 3),
+                (5, 0, 1, 6),
+                (5, 0, 1, 7),
+                (5, 0, 1, 3),
+                (2, 0, 1, 6),
+                (2, 0, 1, 7),
+                (2, 0, 1, 3)],
+                (1, 3): [(0, 1, 3, 9), (6, 1, 3, 9), (7, 1, 3, 9)],
+                (0, 2): [(4, 0, 2, 8), (5, 0, 2, 8), (1, 0, 2, 8)]}
+    eq_torsions = torsions.find_equivelant_torsions(oemol)
+    assert eq_torsions == expected
