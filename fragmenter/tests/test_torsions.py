@@ -5,7 +5,7 @@ import json
 from fragmenter.tests.utils import get_fn, has_openeye
 import fragmenter.torsions as torsions
 from fragmenter import utils, chemi
-from cmiles import to_canonical_smiles_oe
+from cmiles.utils import mol_to_smiles
 import warnings
 
 
@@ -35,7 +35,7 @@ class TestTorsions(unittest.TestCase):
         inp_mol = oechem.OEMol()
         oechem.OEReadMolecule(ifs, inp_mol)
 
-        tagged_smiles = to_canonical_smiles_oe(inp_mol, isomeric=True, mapped=True, explicit_hydrogen=True)
+        tagged_smiles = mol_to_smiles(inp_mol, isomeric=True, mapped=True, explicit_hydrogen=True)
 
         # Tags should always be the same as mol2 molecule ordering
         self.assertEqual(tagged_smiles, '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]')

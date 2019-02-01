@@ -5,7 +5,7 @@ import json
 from fragmenter.tests.utils import get_fn, has_openeye
 from fragmenter import utils, chemi
 from openeye import oechem
-from cmiles import to_canonical_smiles_oe
+from cmiles.utils import mol_to_smiles
 
 
 class TesTorsions(unittest.TestCase):
@@ -22,7 +22,7 @@ class TesTorsions(unittest.TestCase):
         self.assertFalse(chemi.is_mapped(molecule))
 
         # Add tags
-        tagged_smiles = to_canonical_smiles_oe(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
+        tagged_smiles = mol_to_smiles(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
 
         self.assertFalse(chemi.is_mapped(molecule))
         tagged_mol = chemi.smiles_to_oemol(tagged_smiles)
@@ -53,13 +53,13 @@ class TesTorsions(unittest.TestCase):
         mol = oechem.OEMol()
         oechem.OESmilesToMol(mol, smiles)
 
-        canonical_smiles = to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=False, isomeric=False)
+        canonical_smiles = mol_to_smiles(mol, mapped=False, explicit_hydrogen=False, isomeric=False)
         self.assertEqual(canonical_smiles, 'CC(c1c(ccc(c1Cl)F)Cl)OC')
-        canonical_isomeric_smiles = to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=False, isomeric=True)
+        canonical_isomeric_smiles = mol_to_smiles(mol, mapped=False, explicit_hydrogen=False, isomeric=True)
         self.assertEqual(canonical_isomeric_smiles, 'C[C@@H](c1c(ccc(c1Cl)F)Cl)OC')
-        canonical_explicit_h_smiles = to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=True, isomeric=False)
+        canonical_explicit_h_smiles = mol_to_smiles(mol, mapped=False, explicit_hydrogen=True, isomeric=False)
         self.assertEqual(canonical_explicit_h_smiles, '[H]c1c(c(c(c(c1F)Cl)C([H])(C([H])([H])[H])OC([H])([H])[H])Cl)[H]')
-        canonical_isomeric_explicit_h_smiles = to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=True, isomeric=True)
+        canonical_isomeric_explicit_h_smiles = mol_to_smiles(mol, mapped=False, explicit_hydrogen=True, isomeric=True)
         self.assertEqual(canonical_isomeric_explicit_h_smiles,
                          '[H]c1c(c(c(c(c1F)Cl)[C@]([H])(C([H])([H])[H])OC([H])([H])[H])Cl)[H]')
 
