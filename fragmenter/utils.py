@@ -4,7 +4,6 @@ import re
 import codecs
 import copy
 import numpy as np
-from PIL import Image
 
 
 """
@@ -279,6 +278,11 @@ def merge_images(file1, file2, filename):
     :param file2: path to second image file
     :return: the merged Image object
     """
+    try:
+        from PIL import Image
+    except ImportError:
+        raise ImportError("Must have PIL installed to use this function")
+
     image1 = Image.open(file1)
     image2 = Image.open(file2)
 
