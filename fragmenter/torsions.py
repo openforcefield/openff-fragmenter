@@ -11,7 +11,7 @@ from math import radians, degrees
 import copy
 
 from . import utils, chemi
-from cmiles import to_canonical_smiles_oe
+from cmiles.utils import mol_to_smiles
 from .utils import BOHR_2_ANGSTROM, logger
 # warnings.simplefilter('always')
 
@@ -40,7 +40,7 @@ def find_torsions(molecule, restricted=True, terminal=True):
     is_mapped = chemi.is_mapped(molecule)
     if not is_mapped:
         utils.logger().warning('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
-        tagged_smiles = to_canonical_smiles_oe(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
+        tagged_smiles = mol_to_smiles(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
         # Generate new molecule with tags
         molecule = chemi.smiles_to_oemol(tagged_smiles)
         utils.logger().warning('If you already have a tagged SMARTS, compare it with the new one to ensure the ordering did not change')

@@ -215,57 +215,6 @@ def make_python_identifier(string, namespace=None, reserved_words=None,
     return s, namespace
 
 """
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Util functions for manipulating QCFractal output
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-"""
-
-
-def grid_id_from_str(grid_id_str):
-    """
-    Only works for 1D grids
-    Parameters
-    ----------
-    grid_id_str
-
-    Returns
-    -------
-
-    """
-    return int(grid_id_str.split('[')[-1].split(']')[0])
-
-
-def sort_energies(final_energies):
-    for frag in final_energies:
-        for job in final_energies[frag]:
-            angles = []
-            energies = []
-            for angle in final_energies[frag][job]:
-                energy = final_energies[frag][job][angle]
-                angle = grid_id_from_str(angle)
-                angles.append(angle)
-                energies.append(energy)
-            energies = np.asarray(energies)
-            energies = energies * HARTREE_2_KJMOL
-            rel_energies = energies - energies.min()
-            sorted_energies = [x for _, x in sorted(zip(angles, rel_energies))]
-            sorted_angles = sorted(angles)
-            final_energies[frag][job] = (sorted_angles, sorted_energies)
-
-
-def deserialze_molecules(final_molecules):
-    deserialized = {}
-    for frag in final_molecules:
-        deserialized[frag] = {}
-        for job in final_molecules[frag]:
-            deserialized[frag][job] = {}
-            for angle in final_molecules[frag][job]:
-                molecule = final_molecules[frag][job][angle]
-                angle_int = grid_id_from_str(angle)
-                deserialized[frag][job][angle_int] = molecule
-    return deserialized
-
-"""
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Movie making functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
