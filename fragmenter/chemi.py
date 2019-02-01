@@ -607,6 +607,15 @@ def standardize_molecule(molecule, title=''):
     else:
         raise TypeError("Wrong type of input for molecule. Can be SMILES, filename or OEMol")
     return mol
+
+
+# def multiconf_mol_to_qcschema(mapped_mol):
+#     """
+#
+#     """
+#     if not cmiles.utils.has_atom_map(mapped_mol):
+
+
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Functions to work with mapped SMILES
@@ -740,7 +749,7 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename=None):
+def to_mapped_xyz(molecule, atom_map=None, conformer=None, xyz_format=True, filename=None):
     """
     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
     tag on the SMILES to the atom idex in OEMol.
@@ -761,6 +770,10 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
     str: elements and xyz coordinates (in angstroms) in order of tagged SMILES
 
     """
+    if not atom_map and not cmiles.utils.has_atom_map(molecule):
+        raise ValueError("If molecule does not have atom map, you must provide an atom map")
+    if not has_conformer(molecule, check_two_dimension=True):
+        raise ValueError("Molecule must have conformers")
     xyz = ""
     for k, mol in enumerate(molecule.GetConfs()):
         if k == conformer or conformer is None:
@@ -771,9 +784,14 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
             mol.GetCoords(coords)
             if k != 0 and not xyz_format:
                     xyz += "*"
-            for mapping in range(1, len(atom_map)+1):
-                idx = atom_map[mapping]
-                atom = mol.GetAtom(oechem.OEHasAtomIdx(idx))
+
+            for mapping in range(1, molecule.NumAtoms()+1):
+                if not atom_map:
+                    atom = molecule.GetAtom(oechem.OEHasMapIdx(mapping))
+                    idx = atom.GetIdx()
+                else:
+                    idx = atom_map[mapping]
+                    atom = mol.GetAtom(oechem.OEHasAtomIdx(idx))
                 syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
                 xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(syb,
                                                                            coords[idx * 3],
@@ -784,7 +802,8 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
         file = open("{}.xyz".format(filename), 'w')
         file.write(xyz)
         file.close()
-    return xyz
+    else:
+        return xyz
 
 
 def get_mapped_connectivity_table(molecule, atom_map=None):

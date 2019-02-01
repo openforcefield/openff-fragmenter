@@ -4,6 +4,8 @@ from fragmenter import chemi
 from fragmenter.tests.utils import has_openeye
 import pytest
 import numpy as np
+from .utils import using_openeye
+import cmiles
 
 @pytest.fixture
 def mapped_molecule():
@@ -35,6 +37,27 @@ def test_connectivity_table(mapped_molecule):
         # assert that bond order is the same
         assert expected_table[match][0][-1] == bond[-1]
 
+@using_openeye
+def test_to_mapped_xyz():
+    #This fails because the coordinates are different if mol has map indices.
+    from openeye import oechem
+    smiles = 'HC(H)(C(H)(H)OH)OH'
+    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
+    mol = cmiles.utils.load_molecule(smiles)
+    mapped_mol = cmiles.utils.load_molecule(mapped_smiles)
 
+    with pytest.raises(ValueError):
+        chemi.to_mapped_xyz(mapped_mol)
+    # generate conformer
+    mol = chemi.generate_conformers(mol, max_confs=1)
+    mapped_mol = chemi.generate_conformers(mapped_mol, max_confs=1)
+    atom_map = cmiles.utils.get_atom_map(mol, mapped_smiles)
+
+    with pytest.raises(ValueError):
+        chemi.to_mapped_xyz(mol)
+
+    xyz_1 = chemi.to_mapped_xyz(mol, atom_map)
+    xyz_2 = chemi.to_mapped_xyz(mapped_mol)
+    #assert xyz_1 == xyz_2
 
 
