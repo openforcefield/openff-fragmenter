@@ -116,63 +116,6 @@ class TestTorsions(unittest.TestCase):
             self.assertEqual(ele1.split(' ')[2], ele2.split(' ')[2])
 
     @unittest.skipUnless(has_openeye, "Cannot test without OpenEye")
-    def test_to_mapped_geometry(self):
-        """Test mapped geometry"""
-        from openeye import oechem
-
-        infile = get_fn('butane.xyz')
-        ifs = oechem.oemolistream(infile)
-        molecule = oechem.OEMol()
-        oechem.OEReadMolecule(ifs, molecule)
-
-        #order should be same as file
-        for atom in molecule.GetAtoms():
-            atom.SetMapIdx(atom.GetIdx() + 1)
-        mapped_geometry = chemi.to_mapped_QC_JSON_geometry(molecule)
-
-        f = open(infile)
-        line = f.readline()
-        symbols = []
-        geometry = []
-        while line:
-            if line.startswith('  '):
-                line = line.split()
-                symbols.append(line[0])
-                geometry.append(line[1:])
-            line = f.readline()
-        f.close()
-        geometry = sum(geometry, [])
-        self.assertEqual(symbols, mapped_geometry['symbols'])
-        for x, y in zip(geometry, mapped_geometry['geometry']):
-            self.assertAlmostEqual(float(x), y/1.8897261328856432, 3)
-
-    @unittest.skipUnless(has_openeye, "cannot test without OpenEye")
-    def test_to_mapped_qc_geom(self):
-        """Test mapped geometry"""
-        from openeye import oechem
-
-        infile = get_fn('butane_2.xyz')
-        tagged_smiles = '[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]'
-        molecule = chemi.smiles_to_oemol(tagged_smiles)
-        mapped_geometry = chemi.to_mapped_QC_JSON_geometry(molecule)
-
-        f = open(infile)
-        line = f.readline()
-        symbols = []
-        geometry = []
-        while line:
-            if line.startswith('  '):
-                line = line.split()
-                symbols.append(line[0])
-                geometry.append(line[1:])
-            line = f.readline()
-        f.close()
-        geometry = sum(geometry, [])
-        self.assertEqual(symbols, mapped_geometry['symbols'])
-        for x, y in zip(geometry, mapped_geometry['geometry']):
-            self.assertAlmostEqual(float(x), y/1.8897261328856432, 3)
-
-    @unittest.skipUnless(has_openeye, "Cannot test without OpenEye")
     def test_crank_specs(self):
         """Test crank job JSON"""
 
