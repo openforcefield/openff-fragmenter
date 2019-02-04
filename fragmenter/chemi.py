@@ -143,7 +143,8 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     if dense:
         omega_opts = oeomega.OEOmegaOptions(oeomega.OEOmegaSampling_Dense)
         omega = oeomega.OEOmega(omega_opts)
-    omega = oeomega.OEOmega()
+    else:
+        omega = oeomega.OEOmega()
 
     # These parameters were chosen to match http://docs.eyesopen.com/toolkits/cookbook/python/modeling/am1-bcc.html
     omega.SetMaxConfs(max_confs)
