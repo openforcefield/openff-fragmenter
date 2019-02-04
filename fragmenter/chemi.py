@@ -8,7 +8,6 @@ from rdkit import Chem
 
 import cmiles
 from .utils import logger, ANGSROM_2_BOHR, BOHR_2_ANGSTROM
-from fragmenter import chemi
 
 import os
 import numpy as np
@@ -171,7 +170,7 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     return molcopy
 
 
-def generate_grid_conformers(molecule, dihedrals, intervals):
+def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360):
     """
 
     Parameters
@@ -203,7 +202,7 @@ def generate_grid_conformers(molecule, dihedrals, intervals):
         for conf in copy_conf_mol.GetConfs():
             coords = oechem.OEFloatArray(conf.GetMaxAtomIdx()*3)
             conf.GetCoords(coords)
-            for angle in range(5, 365, intervals[i]):
+            for angle in range(5, max_rotation+5, intervals[i]):
                 newconf = conf_mol.NewConf(coords)
                 oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], radians(angle))
     return conf_mol
