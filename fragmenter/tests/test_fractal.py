@@ -1,31 +1,21 @@
 """ Tests generating files for qm torsion scan """
 
-import unittest
-import json
-from fragmenter.tests.utils import get_fn, has_openeye
-import fragmenter.torsions as torsions
-from fragmenter import utils, chemi
-from cmiles import to_canonical_smiles_oe
-import warnings
-
-
-import copy
 import pytest
 import qcfractal.interface as portal
 from qcfractal import testing
-from qcfractal.testing import dask_server_fixture
+from qcfractal.testing import fractal_compute_server
 
 @testing.using_rdkit
 @testing.using_geometric
 @testing.using_torsiondrive
-def test_torsiondrive_run(dask_server_fixture):
+def test_torsiondrive_run(fractal_compute_server):
 
     # Cannot use this fixture without these services. Also cannot use `mark` and `fixture` decorators
     pytest.importorskip("torsiondrive")
     pytest.importorskip("geometric")
     pytest.importorskip("rdkit")
 
-    client = portal.FractalClient(dask_server_fixture.get_address())
+    client = portal.FractalClient(fractal_compute_server.get_address())
 
     # Add a HOOH
     hooh = {
@@ -61,8 +51,8 @@ def test_torsiondrive_run(dask_server_fixture):
     }
 
     ret = client.add_service("torsiondrive", [mol_ret["hooh"]], instance_options)
-    dask_server_fixture.await_services()
-    assert len(dask_server_fixture.list_current_tasks()) == 0
+    fractal_compute_server.await_services()
+    assert len(fractal_compute_server.list_current_tasks()) == 0
 
 
 
