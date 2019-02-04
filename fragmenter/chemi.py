@@ -112,7 +112,7 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     return charged_copy
 
 
-def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
+def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
                         can_order=True, copy=True):
     """Generate conformations for the supplied molecule
     Parameters
@@ -139,6 +139,10 @@ def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.
         molcopy = oechem.OEMol(molecule)
     else:
         molcopy = molecule
+
+    if dense:
+        omega_opts = oeomega.OEOmegaOptions(oeomega.OEOmegaSampling_Dense)
+        omega = oeomega.OEOmega(omega_opts)
     omega = oeomega.OEOmega()
 
     # These parameters were chosen to match http://docs.eyesopen.com/toolkits/cookbook/python/modeling/am1-bcc.html
