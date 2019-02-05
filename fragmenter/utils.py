@@ -3,6 +3,8 @@ import sys
 import re
 import codecs
 import copy
+import numpy as np
+
 
 """
 ~~~~~~~~~~~~~~~~~~~
@@ -11,6 +13,8 @@ Conversion factors
 """
 BOHR_2_ANGSTROM = 0.529177210
 ANGSROM_2_BOHR = 1. / BOHR_2_ANGSTROM
+HARTREE_2_KJMOL = 2625.50
+KJMOL_2_HARTREE = 1. / HARTREE_2_KJMOL
 
 
 def logger(name='fragmenter', pattern='%(asctime)s %(levelname)s %(name)s: %(message)s',
@@ -209,3 +213,57 @@ def make_python_identifier(string, namespace=None, reserved_words=None,
     namespace[string] = s
 
     return s, namespace
+
+"""
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Movie making functions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+"""
+
+
+def merge_images(file1, file2, filename):
+    """Merge two images into one, displayed side by side
+    :param file1: path to first image file
+    :param file2: path to second image file
+    :return: the merged Image object
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        raise ImportError("Must have PIL installed to use this function")
+
+    image1 = Image.open(file1)
+    image2 = Image.open(file2)
+
+    (width1, height1) = image1.size
+    (width2, height2) = image2.size
+
+    result_width = width1 + width2 - 500 # play with the number here
+    result_height = max(height1, height2)
+
+    result = Image.new('RGB', (result_width, result_height), color='white')
+    result.paste(im=image2, box=(width1-250, 0)) # play with the number here
+    result.paste(im=image1, box=(0, int(result_height/2) - int(height1/2)))
+    result.save(filename)
+
+
+def make_movie(files, fps=15, filename='movie'):
+    """
+    Make movie from list of files
+
+    Parameters
+    ----------
+    files: list of paths to files
+    fps: files per second, int, optional
+        defualt 15
+    filename: str, optional
+        default 'movie
+
+    """
+    try:
+        import moviepy.editor as mpy
+    except ImportError:
+        raise ImportError("You need to install moviepy to use this function")
+
+    im = mpy.ImageSequenceClip(files, fps=fps)
+    im.write_videofile('{}.mp4'.format(filename), fps=fps)

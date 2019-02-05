@@ -1,7 +1,7 @@
 from itertools import combinations
 import openeye as oe
 from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
-from cmiles import to_canonical_smiles_oe
+from cmiles.utils import mol_to_smiles, has_stereo_defined
 
 import yaml
 import os
@@ -87,7 +87,14 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
         #states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
         # Not using create mapped SMILES because OEMol is needed but state is OEMolBase.
         #states.add(oechem.OEMolToSmiles(molecule))
-        states.add(to_canonical_smiles_oe(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
+        try:
+         states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
+        except ValueError:
+            logger().warn("Tautomer or protonation state has a chiral center. Expanding stereoisomers")
+            stereo_states = _expand_states(molecule, enumerate='steroisomers')
+            for state in stereo_states:
+                states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
+
 
     logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 
@@ -238,12 +245,12 @@ def generate_fragments(molecule, generate_visualization=False, strict_stereo=Fal
         else:
             smiles = frag_to_smiles(frag_list, charged)
 
-        parent_smiles = to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=False, mapped=False)
+        parent_smiles = mol_to_smiles(molecule, isomeric=True, explicit_hydrogen=False, mapped=False)
         if smiles:
             fragments[parent_smiles] = list(smiles.keys())
         else:
             # Add molecule where no fragments were found for terminal torsions and / or rings and non rotatable bonds
-            fragments[parent_smiles] = [to_canonical_smiles_oe(molecule, isomeric=True, explicit_hydrogen=True, mapped=False)]
+            fragments[parent_smiles] = [mol_to_smiles(molecule, isomeric=True, explicit_hydrogen=True, mapped=False)]
 
         if generate_visualization:
             IUPAC = oeiupac.OECreateIUPACName(molecule)
@@ -808,7 +815,7 @@ def frag_to_smiles(frags, mol):
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
         #s = oechem.OEMolToSmiles(fragment)
         #s2 = fragmenter.utils.create_mapped_smiles(fragment, tagged=False, explicit_hydrogen=False)
-        s = to_canonical_smiles_oe(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
+        s = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
 
         if s not in smiles:
             smiles[s] = []
