@@ -15,7 +15,7 @@ def test_torsiondrive_run(fractal_compute_server):
     pytest.importorskip("geometric")
     pytest.importorskip("rdkit")
 
-    client = portal.FractalClient(fractal_compute_server.get_address())
+    client = portal.FractalClient(fractal_compute_server)
 
     # Add a HOOH
     hooh = {
@@ -51,7 +51,7 @@ def test_torsiondrive_run(fractal_compute_server):
     }
 
     ret = client.add_service("torsiondrive", [mol_ret["hooh"]], instance_options)
-    fractal_compute_server.await_services()
+    fractal_compute_server.await_results()
     assert len(fractal_compute_server.list_current_tasks()) == 0
 
 
