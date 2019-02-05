@@ -147,6 +147,9 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     else:
         omega = oeomega.OEOmega()
 
+    if cmiles.utils.has_atom_map(molcopy):
+        remove_map(molcopy)
+
     # These parameters were chosen to match http://docs.eyesopen.com/toolkits/cookbook/python/modeling/am1-bcc.html
     omega.SetMaxConfs(max_confs)
     omega.SetIncludeInput(True)
@@ -167,16 +170,19 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     if not status:
         raise(RuntimeError("omega returned error code %d" % status))
 
+    restore_map(molcopy)
+
     return molcopy
 
 
-def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360):
+def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, copy_mol=True):
     """
+    Generate conformers using torsion angle grids.
 
     Parameters
     ----------
-    molecule
-    dihedrals
+    molecule: OEMol
+    dihedrals: list of
     intervals
 
     Returns
@@ -184,7 +190,11 @@ def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360):
 
     """
     # molecule must be mapped
-    if not cmiles.utils.has_atom_map(molecule):
+    if copy_mol:
+        molecule = copy.deepcopy(molecule)
+    if cmiles.utils.has_atom_map(molecule):
+        remove_map(molecule)
+    else:
         raise ValueError("Molecule must have map indices")
 
     # Check length of dihedrals match length of intervals
@@ -205,6 +215,8 @@ def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360):
             for angle in range(5, max_rotation+5, intervals[i]):
                 newconf = conf_mol.NewConf(coords)
                 oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], radians(angle))
+
+    restore_map(conf_mol)
     return conf_mol
 
 
@@ -668,23 +680,30 @@ These functions are used to keep the orders atoms consistent across different mo
 """
 
 
-def is_mapped(molecule):
+def remove_map(molecule, keep_map_data=True):
     """
-    Check if atoms are mapped. If any atom is missing a tag, this will return False
+    Remove atom map but store it in atom data.
     Parameters
     ----------
-    molecule: OEMol
+    molecule
 
     Returns
     -------
-    Bool: True if mapped. False otherwise
-    """
-    IS_MAPPED = True
-    for atom in molecule.GetAtoms():
-        if atom.GetMapIdx() == 0:
-            IS_MAPPED = False
-    return IS_MAPPED
 
+    """
+    for atom in molecule.GetAtoms():
+        if atom.GetMapIdx() !=0:
+            if keep_map_data:
+                atom.SetData('MapIdx', atom.GetMapIdx())
+            atom.SetMapIdx(0)
+
+def restore_map(molecule):
+    """
+    Restore atom map from atom data
+    """
+    for atom in molecule.GetAtoms():
+        if atom.HasData('MapIdx'):
+            atom.SetMapIdx(atom.GetData('MapIdx'))
 
 def get_atom_map(tagged_smiles, molecule=None, strict_stereo=True, verbose=False, generate_conformer=True):
     """
@@ -868,7 +887,7 @@ def get_mapped_connectivity_table(molecule, atom_map=None):
         # Input is a SMILES
         molecule = smiles_to_oemol(molecule)
     if isinstance(molecule, oechem.OEMol):
-        if not is_mapped(molecule) and atom_map is None:
+        if not cmiles.utils.has_atom_map(molecule) and atom_map is None:
             raise TypeError("Molecule must contain map indices. You can get this by generating a molecule from a mapped SMILES")
 
     if atom_map is None:

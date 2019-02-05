@@ -58,7 +58,10 @@ def test_to_mapped_xyz():
 
     xyz_1 = chemi.to_mapped_xyz(mol, atom_map)
     xyz_2 = chemi.to_mapped_xyz(mapped_mol)
-    #assert xyz_1 == xyz_2
+
+    xyz_1 = sorted(xyz_1.split('\n')[2:-1])
+    xyz_2 = sorted(xyz_2.split('\n')[2:-1])
+    assert xyz_1 == xyz_2
 
 @using_openeye
 def test_grid_multi_conformers():
@@ -80,5 +83,15 @@ def test_grid_multi_conformers():
     mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
     assert mult_conf.GetMaxConfIdx() == 64
 
+@using_openeye
+def test_remove_atom_map():
+    from openeye import oechem
+    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
+    mapped_mol = oechem.OEMol()
+    oechem.OESmilesToMol(mapped_mol, mapped_smiles)
 
+    chemi.remove_map(mapped_mol)
+    assert oechem.OEMolToSmiles(mapped_mol) == 'C(CO)O'
 
+    chemi.restore_map(mapped_mol)
+    assert oechem.OEMolToSmiles(mapped_mol) == mapped_smiles
