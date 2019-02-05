@@ -697,6 +697,7 @@ def remove_map(molecule, keep_map_data=True):
                 atom.SetData('MapIdx', atom.GetMapIdx())
             atom.SetMapIdx(0)
 
+
 def restore_map(molecule):
     """
     Restore atom map from atom data
@@ -704,83 +705,6 @@ def restore_map(molecule):
     for atom in molecule.GetAtoms():
         if atom.HasData('MapIdx'):
             atom.SetMapIdx(atom.GetData('MapIdx'))
-
-def get_atom_map(tagged_smiles, molecule=None, strict_stereo=True, verbose=False, generate_conformer=True):
-    """
-    Returns a dictionary that maps tag on SMILES to atom index in molecule.
-    Parameters
-    ----------
-    tagged_smiles: str
-        index-tagged explicit hydrogen SMILES string
-    molecule: OEMol
-        molecule to generate map for. If None, a new OEMol will be generated from the tagged SMILES, the map will map to
-        this molecule and it will be returned.
-    is_mapped: bool
-        Default: False
-        When an OEMol is generated from SMART string with tags, the tag will be stored in atom.GetMapIdx(). The index-tagged
-        explicit-hydrogen SMILES are tagges SMARTS. Therefore, if a molecule was generated with the tagged SMILES, there is
-        no reason to do a substructure search to get the right order of the atoms. If is_mapped is True, the atom map will be
-        generated from atom.GetMapIdx().
-
-
-    Returns
-    -------
-    molecule: OEMol
-        The molecule for the atom_map. If a molecule was provided, it's that molecule.
-    atom_map: dict
-        a dictionary that maps tag to atom index {tag:idx}
-    """
-    if molecule is None:
-        molecule = smiles_to_oemol(tagged_smiles)
-        # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
-
-    # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
-    # map won't be correct
-    if not has_conformer(molecule) and generate_conformer:
-    # if molecule.GetMaxConfIdx() <= 1:
-    #     for conf in molecule.GetConfs():
-    #         values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
-    #                             range(conf.GetCoords().__len__())])
-    #     if values.all():
-        # Generate an Omega conformer
-        try:
-            molecule = generate_conformers(molecule, max_confs=1, strict_stereo=strict_stereo, strict_types=False, copy=False)
-            # Omega can change the ordering so whatever map existed is not there anymore
-        except RuntimeError:
-            logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
-                          "generated".format(molecule.GetTitle()))
-
-    # Check if molecule is mapped
-    mapped = is_mapped(molecule)
-    if mapped:
-        atom_map = {}
-        for atom in molecule.GetAtoms():
-            atom_map[atom.GetMapIdx()] = atom.GetIdx()
-        return molecule, atom_map
-
-    ss = oechem.OESubSearch(tagged_smiles)
-    oechem.OEPrepareSearch(molecule, ss)
-    ss.SetMaxMatches(1)
-
-    atom_map = {}
-    t1 = time.time()
-    matches = [m for m in ss.Match(molecule)]
-    t2 = time.time()
-    seconds = t2-t1
-    logger().debug("Substructure search took {} seconds".format(seconds))
-    if not matches:
-        logger().info("MCSS failed for {}, smiles: {}".format(molecule.GetTitle(), tagged_smiles))
-        return False
-    for match in matches:
-        for ma in match.GetAtoms():
-            atom_map[ma.pattern.GetMapIdx()] = ma.target.GetIdx()
-
-    # sanity check
-    mol = oechem.OEGraphMol()
-    oechem.OESubsetMol(mol, match, True)
-    logger().debug("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
-
-    return molecule, atom_map
 
 
 def mol_to_tagged_smiles(infile, outfile):
@@ -805,7 +729,7 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEThrow.Fatal("Output format must be SMILES")
 
     for mol in ifs.GetOEMols():
-        smiles = cmiles.to_canonical_smiles_oe(mol, mapped=True, explicit_hydrogen=True, isomeric=True)
+        smiles = cmiles.utils.mol_to_smiles(mol, mapped=True, explicit_hydrogen=True, isomeric=True)
         #ToDo:
         #  make sure this still works (probably doesn't because of copy of molecule. better to use list of molecule
         # with name if molecule has title
