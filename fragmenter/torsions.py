@@ -37,7 +37,7 @@ def find_torsions(molecule, restricted=True, terminal=True):
 
     """
     # Check if molecule has map
-    is_mapped = chemi.is_mapped(molecule)
+    is_mapped = has_atom_map(molecule)
     if not is_mapped:
         utils.logger().warning('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
         tagged_smiles = mol_to_smiles(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)

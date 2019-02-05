@@ -10,24 +10,6 @@ from cmiles.utils import mol_to_smiles
 
 class TesTorsions(unittest.TestCase):
 
-    @unittest.skipUnless(has_openeye, 'Cannot test without openeye')
-    def test_is_mapped(self):
-        """Test checking if atom map exists"""
-        smiles = 'CCCC'
-        tagged_smiles = '[H:5][C:1]([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])[H:14]'
-        molecule = chemi.smiles_to_oemol(smiles)
-        tagged_molecule = chemi.smiles_to_oemol(tagged_smiles)
-
-        self.assertTrue(chemi.is_mapped(tagged_molecule))
-        self.assertFalse(chemi.is_mapped(molecule))
-
-        # Add tags
-        tagged_smiles = mol_to_smiles(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
-
-        self.assertFalse(chemi.is_mapped(molecule))
-        tagged_mol = chemi.smiles_to_oemol(tagged_smiles)
-        self.assertTrue(chemi.is_mapped(tagged_mol))
-
     def test_check_molecule(self):
         """Test check moelcule"""
         pass
