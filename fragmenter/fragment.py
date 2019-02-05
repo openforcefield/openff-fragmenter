@@ -87,7 +87,14 @@ def expand_states(molecule, protonation=True, tautomers=False, stereoisomers=Tru
         #states.add(fragmenter.utils.create_mapped_smiles(molecule, tagged=False, explicit_hydrogen=False))
         # Not using create mapped SMILES because OEMol is needed but state is OEMolBase.
         #states.add(oechem.OEMolToSmiles(molecule))
-        states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
+        try:
+         states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
+        except ValueError:
+            logger().warn("Tautomer or protonation state has a chiral center. Expanding stereoisomers")
+            stereo_states = _expand_states(molecule, enumerate='steroisomers')
+            for state in stereo_states:
+                states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
+
 
     logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 
