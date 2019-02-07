@@ -1,7 +1,7 @@
 from itertools import combinations
 import openeye as oe
 from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
-from cmiles.utils import mol_to_smiles, has_stereo_defined
+from cmiles.utils import mol_to_smiles, has_stereo_defined, has_atom_map
 
 import yaml
 import os
@@ -13,7 +13,7 @@ import warnings
 import networkx as nx
 
 from .utils import logger, make_python_identifier
-from .chemi import to_smi, normalize_molecule, get_charges
+from .chemi import to_smi, normalize_molecule, get_charges, remove_map, restore_map
 
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
@@ -204,7 +204,8 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
 class Fragmenter(object):
 
     def __init__(self, molecule):
-        #ToDo remove map from molecule.
+        if has_atom_map(molecule):
+            remove_map(molecule, keep_map_data=True)
         self.molecule = molecule
         self._nx_graph = self._mol_to_graph()
         self._fragments = list()  # all possible fragments without breaking rings
@@ -303,7 +304,8 @@ class Fragmenter(object):
                                     self.fragment_combinations[sm] = []
                                 self.fragment_combinations[sm].append(frag)
 
-    def frag_to_smiles(self, frag, adjust_hcount=True, explicit_hydrogens=True, expand_stereoisomers=True):
+    def frag_to_smiles(self, frag, adjust_hcount=True, explicit_hydrogens=True, expand_stereoisomers=True,
+                       restore_maps=False):
         """
         Convert fragments (AtomBondSet) to canonical isomeric SMILES string
         Parameters
@@ -342,18 +344,22 @@ class Fragmenter(object):
             # add explicit H
             oechem.OEAddExplicitHydrogens(fragment)
             oechem.OEPerceiveChiral(fragment)
+        mapped=False
+        if restore_maps:
+            restore_map(fragment)
+            mapped=True
         try:
-            smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
+            smiles = mol_to_smiles(fragment, mapped=mapped, explicit_hydrogen=True, isomeric=True)
         except ValueError:
             if expand_stereoisomers:
                 # Generate stereoisomers
                 smiles = list()
                 enantiomers = _expand_states(fragment, enumerate='stereoisomers')
                 for mol in enantiomers:
-                    smiles.append(mol_to_smiles(mol, mapped=False, explicit_hydrogen=True, isomeric=True))
+                    smiles.append(mol_to_smiles(mol, mapped=mapped, explicit_hydrogen=True, isomeric=True))
             else:
                 # generate non isomeric smiles
-                smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=False)
+                smiles = mol_to_smiles(fragment, mapped=mapped, explicit_hydrogen=explicit_hydrogens, isomeric=False)
 
         return smiles
 
