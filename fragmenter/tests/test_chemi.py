@@ -4,6 +4,8 @@ from fragmenter import chemi
 from fragmenter.tests.utils import has_openeye
 import pytest
 import numpy as np
+from .utils import using_openeye
+import cmiles
 
 @pytest.fixture
 def mapped_molecule():
@@ -35,6 +37,61 @@ def test_connectivity_table(mapped_molecule):
         # assert that bond order is the same
         assert expected_table[match][0][-1] == bond[-1]
 
+@using_openeye
+def test_to_mapped_xyz():
+    #This fails because the coordinates are different if mol has map indices.
+    from openeye import oechem
+    smiles = 'HC(H)(C(H)(H)OH)OH'
+    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
+    mol = cmiles.utils.load_molecule(smiles)
+    mapped_mol = cmiles.utils.load_molecule(mapped_smiles)
 
+    with pytest.raises(ValueError):
+        chemi.to_mapped_xyz(mapped_mol)
+    # generate conformer
+    mol = chemi.generate_conformers(mol, max_confs=1)
+    mapped_mol = chemi.generate_conformers(mapped_mol, max_confs=1)
+    atom_map = cmiles.utils.get_atom_map(mol, mapped_smiles)
 
+    with pytest.raises(ValueError):
+        chemi.to_mapped_xyz(mol)
 
+    xyz_1 = chemi.to_mapped_xyz(mol, atom_map)
+    xyz_2 = chemi.to_mapped_xyz(mapped_mol)
+
+    xyz_1 = sorted(xyz_1.split('\n')[2:-1])
+    xyz_2 = sorted(xyz_2.split('\n')[2:-1])
+    assert xyz_1 == xyz_2
+
+@using_openeye
+def test_grid_multi_conformers():
+    "Test generating grid multiconformer"
+    smiles = 'HC(H)(C(H)(H)OH)OH'
+    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
+    mol = cmiles.utils.load_molecule(smiles)
+    mapped_mol = cmiles.utils.load_molecule(mapped_smiles)
+
+    dihedrals = [(2, 0, 1, 3), (0, 1, 3, 9), (1, 0, 2, 8)]
+    intervals = [60, 60, 60]
+    with pytest.raises(ValueError):
+        chemi.generate_grid_conformers(mol, dihedrals, intervals)
+
+    mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
+    assert mult_conf.GetMaxConfIdx() == 216
+
+    intervals = [90, 90, 90]
+    mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
+    assert mult_conf.GetMaxConfIdx() == 64
+
+@using_openeye
+def test_remove_atom_map():
+    from openeye import oechem
+    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
+    mapped_mol = oechem.OEMol()
+    oechem.OESmilesToMol(mapped_mol, mapped_smiles)
+
+    chemi.remove_map(mapped_mol)
+    assert oechem.OEMolToSmiles(mapped_mol) == 'C(CO)O'
+
+    chemi.restore_map(mapped_mol)
+    assert oechem.OEMolToSmiles(mapped_mol) == mapped_smiles
