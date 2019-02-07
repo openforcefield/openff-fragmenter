@@ -8,7 +8,7 @@ from fragmenter import chemi
 from cmiles.utils import mol_to_smiles
 import sys
 import unittest
-from fragmenter.tests.utils import get_fn, has_openeye
+from fragmenter.tests.utils import get_fn, has_openeye, using_openeye
 
 
 def test_fragmenter_imported():
@@ -98,5 +98,19 @@ class TestFragment(unittest.TestCase):
         self.assertEqual(len(intersection), len(stereoisomers_2))
         self.assertEqual(len(stereoisomers_1), len(stereoisomers_2))
 
+@using_openeye
+def test_keep_track_of_map():
+    from openeye import oechem
+    mapped_smiles = '[H:45][c:8]1[cH:18][c:10]([c:19]([cH:17][c:7]1[H:44])[N:35]([H:67])[c:21]2[n:32][cH:20][c:9]([c:12]([n:31]2)[H:49])[H:46])[H:47]'
+    mapped_mol = oechem.OEMol()
+    oechem.OESmilesToMol(mapped_mol, mapped_smiles)
+
+    frags = fragmenter.fragment.Fragmenter(mapped_mol)
+    frags.fragment_all_bonds_not_in_ring_systems()
+    frags.combine_fragments(min_rotors=1, max_rotors=frags.n_rotors+1, restore_maps=True)
+
+    keys = list(frags.fragment_combinations.keys())
+    assert oechem.OEMolToSmiles(frags.fragment_combinations[keys[0]][0]) == '[H:45][c:8]1[cH:18][c:10]([c:19]([cH:17][c:7]1[H:44])[NH:35][H:67])[H:47]'
+    assert oechem.OEMolToSmiles(frags.fragment_combinations[keys[1]][0]) == '[H:46][c:9]1[cH:20][n:32][c:21]([n:31][c:12]1[H:49])[NH:35][H:67]'
 
 

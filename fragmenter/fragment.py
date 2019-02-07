@@ -295,19 +295,22 @@ class Fragmenter(object):
                             (self._count_rotors_in_fragment(frag) >= min_rotors):
                         if self._count_heavy_atoms_in_fragment(frag) >= min_heavy_atoms:
                             self._fragment_combinations.append(frag)
-                            # convert to smiles
-                            smiles = self.frag_to_smiles(frag, **kwargs)
-                            if not isinstance(smiles, list):
-                                smiles = [smiles]
+                            # convert to mol
+                            mol = self.frag_to_mol(frag, **kwargs)
+                            smiles = []
+                            if not isinstance(mol, list):
+                                mol = [mol]
+                            for m in mol:
+                                smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=True))
                             for sm in smiles:
                                 if sm not in self.fragment_combinations:
                                     self.fragment_combinations[sm] = []
-                                self.fragment_combinations[sm].append(frag)
+                                self.fragment_combinations[sm].extend(mol)
 
-    def frag_to_smiles(self, frag, adjust_hcount=True, explicit_hydrogens=True, expand_stereoisomers=True,
+    def frag_to_mol(self, frag, adjust_hcount=True, explicit_hydrogens=True, expand_stereoisomers=True,
                        restore_maps=False):
         """
-        Convert fragments (AtomBondSet) to canonical isomeric SMILES string
+        Convert fragments (AtomBondSet) to OEMol
         Parameters
         ----------
         frags: list
@@ -335,6 +338,8 @@ class Fragmenter(object):
                 warnings.warn("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
 
+        if restore_maps:
+            restore_map(fragment)
         # check for stereo defined
         if not has_stereo_defined(fragment):
             # Try to convert to smiles and back. A molecule might look like it's missing stereo because of submol
@@ -344,24 +349,29 @@ class Fragmenter(object):
             # add explicit H
             oechem.OEAddExplicitHydrogens(fragment)
             oechem.OEPerceiveChiral(fragment)
-        mapped=False
-        if restore_maps:
-            restore_map(fragment)
-            mapped=True
-        try:
-            smiles = mol_to_smiles(fragment, mapped=mapped, explicit_hydrogen=True, isomeric=True)
-        except ValueError:
-            if expand_stereoisomers:
-                # Generate stereoisomers
-                smiles = list()
-                enantiomers = _expand_states(fragment, enumerate='stereoisomers')
-                for mol in enantiomers:
-                    smiles.append(mol_to_smiles(mol, mapped=mapped, explicit_hydrogen=True, isomeric=True))
-            else:
-                # generate non isomeric smiles
-                smiles = mol_to_smiles(fragment, mapped=mapped, explicit_hydrogen=explicit_hydrogens, isomeric=False)
+            # If it's still missing stereo, expand states
+            if not has_stereo_defined(fragment):
+                if expand_stereoisomers:
+                    enantiomers = _expand_states(fragment, enumerate='stereoisomers')
+                    return enantiomers
 
-        return smiles
+        return fragment
+
+        # try:
+        #     #ToDo generate smiles with restored map
+        #     smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
+        # except ValueError:
+        #     if expand_stereoisomers:
+        #         # Generate stereoisomers
+        #         smiles = list()
+        #         enantiomers = _expand_states(fragment, enumerate='stereoisomers')
+        #         for mol in enantiomers:
+        #             smiles.append(mol_to_smiles(mol, mapped=False, explicit_hydrogen=True, isomeric=True))
+        #     else:
+        #         # generate non isomeric smiles
+        #         smiles = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=False)
+        #
+        # return smiles
 
     def _is_combination_adjacent(self, frag_combination):
         """
@@ -487,12 +497,12 @@ class Fragmenter(object):
         atom_glyph = ColorAtomByFragmentIndex(colors, tag)
         fade_hightlight = oedepict.OEHighlightByColor(oechem.OEGrey, line_width)
 
-        for frag in self.fragment_combinations:
+        for frag in self._fragment_combinations:
             cell = report.NewCell()
             display = oedepict.OE2DMolDisplay(self.molecule, opts)
 
-            frag_atoms = oechem.OEIsAtomMember(self.fragment_combinations[frag][0].GetAtoms())
-            frag_bonds = oechem.OEIsBondMember(self.fragment_combinations[frag][0].GetBonds())
+            frag_atoms = oechem.OEIsAtomMember(frag.GetAtoms())
+            frag_bonds = oechem.OEIsBondMember(frag.GetBonds())
 
             not_fragment_atoms = oechem.OENotAtom(frag_atoms)
             not_fragment_bonds = oechem.OENotBond(frag_bonds)
