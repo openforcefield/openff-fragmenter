@@ -5,7 +5,7 @@ Unit and regression test for the fragmenter package.
 # Import package, test suite, and other packages as needed
 import fragmenter
 from fragmenter import chemi
-from cmiles import to_canonical_smiles_oe
+from cmiles.utils import mol_to_smiles
 import sys
 import unittest
 from fragmenter.tests.utils import get_fn, has_openeye
@@ -59,7 +59,7 @@ class TestFragment(unittest.TestCase):
                          'Cc1ccc(cc1[N-]c2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)C[NH+]5CC[NH+](CC5)C'}
         protonation_2 = set()
         for mol in protonation:
-            protonation_2.add(to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=False, isomeric=True))
+            protonation_2.add(mol_to_smiles(mol, mapped=False, explicit_hydrogen=False, isomeric=True))
 
         intersection = protonation_1.intersection(protonation_2)
         self.assertEqual(len(intersection), len(protonation_1))
@@ -92,7 +92,7 @@ class TestFragment(unittest.TestCase):
 
         stereoisomers_2 = set()
         for mol in stereoisomers:
-            stereoisomers_2.add(to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=False, isomeric=True))
+            stereoisomers_2.add(mol_to_smiles(mol, mapped=False, explicit_hydrogen=False, isomeric=True))
         intersection = stereoisomers_1.intersection(stereoisomers_2)
         self.assertEqual(len(intersection), len(stereoisomers_1))
         self.assertEqual(len(intersection), len(stereoisomers_2))

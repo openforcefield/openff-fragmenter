@@ -11,7 +11,7 @@ from math import radians, degrees
 import copy
 
 from . import utils, chemi
-from cmiles.utils import mol_to_smiles
+from cmiles.utils import mol_to_smiles, has_atom_map
 from .utils import BOHR_2_ANGSTROM, logger
 # warnings.simplefilter('always')
 
@@ -433,22 +433,28 @@ def measure_dihedral_angle(dihedral, coords):
     return degree
 
 
-def equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
+def find_equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
     """
-
+    Final all torsions around a given central bond
     Parameters
     ----------
-    mapped_mol
-    restricted
-    central_bonds
+    mapped_mol: oemol. Must contaion map indices
+    restricted: bool, optional, default False
+        If True, will also find restricted torsions
+    central_bonds: list of tuple of ints, optional, defualt None
+        If provides, only torsions around those central bonds will be given. If None, all torsions in molecule will be found
 
     Returns
     -------
-
+    eq_torsions: dict
+        maps central bond to all equivelant torisons
     """
     #ToDo check that mol has mapping
 
     mol = oechem.OEMol(mapped_mol)
+    if not has_atom_map(mol):
+        raise ValueError("OEMol must have map indices")
+
     terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
     terminal_torsions = _find_torsions_from_smarts(mol, terminal_smarts)
     mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(mapped_mol)]
@@ -457,14 +463,21 @@ def equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
         restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]'
         restricted_torsions = _find_torsions_from_smarts(mol, restricted_smarts)
         all_torsions = all_torsions + restricted_torsions
+
     tor_idx = []
     for tor in all_torsions:
         tor_name = (tor[0].GetMapIdx()-1, tor[1].GetMapIdx()-1, tor[2].GetMapIdx()-1, tor[3].GetMapIdx()-1)
         tor_idx.append(tor_name)
+
+    if central_bonds:
+        if not isinstance(central_bonds, list):
+            central_bonds = [central_bonds]
     if not central_bonds:
         central_bonds = set((tor[1], tor[2]) for tor in tor_idx)
+
     eq_torsions = {cb : [tor for tor in tor_idx if cb == (tor[1], tor[2]) or  cb ==(tor[2], tor[1])] for cb in
               central_bonds}
+
     return eq_torsions
 
 

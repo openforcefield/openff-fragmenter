@@ -21,7 +21,7 @@ OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers=True, max_states=200, level=0, reasonable=True,
                   carbon_hybridization=True, suppress_hydrogen=True, verbose=False, filename=None,
-                  return_smiles_list=False, return_molecules=False, strict=False):
+                  return_smiles_list=False, return_molecules=False, expand_internally=True, strict=False):
     """
     Expand molecule states (choice of protonation, tautomers and/or stereoisomers).
     Protonation states expands molecules to protonation of protonation sites (Some states might only be reasonable in
@@ -99,8 +99,14 @@ def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers
                 continue
             elif not strict:
                 states.add(mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=True ))
+            elif expand_internally:
+                logger().warn("Tautomer or protonation state has a chiral center. Expanding stereoisomers")
+                stereo_states = _expand_states(molecule, enumerate='steroisomers')
+                for state in stereo_states:
+                    states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
             else:
-                raise ValueError("molecule is missing stereochemistry")
+                raise ValueError("molecule {} is missing stereochemistry".format(mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydorge=False)))
+
 
     logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 

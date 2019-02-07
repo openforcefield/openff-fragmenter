@@ -2,6 +2,7 @@ import socket
 import uuid
 import getpass
 import json
+import numpy as np
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import to_molecule_id
@@ -394,19 +395,13 @@ class WorkFlow(object):
 
                 for key in final_dict[frag][job]:
                     value = final_dict[frag][job][key]
-                    new_key = self._serialize_key(key)
+                    new_key = serialize_key(key)
                     if frag not in serialized_dict:
                         serialized_dict[frag] = {}
                     if job not in serialized_dict[frag]:
                         serialized_dict[frag][job] = {}
                     serialized_dict[frag][job][new_key] = value
         return serialized_dict
-
-    def _serialize_key(self, key):
-        if isinstance(key, (int, float)):
-            key = (int(key), )
-
-        return json.dumps(key)
 
 
 
@@ -439,21 +434,77 @@ def _get_provenance(workflow_id, routine):
 
     return provenance
 
+def _check_workflow(workflow_json, off_workflow):
 
-# def _get_options(workflow_id, routine=None, all=False):
-#
-#     fn = resource_filename('fragmenter', os.path.join('data', 'workflows.json'))
-#     f = open(fn)
-#     options = json.load(f)[workflow_id]
-#     f.close()
-#     if routine:
-#         options = options['fragmenter'][routine]['options']
-#     elif all:
-#         options = options['fragmenter']
-#     else:
-#         raise RuntimeError("You must define a routine or set all to True for options for all fragmenter routines. ")
-#
-#     return options
+    for key in workflow_json:
+        if workflow_json[key] != off_workflow.get_options(key):
+            raise ValueError("The workflow ID provided already exists in the database. The options for {} are different"
+                             "in the registered workflow and provided workflow. The options provided are {} and "
+                             "the options in the database are {}".format(key, workflow_json[key], off_workflow.get_options(key), key))
+        else:
+            return True
+
+
+def serialize_key(key):
+        if isinstance(key, (int, float)):
+            key = (int(key), )
+
+        return json.dumps(key)
+
+def grid_id_from_str(grid_id_str):
+    """
+    Only works for 1D grids.
+    Deserialize grid ID key
+
+    Parameters
+    ----------
+    grid_id_str
+
+    Returns
+    -------
+
+    """
+    return int(grid_id_str.split('[')[-1].split(']')[0])
+
+def sort_energies(final_energies):
+    """
+    Sort energies by angle in place
+
+    Parameters
+    ----------
+    final_energies: dictionary
+        output from workflow.list_final_energies()
+
+
+    """
+    for frag in final_energies:
+        for job in final_energies[frag]:
+            angles = []
+            energies = []
+            for angle in final_energies[frag][job]:
+                energy = final_energies[frag][job][angle]
+                angle = grid_id_from_str(angle)
+                angles.append(angle)
+                energies.append(energy)
+            energies = np.asarray(energies)
+            energies = energies * utils.HARTREE_2_KJMOL
+            rel_energies = energies - energies.min()
+            sorted_energies = [x for _, x in sorted(zip(angles, rel_energies))]
+            sorted_angles = sorted(angles)
+            final_energies[frag][job] = (sorted_angles, sorted_energies)
+
+
+def deserialze_molecules(final_molecules):
+    deserialized = {}
+    for frag in final_molecules:
+        deserialized[frag] = {}
+        for job in final_molecules[frag]:
+            deserialized[frag][job] = {}
+            for angle in final_molecules[frag][job]:
+                molecule = final_molecules[frag][job][angle]
+                angle_int = grid_id_from_str(angle)
+                deserialized[frag][job][angle_int] = molecule
+    return deserialized
 
 
 def combine_json_fragments(json_inputs, json_output=None):
@@ -485,13 +536,3 @@ def combine_json_fragments(json_inputs, json_output=None):
 
     return fragments
 
-
-def _check_workflow(workflow_json, off_workflow):
-
-    for key in workflow_json:
-        if workflow_json[key] != off_workflow.get_options(key):
-            raise ValueError("The workflow ID provided already exists in the database. The options for {} are different"
-                             "in the registered workflow and provided workflow. The options provided are {} and "
-                             "the options in the database are {}".format(key, workflow_json[key], off_workflow.get_options(key), key))
-        else:
-            return True

@@ -1,6 +1,7 @@
 import os
 import unittest
 from pkg_resources import resource_filename
+import pytest
 
 try:
     import openeye.oechem
@@ -14,6 +15,7 @@ try:
 except ImportError:
     has_crank = False
 
+using_openeye = pytest.mark.skipif(not has_openeye, reason="Cannot run without OpenEye")
 
 class FileIOTestCase(unittest.TestCase):
 
