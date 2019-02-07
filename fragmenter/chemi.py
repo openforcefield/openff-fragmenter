@@ -1182,6 +1182,15 @@ def bond_order_tag(molecule, atom_map, bond_order_array):
             bond.SetData(tag, mbo)
 
 
+def mol_to_image(mol, fname, width=600, height=400, scale_bondwidth=True):
+    oedepict.OEPrepareDepiction(mol)
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetBondWidthScaling(scale_bondwidth)
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+    return oedepict.OERenderMolecule(fname, disp)
+
+
 def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
     """Write out png file of molecule with atoms labeled with their map index.
 
