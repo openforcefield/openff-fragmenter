@@ -40,7 +40,7 @@ class WorkFlow(object):
 
         # Check if id already in database
         try:
-            off_workflow = client.get_collection(name=workflow_id, collection_type='OpenFFWorkflow')
+            off_workflow = client.get_collection('OpenFFWorkflow', workflow_id)
             if workflow_json is not None:
                 # Check if workflows are the same
                 _check_workflow(workflow_json, off_workflow)
