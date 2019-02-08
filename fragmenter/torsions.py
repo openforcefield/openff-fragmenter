@@ -11,7 +11,7 @@ from math import radians, degrees
 import copy
 
 from . import utils, chemi
-from cmiles.utils import mol_to_smiles, has_atom_map
+from cmiles.utils import mol_to_smiles, has_atom_map, get_atom_map
 from .utils import BOHR_2_ANGSTROM, logger
 # warnings.simplefilter('always')
 
@@ -338,7 +338,9 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
 
     optimization_jobs = {}
     tagged_smiles = qc_molecule['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
-    mol, atom_map = chemi.get_atom_map(tagged_smiles, generate_conformer=False)
+    mol = oechem.OEMol()
+    oechem.OESmilesToMol(mol, tagged_smiles)
+    atom_map = get_atom_map(mol, tagged_smiles)
 
     coords = chemi.from_mapped_xyz_to_mol_idx_order(qc_molecule['geometry'], atom_map)
 

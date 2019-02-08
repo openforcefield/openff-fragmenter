@@ -39,7 +39,6 @@ def test_connectivity_table(mapped_molecule):
 
 @using_openeye
 def test_to_mapped_xyz():
-    #This fails because the coordinates are different if mol has map indices.
     from openeye import oechem
     smiles = 'HC(H)(C(H)(H)OH)OH'
     mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
@@ -62,6 +61,21 @@ def test_to_mapped_xyz():
     xyz_1 = sorted(xyz_1.split('\n')[2:-1])
     xyz_2 = sorted(xyz_2.split('\n')[2:-1])
     assert xyz_1 == xyz_2
+
+@using_openeye
+def teat_qcschema_to_xyz():
+    smiles = 'HC(H)(C(H)(H)OH)OH'
+    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
+    mol = cmiles.utils.load_molecule(smiles)
+    mapped_mol = cmiles.utils.load_molecule(mapped_smiles)
+
+    dihedrals = [(2, 0, 1, 3), (0, 1, 3, 9), (1, 0, 2, 8)]
+    intervals = [90, 90, 90]
+    mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
+
+    # generate list of qcschema molecules
+    qcschema_molecules = [cmiles.utils.mol_to_map_ordered_qcschema(conf, mol_id) for conf in multi_conf.GetConfs()]
+
 
 @using_openeye
 def test_grid_multi_conformers():
@@ -95,3 +109,11 @@ def test_remove_atom_map():
 
     chemi.restore_map(mapped_mol)
     assert oechem.OEMolToSmiles(mapped_mol) == mapped_smiles
+
+@using_openeye
+def test_remove_clashes():
+    pass
+
+@using_openeye
+def test_resolve_clashes():
+    pass
