@@ -15,7 +15,7 @@ try:
     import qcfractal.interface as portal
 except ImportError:
     pass
-
+import qcelemental
 
 class WorkFlow(object):
 
@@ -465,6 +465,31 @@ def grid_id_from_str(grid_id_str):
 
     """
     return int(grid_id_str.split('[')[-1].split(']')[0])
+
+def serialize_fractal_output(final_json):
+    """
+
+    Parameters
+    ----------
+    final_json
+
+    Returns
+    -------
+
+    """
+    serialized_dict = {}
+    for frag in final_json:
+        serialized_dict[frag] = {}
+        for job in final_json[frag]:
+            serialized_dict[frag][job] = {}
+            for key in final_json[frag][job]:
+                value = final_json[frag][job][key]
+                new_key = serialize_key(key)
+                if isinstance(value, qcelemental.models.molecule.Molecule):
+                    value = json.loads(value.json())
+                serialized_dict[frag][job][new_key] = value
+    return serialized_dict
+
 
 def sort_energies(final_energies):
     """
