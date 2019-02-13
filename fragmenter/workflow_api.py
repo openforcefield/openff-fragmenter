@@ -15,7 +15,6 @@ try:
     import qcfractal.interface as portal
 except ImportError:
     pass
-import qcelemental
 
 class WorkFlow(object):
 
@@ -477,6 +476,8 @@ def serialize_fractal_output(final_json):
     -------
 
     """
+    import qcelemental
+
     serialized_dict = {}
     for frag in final_json:
         serialized_dict[frag] = {}
