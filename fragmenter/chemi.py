@@ -4,7 +4,6 @@ try:
     from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac
 except ImportError:
     raise Warning("Need license for OpenEye!")
-from rdkit import Chem
 
 import cmiles
 from .utils import logger, ANGSROM_2_BOHR, BOHR_2_ANGSTROM
@@ -563,6 +562,7 @@ def smifile_to_rdmols(filename):
         list of RDKit molecules
 
     """
+    from rdkit import Chem
     smiles_txt = open(filename, 'r').read()
     # Check first line
     first_line = smiles_txt.split('\n')[0]
