@@ -1,19 +1,20 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
 
 try:
-    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac
+    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac, oeszybki
 except ImportError:
     raise Warning("Need license for OpenEye!")
 from rdkit import Chem
 
 import cmiles
 from .utils import logger, ANGSROM_2_BOHR, BOHR_2_ANGSTROM
-from fragmenter import chemi
 
 import os
 import numpy as np
 import time
 import itertools
+import copy
+from math import radians
 
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -112,7 +113,7 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     return charged_copy
 
 
-def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
+def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
                         can_order=True, copy=True):
     """Generate conformations for the supplied molecule
     Parameters
@@ -139,7 +140,15 @@ def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.
         molcopy = oechem.OEMol(molecule)
     else:
         molcopy = molecule
-    omega = oeomega.OEOmega()
+
+    if dense:
+        omega_opts = oeomega.OEOmegaOptions(oeomega.OEOmegaSampling_Dense)
+        omega = oeomega.OEOmega(omega_opts)
+    else:
+        omega = oeomega.OEOmega()
+
+    if cmiles.utils.has_atom_map(molcopy):
+        remove_map(molcopy)
 
     # These parameters were chosen to match http://docs.eyesopen.com/toolkits/cookbook/python/modeling/am1-bcc.html
     omega.SetMaxConfs(max_confs)
@@ -161,7 +170,130 @@ def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.
     if not status:
         raise(RuntimeError("omega returned error code %d" % status))
 
+    restore_map(molcopy)
+
     return molcopy
+
+
+def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, copy_mol=True):
+    """
+    Generate conformers using torsion angle grids.
+
+    Parameters
+    ----------
+    molecule: OEMol
+    dihedrals: list of
+    intervals
+
+    Returns
+    -------
+
+    """
+    # molecule must be mapped
+    if copy_mol:
+        molecule = copy.deepcopy(molecule)
+    if cmiles.utils.has_atom_map(molecule):
+        remove_map(molecule)
+    else:
+        raise ValueError("Molecule must have map indices")
+
+    # Check length of dihedrals match length of intervals
+
+    conf_mol = generate_conformers(molecule, max_confs=1)
+    conf = conf_mol.GetConfs().next()
+    coords = oechem.OEFloatArray(conf.GetMaxAtomIdx()*3)
+    conf.GetCoords(coords)
+
+    torsions = [[conf_mol.GetAtom(oechem.OEHasMapIdx(i+1)) for i in dih] for dih in dihedrals]
+
+    for i, tor in enumerate(torsions):
+        copy_conf_mol = copy.deepcopy(conf_mol)
+        conf_mol.DeleteConfs()
+        for conf in copy_conf_mol.GetConfs():
+            coords = oechem.OEFloatArray(conf.GetMaxAtomIdx()*3)
+            conf.GetCoords(coords)
+            for angle in range(5, max_rotation+5, intervals[i]):
+                newconf = conf_mol.NewConf(coords)
+                oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], radians(angle))
+
+    restore_map(conf_mol)
+    return conf_mol
+
+
+def resolve_clashes(mol):
+    """
+    Taken from quanformer (https://github.com/MobleyLab/quanformer/blob/master/quanformer/initialize_confs.py#L54
+    Minimize conformers with severe steric interaction.
+    Parameters
+    ----------
+    mol : single OEChem molecule (single conformer)
+    clashfile : string
+        name of file to write output
+    Returns
+    -------
+    boolean
+        True if completed successfully, False otherwise.
+    """
+
+    # set general energy options along with the single-point specification
+    spSzybki = oeszybki.OESzybkiOptions()
+    spSzybki.SetForceFieldType(oeszybki.OEForceFieldType_MMFF94S)
+    spSzybki.SetSolventModel(oeszybki.OESolventModel_Sheffield)
+    spSzybki.SetRunType(oeszybki.OERunType_SinglePoint)
+
+    # generate the szybki MMFF94 engine for single points
+    szSP = oeszybki.OESzybki(spSzybki)
+
+    # construct minimiz options from single-points options to get general optns
+    optSzybki = oeszybki.OESzybkiOptions(spSzybki)
+
+    # now reset the option for minimization
+    optSzybki.SetRunType(oeszybki.OERunType_CartesiansOpt)
+
+    # generate szybki MMFF94 engine for minimization
+    szOpt = oeszybki.OESzybki(optSzybki)
+    # add strong harmonic restraints to nonHs
+
+    szOpt.SetHarmonicConstraints(10.0)
+    # construct a results object to contain the results of a szybki calculation
+
+    szResults = oeszybki.OESzybkiResults()
+    # work on a copy of the molecule
+    tmpmol = oechem.OEMol(mol)
+    if not szSP(tmpmol, szResults):
+        print('szybki run failed for %s' % tmpmol.GetTitle())
+        return False
+    Etotsp = szResults.GetTotalEnergy()
+    Evdwsp = szResults.GetEnergyTerm(oeszybki.OEPotentialTerms_MMFFVdW)
+    if Evdwsp > 35:
+        if not szOpt(tmpmol, szResults):
+            print('szybki run failed for %s' % tmpmol.GetTitle())
+            return False
+        Etot = szResults.GetTotalEnergy()
+        Evdw = szResults.GetEnergyTerm(oeszybki.OEPotentialTerms_MMFFVdW)
+        # wfile = open(clashfile, 'a')
+        # wfile.write(
+        #     '%s resolved bad clash: initial vdW: %.4f ; '
+        #     'resolved EvdW: %.4f\n' % (tmpmol.GetTitle(), Evdwsp, Evdw))
+        # wfile.close()
+        mol.SetCoords(tmpmol.GetCoords())
+    oechem.OESetSDData(mol, oechem.OESDDataPair('MM Szybki Single Point Energy', "%.12f" % szResults.GetTotalEnergy()))
+    return True
+
+
+def remove_clash(multi_conformer, in_place=True):
+    # resolve clashes
+    if not in_place:
+        multi_conformer = copy.deepcopy(multi_conformer)
+    confs_to_remove = []
+    for conf in multi_conformer.GetConfs():
+        if not resolve_clashes(conf):
+            confs_to_remove.append(conf)
+    for i in confs_to_remove:
+        multi_conformer.DeleteConf(i)
+
+    if not in_place:
+        return multi_conformer
 
 
 def normalize_molecule(molecule, title=''):
@@ -607,6 +739,15 @@ def standardize_molecule(molecule, title=''):
     else:
         raise TypeError("Wrong type of input for molecule. Can be SMILES, filename or OEMol")
     return mol
+
+
+# def multiconf_mol_to_qcschema(mapped_mol):
+#     """
+#
+#     """
+#     if not cmiles.utils.has_atom_map(mapped_mol):
+
+
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Functions to work with mapped SMILES
@@ -615,100 +756,31 @@ These functions are used to keep the orders atoms consistent across different mo
 """
 
 
-def is_mapped(molecule):
+def remove_map(molecule, keep_map_data=True):
     """
-    Check if atoms are mapped. If any atom is missing a tag, this will return False
+    Remove atom map but store it in atom data.
     Parameters
     ----------
-    molecule: OEMol
+    molecule
 
     Returns
     -------
-    Bool: True if mapped. False otherwise
+
     """
-    IS_MAPPED = True
     for atom in molecule.GetAtoms():
-        if atom.GetMapIdx() == 0:
-            IS_MAPPED = False
-    return IS_MAPPED
+        if atom.GetMapIdx() !=0:
+            if keep_map_data:
+                atom.SetData('MapIdx', atom.GetMapIdx())
+            atom.SetMapIdx(0)
 
 
-def get_atom_map(tagged_smiles, molecule=None, strict_stereo=True, verbose=False, generate_conformer=True):
+def restore_map(molecule):
     """
-    Returns a dictionary that maps tag on SMILES to atom index in molecule.
-    Parameters
-    ----------
-    tagged_smiles: str
-        index-tagged explicit hydrogen SMILES string
-    molecule: OEMol
-        molecule to generate map for. If None, a new OEMol will be generated from the tagged SMILES, the map will map to
-        this molecule and it will be returned.
-    is_mapped: bool
-        Default: False
-        When an OEMol is generated from SMART string with tags, the tag will be stored in atom.GetMapIdx(). The index-tagged
-        explicit-hydrogen SMILES are tagges SMARTS. Therefore, if a molecule was generated with the tagged SMILES, there is
-        no reason to do a substructure search to get the right order of the atoms. If is_mapped is True, the atom map will be
-        generated from atom.GetMapIdx().
-
-
-    Returns
-    -------
-    molecule: OEMol
-        The molecule for the atom_map. If a molecule was provided, it's that molecule.
-    atom_map: dict
-        a dictionary that maps tag to atom index {tag:idx}
+    Restore atom map from atom data
     """
-    if molecule is None:
-        molecule = smiles_to_oemol(tagged_smiles)
-        # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
-
-    # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
-    # map won't be correct
-    if not has_conformer(molecule) and generate_conformer:
-    # if molecule.GetMaxConfIdx() <= 1:
-    #     for conf in molecule.GetConfs():
-    #         values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
-    #                             range(conf.GetCoords().__len__())])
-    #     if values.all():
-        # Generate an Omega conformer
-        try:
-            molecule = generate_conformers(molecule, max_confs=1, strict_stereo=strict_stereo, strict_types=False, copy=False)
-            # Omega can change the ordering so whatever map existed is not there anymore
-        except RuntimeError:
-            logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
-                          "generated".format(molecule.GetTitle()))
-
-    # Check if molecule is mapped
-    mapped = is_mapped(molecule)
-    if mapped:
-        atom_map = {}
-        for atom in molecule.GetAtoms():
-            atom_map[atom.GetMapIdx()] = atom.GetIdx()
-        return molecule, atom_map
-
-    ss = oechem.OESubSearch(tagged_smiles)
-    oechem.OEPrepareSearch(molecule, ss)
-    ss.SetMaxMatches(1)
-
-    atom_map = {}
-    t1 = time.time()
-    matches = [m for m in ss.Match(molecule)]
-    t2 = time.time()
-    seconds = t2-t1
-    logger().debug("Substructure search took {} seconds".format(seconds))
-    if not matches:
-        logger().info("MCSS failed for {}, smiles: {}".format(molecule.GetTitle(), tagged_smiles))
-        return False
-    for match in matches:
-        for ma in match.GetAtoms():
-            atom_map[ma.pattern.GetMapIdx()] = ma.target.GetIdx()
-
-    # sanity check
-    mol = oechem.OEGraphMol()
-    oechem.OESubsetMol(mol, match, True)
-    logger().debug("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
-
-    return molecule, atom_map
+    for atom in molecule.GetAtoms():
+        if atom.HasData('MapIdx'):
+            atom.SetMapIdx(atom.GetData('MapIdx'))
 
 
 def mol_to_tagged_smiles(infile, outfile):
@@ -733,14 +805,14 @@ def mol_to_tagged_smiles(infile, outfile):
         oechem.OEThrow.Fatal("Output format must be SMILES")
 
     for mol in ifs.GetOEMols():
-        smiles = cmiles.to_canonical_smiles_oe(mol, mapped=True, explicit_hydrogen=True, isomeric=True)
+        smiles = cmiles.utils.mol_to_smiles(mol, mapped=True, explicit_hydrogen=True, isomeric=True)
         #ToDo:
         #  make sure this still works (probably doesn't because of copy of molecule. better to use list of molecule
         # with name if molecule has title
         oechem.OEWriteMolecule(ofs, mol)
 
 
-def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename=None):
+def to_mapped_xyz(molecule, atom_map=None, conformer=None, xyz_format=True, filename=None):
     """
     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
     tag on the SMILES to the atom idex in OEMol.
@@ -761,6 +833,10 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
     str: elements and xyz coordinates (in angstroms) in order of tagged SMILES
 
     """
+    if not atom_map and not cmiles.utils.has_atom_map(molecule):
+        raise ValueError("If molecule does not have atom map, you must provide an atom map")
+    if not has_conformer(molecule, check_two_dimension=True):
+        raise ValueError("Molecule must have conformers")
     xyz = ""
     for k, mol in enumerate(molecule.GetConfs()):
         if k == conformer or conformer is None:
@@ -771,9 +847,14 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
             mol.GetCoords(coords)
             if k != 0 and not xyz_format:
                     xyz += "*"
-            for mapping in range(1, len(atom_map)+1):
-                idx = atom_map[mapping]
-                atom = mol.GetAtom(oechem.OEHasAtomIdx(idx))
+
+            for mapping in range(1, molecule.NumAtoms()+1):
+                if not atom_map:
+                    atom = molecule.GetAtom(oechem.OEHasMapIdx(mapping))
+                    idx = atom.GetIdx()
+                else:
+                    idx = atom_map[mapping]
+                    atom = mol.GetAtom(oechem.OEHasAtomIdx(idx))
                 syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
                 xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(syb,
                                                                            coords[idx * 3],
@@ -784,7 +865,8 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
         file = open("{}.xyz".format(filename), 'w')
         file.write(xyz)
         file.close()
-    return xyz
+    else:
+        return xyz
 
 
 def get_mapped_connectivity_table(molecule, atom_map=None):
@@ -805,7 +887,7 @@ def get_mapped_connectivity_table(molecule, atom_map=None):
         # Input is a SMILES
         molecule = smiles_to_oemol(molecule)
     if isinstance(molecule, oechem.OEMol):
-        if not is_mapped(molecule) and atom_map is None:
+        if not cmiles.utils.has_atom_map(molecule) and atom_map is None:
             raise TypeError("Molecule must contain map indices. You can get this by generating a molecule from a mapped SMILES")
 
     if atom_map is None:
@@ -851,21 +933,25 @@ def qcschema_to_xyz_format(qcschema, name=None, filename=None):
         qcschema molecule in xyz format
 
     """
+    if not isinstance(qcschema, list):
+        qcschema = [qcschema]
     xyz = ""
-    symbols = qcschema['symbols']
-    coords = qcschema['geometry']
-    coords = np.asarray(coords)*BOHR_2_ANGSTROM
-    xyz += "{}\n".format(len(symbols))
-    xyz += "{}\n".format(name)
-    for i, s in enumerate(symbols):
-        xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(s,
-                                                                  coords[i * 3],
-                                                                  coords[i * 3 + 1],
-                                                                  coords[i * 3 + 2])
+    for qcmol in qcschema:
+        symbols = qcmol['symbols']
+        coords = qcmol['geometry']
+        coords = np.asarray(coords)*BOHR_2_ANGSTROM
+        xyz += "{}\n".format(len(symbols))
+        xyz += "{}\n".format(name)
+        for i, s in enumerate(symbols):
+            xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(s,
+                                                                      coords[i * 3],
+                                                                      coords[i * 3 + 1],
+                                                                      coords[i * 3 + 2])
     if filename:
         with open(filename, 'w') as f:
-            f.write(filename)
-    return xyz
+            f.write(xyz)
+    else:
+        return xyz
 
 
 def qcschema_to_xyz_traj(final_molecule_grid, filename=None):

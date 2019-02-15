@@ -1,10 +1,10 @@
 {
-  "workflow_1": {
+  "example": {
     "fragmenter": {
       "enumerate_states": {
-        "version": "0.0.0",
+        "version": "v0.0.1",
         "options": {
-          "protonation": true,
+          "protonation": false,
           "tautomers": false,
           "stereoisomers": true,
           "max_states": 200,
@@ -15,35 +15,58 @@
         }
       },
       "enumerate_fragments": {
-        "version": "0.0.0",
+        "version": "v0.0.1",
         "options": {
-          "strict_stereo": true,
-          "combinatorial": true,
-          "MAX_ROTORS": 2,
-          "remove_map": true
+          "combinatorial": {
+            "min_rotors": 1,
+            "max_rotors": 0,
+            "min_heavy_atoms": 4,
+            "cap": false
+          }
         }
       },
       "torsiondrive_input": {
-        "version": "0.0.0",
-        "options": {
-          "max_conf": 1,
+        "version": "v0.0.1",
+        "restricted": true,
+        "multiple_confs": 1,
+        "initial_conf_grid_resolution": 180,
+        "torsiondrive_options": {
           "terminal_torsion_resolution": 30,
           "internal_torsion_resolution": 30,
           "scan_internal_terminal_combination": 0,
-          "scan_dimension": 2
+          "scan_dimension": 1
+        },
+        "restricted_optimization_options": {
+          "maximum_rotation": 30,
+          "interval": 5
         }
       },
-      "torsiondrive_meta": {},
-      "optimization_meta": {
-        "program": "geometric",
-        "coordsys": "trict"
+      "torsiondrive_static_options": {
+        "torsiondrive_meta": {},
+        "optimization_meta": {
+          "program": "geometric",
+          "coordsys": "tric"
+        },
+        "qc_meta": {
+          "driver": "gradient",
+          "method": "UFF",
+          "basis": "",
+          "options": "none",
+          "program": "rdkit"
+        }
       },
-      "qc_meta": {
-        "driver": "gradient",
-        "method": "UFF",
-        "basis": "",
-        "options": "none",
-        "program": "rdkit"
+      "optimization_static_options":{
+        "optimization_meta": {
+          "program": "geometric",
+          "coordsys": "tric"
+        },
+        "qc_meta":{
+          "driver": "gradient",
+          "method": "UFF",
+          "basis": "",
+          "options": "none",
+          "program": "rdkit"
+        }
       }
     }
   }
