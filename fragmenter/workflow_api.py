@@ -39,13 +39,14 @@ class WorkFlow(object):
         # Check that all fields exist
 
         # Check if id already in database
-        off_workflow = client.get_collection(collection_name=workflow_id, collection_type='OpenFFWorkflow')
-        if off_workflow:
-            # workflow has was already registered. Check that options are the same as in json input file
-            _check_workflow(workflow_json, off_workflow)
-            utils.logger().warning("The workflow ID provided already exits in the database. The options you "
+        try:
+            off_workflow = client.get_collection('OpenFFWorkflow', workflow_id)
+            if workflow_json is not None:
+                # Check if workflows are the same
+                _check_workflow(workflow_json, off_workflow)
+                utils.logger().warning("The workflow ID provided already exits in the database. The options you "
                                        "provided are the same as in the database. The database options will be used.")
-        else:
+        except KeyError:
             # Get workflow from json file and register
             off_workflow = portal.collections.OpenFFWorkflow(workflow_id, client, **workflow_json)
 
@@ -174,15 +175,13 @@ class WorkFlow(object):
 
         # Generate identifiers for fragments
         fragments_json_dict = {}
-        for frag in fragments:
-            #for i, frag in enumerate(fragments[fragm]):
-                #fragment_mol = chemi.smiles_to_oemol(frag)
-            identifiers = to_molecule_id(frag, canonicalization='openeye', strict=True)
-
-            frag = identifiers['canonical_isomeric_explicit_hydrogen_smiles']
-            fragments_json_dict[frag] = {'identifiers': identifiers}
-            fragments_json_dict[frag]['provenance'] = provenance
-            fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
+        for fragm in fragments:
+            for i, frag in enumerate(fragments[fragm]):
+                identifiers = to_molecule_id(frag, canonicalization='openeye')
+                frag = identifiers['canonical_isomeric_smiles']
+                fragments_json_dict[frag] = {'identifiers': identifiers}
+                fragments_json_dict[frag]['provenance'] = provenance
+                fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
 
         if json_filename:
             with open(json_filename, 'w') as f:
@@ -220,31 +219,55 @@ class WorkFlow(object):
 
         mapped_smiles = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
         mapped_mol = chemi.smiles_to_oemol(mapped_smiles)
+        needed_torsions = torsions.find_torsions(mapped_mol, options['restricted'])
 
-        if options['torsiondrive_options'].pop('max_conf') == 1:
-            # Generate 1 conformation for all jobs
+        if options['multiple_confs']:
+            # Generate grid of multiple conformers
+            dihedrals = []
+            for torsion_type in needed_torsions:
+                for tor in needed_torsions[torsion_type]:
+                    dihedrals.append(needed_torsions[torsion_type][tor])
+            intervals = options['initial_conf_grid_resolution']
+            if not isinstance(intervals, list):
+                intervals = [intervals]*len(dihedrals)
             try:
-                mol_conf = chemi.generate_conformers(mapped_mol, max_confs=1, strict_stereo=True)
-                qm_mol = mol_to_map_ordered_qcschema(mol_conf, mol_id)
+                conformers = chemi.generate_grid_conformers(mapped_mol, dihedrals=dihedrals, intervals=intervals)
             except RuntimeError:
                 utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
                               "{} will not be included in fragments dictionary".format(
                         mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
-                return None
+                return False
+
+            chemi.resolve_clashes(conformers)
+            qcschema_molecules = [mol_to_map_ordered_qcschema(conf, mol_id) for conf in conformers.GetConfs()]
+        try:
+            conformer = chemi.generate_conformers(mapped_mol, max_confs=1)
+            # resolve clashes
+            qcschema_molecule = mol_to_map_ordered_qcschema(conformer, mol_id)
+        except RuntimeError:
+            utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
+                              "{} will not be included in fragments dictionary".format(
+                        mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
+            return False
 
         identifier = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
         torsiondrive_inputs = {identifier: {'torsiondrive_input': {}, 'provenance': provenance}}
-        restricted = options.pop('restricted')
-        needed_torsions = torsions.find_torsions(mapped_mol, restricted)
         restricted_torsions = needed_torsions.pop('restricted')
-        optimization_jobs = torsions.generate_constraint_opt_input(qm_mol, restricted_torsions,
+
+        optimization_jobs = torsions.generate_constraint_opt_input(qcschema_molecule, restricted_torsions,
                                                              **options['restricted_optimization_options'])
 
+        torsiondrive_inputs[identifier]['optimization_input'] = optimization_jobs
         torsiondrive_jobs = torsions.define_torsiondrive_jobs(needed_torsions, **options['torsiondrive_options'])
 
+        if options['multiple_confs']:
+            qcschema_molecule = qcschema_molecules
+
+        # Currently, all jobs are started from same initial conformation
+        # ToDo Start later job from optimized conformers from last job
         for i, job in enumerate(torsiondrive_jobs):
             torsiondrive_input = {'type': 'torsiondrive_input'}
-            torsiondrive_input['initial_molecule'] = qm_mol
+            torsiondrive_input['initial_molecule'] = qcschema_molecule
             #torsiondrive_input['initial_molecule']['identifiers'] = mol_id
             torsiondrive_input['dihedrals'] = torsiondrive_jobs[job]['dihedrals']
             torsiondrive_input['grid_spacing'] = torsiondrive_jobs[job]['grid_spacing']
@@ -255,8 +278,6 @@ class WorkFlow(object):
                 else:
                     job_name += '{}'.format(torsion)
             torsiondrive_inputs[identifier]['torsiondrive_input'][job_name] = torsiondrive_input
-
-        torsiondrive_inputs[identifier]['optimization_input'] = optimization_jobs
 
         if json_filename:
             with open(json_filename, 'w') as f:

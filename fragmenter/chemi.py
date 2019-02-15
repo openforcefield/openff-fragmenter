@@ -1,7 +1,7 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
 
 try:
-    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac
+    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac, oeszybki
 except ImportError:
     raise Warning("Need license for OpenEye!")
 
@@ -219,6 +219,82 @@ def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, c
 
     restore_map(conf_mol)
     return conf_mol
+
+
+def resolve_clashes(mol):
+    """
+    Taken from quanformer (https://github.com/MobleyLab/quanformer/blob/master/quanformer/initialize_confs.py#L54
+    Minimize conformers with severe steric interaction.
+    Parameters
+    ----------
+    mol : single OEChem molecule (single conformer)
+    clashfile : string
+        name of file to write output
+    Returns
+    -------
+    boolean
+        True if completed successfully, False otherwise.
+    """
+
+    # set general energy options along with the single-point specification
+    spSzybki = oeszybki.OESzybkiOptions()
+    spSzybki.SetForceFieldType(oeszybki.OEForceFieldType_MMFF94S)
+    spSzybki.SetSolventModel(oeszybki.OESolventModel_Sheffield)
+    spSzybki.SetRunType(oeszybki.OERunType_SinglePoint)
+
+    # generate the szybki MMFF94 engine for single points
+    szSP = oeszybki.OESzybki(spSzybki)
+
+    # construct minimiz options from single-points options to get general optns
+    optSzybki = oeszybki.OESzybkiOptions(spSzybki)
+
+    # now reset the option for minimization
+    optSzybki.SetRunType(oeszybki.OERunType_CartesiansOpt)
+
+    # generate szybki MMFF94 engine for minimization
+    szOpt = oeszybki.OESzybki(optSzybki)
+    # add strong harmonic restraints to nonHs
+
+    szOpt.SetHarmonicConstraints(10.0)
+    # construct a results object to contain the results of a szybki calculation
+
+    szResults = oeszybki.OESzybkiResults()
+    # work on a copy of the molecule
+    tmpmol = oechem.OEMol(mol)
+    if not szSP(tmpmol, szResults):
+        print('szybki run failed for %s' % tmpmol.GetTitle())
+        return False
+    Etotsp = szResults.GetTotalEnergy()
+    Evdwsp = szResults.GetEnergyTerm(oeszybki.OEPotentialTerms_MMFFVdW)
+    if Evdwsp > 35:
+        if not szOpt(tmpmol, szResults):
+            print('szybki run failed for %s' % tmpmol.GetTitle())
+            return False
+        Etot = szResults.GetTotalEnergy()
+        Evdw = szResults.GetEnergyTerm(oeszybki.OEPotentialTerms_MMFFVdW)
+        # wfile = open(clashfile, 'a')
+        # wfile.write(
+        #     '%s resolved bad clash: initial vdW: %.4f ; '
+        #     'resolved EvdW: %.4f\n' % (tmpmol.GetTitle(), Evdwsp, Evdw))
+        # wfile.close()
+        mol.SetCoords(tmpmol.GetCoords())
+    oechem.OESetSDData(mol, oechem.OESDDataPair('MM Szybki Single Point Energy', "%.12f" % szResults.GetTotalEnergy()))
+    return True
+
+
+def remove_clash(multi_conformer, in_place=True):
+    # resolve clashes
+    if not in_place:
+        multi_conformer = copy.deepcopy(multi_conformer)
+    confs_to_remove = []
+    for conf in multi_conformer.GetConfs():
+        if not resolve_clashes(conf):
+            confs_to_remove.append(conf)
+    for i in confs_to_remove:
+        multi_conformer.DeleteConf(i)
+
+    if not in_place:
+        return multi_conformer
 
 
 def normalize_molecule(molecule, title=''):
@@ -867,21 +943,25 @@ def qcschema_to_xyz_format(qcschema, name=None, filename=None):
         qcschema molecule in xyz format
 
     """
+    if not isinstance(qcschema, list):
+        qcschema = [qcschema]
     xyz = ""
-    symbols = qcschema['symbols']
-    coords = qcschema['geometry']
-    coords = np.asarray(coords)*BOHR_2_ANGSTROM
-    xyz += "{}\n".format(len(symbols))
-    xyz += "{}\n".format(name)
-    for i, s in enumerate(symbols):
-        xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(s,
-                                                                  coords[i * 3],
-                                                                  coords[i * 3 + 1],
-                                                                  coords[i * 3 + 2])
+    for qcmol in qcschema:
+        symbols = qcmol['symbols']
+        coords = qcmol['geometry']
+        coords = np.asarray(coords)*BOHR_2_ANGSTROM
+        xyz += "{}\n".format(len(symbols))
+        xyz += "{}\n".format(name)
+        for i, s in enumerate(symbols):
+            xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(s,
+                                                                      coords[i * 3],
+                                                                      coords[i * 3 + 1],
+                                                                      coords[i * 3 + 2])
     if filename:
         with open(filename, 'w') as f:
-            f.write(filename)
-    return xyz
+            f.write(xyz)
+    else:
+        return xyz
 
 
 def qcschema_to_xyz_traj(final_molecule_grid, filename=None):
