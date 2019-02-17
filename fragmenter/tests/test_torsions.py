@@ -51,7 +51,7 @@ class TestTorsions(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        atom_map = get_atom_map(mol_1, tagged_smiles)
+        atom_map = get_atom_map(mol_1, tagged_smiles, strict=False)
 
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
@@ -68,7 +68,7 @@ class TestTorsions(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        atom_map = get_atom_map(mol_1, tagged_smiles)
+        atom_map = get_atom_map(mol_1, tagged_smiles, strict=False)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
@@ -101,7 +101,7 @@ class TestTorsions(unittest.TestCase):
         oechem.OEReadMolecule(ifs, mol_2)
 
         mol_1 = chemi.generate_conformers(mol_1, max_confs=1)
-        atom_map = get_atom_map(mol_1, tagged_smiles)
+        atom_map = get_atom_map(mol_1, tagged_smiles, strict=False)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
@@ -142,7 +142,8 @@ class TestTorsions(unittest.TestCase):
 
         crank_job = torsions.define_torsiondrive_jobs(test_crank['needed_torsion_drives'], terminal_torsion_resolution=60)
         self.assertEqual(crank_job['crank_job_0']['grid_spacing'], [30])
-        self.assertEqual(crank_job['crank_job_1']['grid_spacing'], [60, 60])
+        # Terminal torsions are now only in 1D if not combined with internal torsions
+        self.assertEqual(crank_job['crank_job_1']['grid_spacing'], [60])
 
 @using_openeye
 @pytest.mark.parametrize('central_bond', [(0, 1), (0, 2), (1, 3)])

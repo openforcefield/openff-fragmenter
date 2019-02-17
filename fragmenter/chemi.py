@@ -194,7 +194,7 @@ def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, c
     if copy_mol:
         molecule = copy.deepcopy(molecule)
     if cmiles.utils.has_atom_map(molecule):
-        remove_map(molecule)
+        cmiles.utils.remove_atom_map(molecule)
     else:
         raise ValueError("Molecule must have map indices")
 
@@ -217,7 +217,7 @@ def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, c
                 newconf = conf_mol.NewConf(coords)
                 oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], radians(angle))
 
-    restore_map(conf_mol)
+    cmiles.utils.restore_atom_map(conf_mol)
     return conf_mol
 
 

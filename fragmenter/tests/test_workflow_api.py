@@ -34,6 +34,7 @@ def test_workflow(fractal_compute_server):
     assert len(workflow.qcfractal_jobs[key]['optimization_input']) == 0
     assert len(workflow.qcfractal_jobs[key]['torsiondrive_input']) == 3
     assert len(workflow.qcfractal_jobs[key]['torsiondrive_input']['(0, 2, 3, 1)']['initial_molecule']) == 8
+
 # class TestWorkflow(unittest.TestCase):
 #
 #     def test_get_provenance(self):
