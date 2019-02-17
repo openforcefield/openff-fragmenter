@@ -766,33 +766,6 @@ These functions are used to keep the orders atoms consistent across different mo
 """
 
 
-def remove_map(molecule, keep_map_data=True):
-    """
-    Remove atom map but store it in atom data.
-    Parameters
-    ----------
-    molecule
-
-    Returns
-    -------
-
-    """
-    for atom in molecule.GetAtoms():
-        if atom.GetMapIdx() !=0:
-            if keep_map_data:
-                atom.SetData('MapIdx', atom.GetMapIdx())
-            atom.SetMapIdx(0)
-
-
-def restore_map(molecule):
-    """
-    Restore atom map from atom data
-    """
-    for atom in molecule.GetAtoms():
-        if atom.HasData('MapIdx'):
-            atom.SetMapIdx(atom.GetData('MapIdx'))
-
-
 def mol_to_tagged_smiles(infile, outfile):
     """
     Generate .smi from input mol with index-tagged explicit hydrogen SMILES
@@ -1278,7 +1251,7 @@ def bond_order_tag(molecule, atom_map, bond_order_array):
             bond.SetData(tag, mbo)
 
 
-def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
+def mol_to_image_atoms_label(mol, fname, map_idx=True, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
     """Write out png file of molecule with atoms labeled with their map index.
 
     Parameters
@@ -1291,9 +1264,10 @@ def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_
         If True, lable atoms with map index instead of atom index. If set to True, input SMILES must have map indices.
 
     """
+    if not isinstance(mol, oechem.OEMol) and isinstance(mol, str):
+        # Try converting smiles to mol
+        mol = cmiles.utils.load_molecule(mol, toolkit='openeye')
 
-    mol = oechem.OEGraphMol()
-    oechem.OESmilesToMol(mol, smiles)
     oedepict.OEPrepareDepiction(mol)
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
 
