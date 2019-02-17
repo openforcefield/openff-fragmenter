@@ -1,7 +1,7 @@
 from itertools import combinations
 import openeye as oe
 from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
-from cmiles.utils import mol_to_smiles, has_stereo_defined, has_atom_map
+from cmiles.utils import mol_to_smiles, has_stereo_defined, has_atom_map, remove_atom_map, restore_atom_map
 
 import yaml
 import os
@@ -13,7 +13,7 @@ import warnings
 import networkx as nx
 
 from .utils import logger, make_python_identifier
-from .chemi import to_smi, normalize_molecule, get_charges, remove_map, restore_map
+from .chemi import to_smi, normalize_molecule, get_charges
 
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
@@ -205,8 +205,9 @@ class Fragmenter(object):
 
     def __init__(self, molecule):
         if has_atom_map(molecule):
-            remove_map(molecule, keep_map_data=True)
+            remove_atom_map(molecule, keep_map_data=True)
         self.molecule = molecule
+        self._tag_fgroups()
         self._nx_graph = self._mol_to_graph()
         self._fragments = list()  # all possible fragments without breaking rings
 
@@ -217,15 +218,68 @@ class Fragmenter(object):
     def n_rotors(self):
         return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
 
+    def _tag_fgroups(self, fgroups_smarts=None):
+        """
+        This function tags atoms and bonds of functional groups defined in fgroup_smarts. fgroup_smarts is a dictionary
+        that maps functional groups to their smarts pattern. It can be user generated or from yaml file.
+
+        Parameters
+        ----------
+        mol: Openeye OEMolGraph
+        frgroups_smarts: dictionary of functional groups mapped to their smarts pattern.
+            Default is None. It uses 'fgroup_smarts.yaml'
+
+        Returns
+        -------
+        fgroup_tagged: dict
+            a dictionary that maps indexed functional groups to corresponding atom and bond indices in mol
+
+        """
+        if not fgroups_smarts:
+            # Load yaml file
+            fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts_comb.yml'))
+            f = open(fn, 'r')
+            fgroups_smarts = yaml.safe_load(f)
+            f.close()
+
+        fgroup_tagged = {}
+        for f_group in fgroups_smarts:
+            qmol = oechem.OEQMol()
+            if not oechem.OEParseSmarts(qmol, fgroups_smarts[f_group]):
+                print('OEParseSmarts failed')
+            ss = oechem.OESubSearch(qmol)
+            oechem.OEPrepareSearch(self.molecule, ss)
+
+            for i, match in enumerate(ss.Match(self.molecule, True)):
+                fgroup_atoms = set()
+                for ma in match.GetAtoms():
+                    fgroup_atoms.add(ma.target.GetIdx())
+                    tag = oechem.OEGetTag('fgroup')
+                    ma.target.SetData(tag, '{}_{}'.format(f_group, str(i)))
+                fgroup_bonds = set()
+                for ma in match.GetBonds():
+                    #if not ma.target.IsInRing():
+                    fgroup_bonds.add(ma.target.GetIdx())
+                    tag =oechem.OEGetTag('fgroup')
+                    ma.target.SetData(tag, '{}_{}'.format(f_group, str(i)))
+
+                fgroup_tagged['{}_{}'.format(f_group, str(i))] = (fgroup_atoms, fgroup_bonds)
+        return fgroup_tagged
+
     def _mol_to_graph(self):
 
         G = nx.Graph()
         for atom in self.molecule.GetAtoms():
             G.add_node(atom.GetIdx(), name=oechem.OEGetAtomicSymbol(atom.GetAtomicNum()), halogen=atom.IsHalogen())
         for bond in self.molecule.GetBonds():
+            # Check for functional group tags
+            try:
+                fgroup = bond.GetData('fgroup')
+            except ValueError:
+                fgroup = False
             G.add_edge(bond.GetBgnIdx(), bond.GetEndIdx(),  index=bond.GetIdx(),
                        aromatic=bond.IsAromatic(), in_ring=bond.IsInRing(), bond_order=bond.GetOrder(),
-                       rotor=bond.IsRotor())
+                       rotor=bond.IsRotor(), fgroup=fgroup)
         return G
 
     def _fragment_graph(self):
@@ -246,7 +300,8 @@ class Fragmenter(object):
         ebunch = []
         for node in self._nx_graph.edges:
             if not self._nx_graph.edges[node]['aromatic'] and not self._nx_graph.edges[node]['in_ring'] \
-                    and not (self._nx_graph.node[node[0]]['name'] == 'H' or self._nx_graph.node[node[-1]]['name'] == 'H'):
+                    and not (self._nx_graph.node[node[0]]['name'] == 'H' or self._nx_graph.node[node[-1]]['name'] == 'H')\
+                    and not (self._nx_graph.edges[node]['fgroup']):
                 ebunch.append(node)
 
         # Cut molecule
@@ -282,6 +337,7 @@ class Fragmenter(object):
             self._fragments.append(atom_bond_set)
 
     def fragment_all_bonds_not_in_ring_systems(self):
+        #ToDo - add option for fgroups
         subgraphs = self._fragment_graph()
         self._subgraphs_to_atom_bond_sets(subgraphs)
 
@@ -339,7 +395,7 @@ class Fragmenter(object):
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
 
         if restore_maps:
-            restore_map(fragment)
+            restore_atom_map(fragment)
         # check for stereo defined
         if not has_stereo_defined(fragment):
             # Try to convert to smiles and back. A molecule might look like it's missing stereo because of submol

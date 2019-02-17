@@ -6,7 +6,8 @@ import numpy as np
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import to_molecule_id
-from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema, has_stereo_defined
+from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema, restore_atom_map, has_atom_map
+from openeye import oechem
 import copy
 import warnings
 #import qcportal as portal
@@ -152,19 +153,20 @@ class WorkFlow(object):
             if not max_rotors:
                 max_rotors = fragmenter.n_rotors + 1
             min_heavy_atoms = options['combinatorial']['min_heavy_atoms']
-            methyl_cap = options['combinatorial']['cap']
             fragmenter.combine_fragments(min_rotors=min_rotors, max_rotors=max_rotors, min_heavy_atoms=min_heavy_atoms)
             if generate_vis:
                 fname = '{}.pdf'.format(parent_molecule.GetTitle())
                 fragmenter.depict_fragment_combinations(fname=fname)
-            fragments = list(fragmenter.fragment_combinations.keys())
+            fragments = fragmenter.fragment_combinations
+
         elif options['depth_first_search']:
             fragments = fragment.generate_fragments(parent_molecule, generate_vis, **options['depth_first_search'])
             if not fragments:
                 warnings.warn("No fragments were generated for {}".format(parent_molecule_smiles))
                 return
             # convert to list
-            fragments = fragments[list(fragments.keys())[0]]
+            #fragments = fragments[list(fragments.keys())[0]]
+
 
         if self.states:
             # Check if current state exists
@@ -175,13 +177,17 @@ class WorkFlow(object):
 
         # Generate identifiers for fragments
         fragments_json_dict = {}
-        for fragm in fragments:
-            for i, frag in enumerate(fragments[fragm]):
-                identifiers = to_molecule_id(frag, canonicalization='openeye')
-                frag = identifiers['canonical_isomeric_smiles']
-                fragments_json_dict[frag] = {'identifiers': identifiers}
-                fragments_json_dict[frag]['provenance'] = provenance
-                fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
+        for frag in fragments:
+            for mol in fragments[frag]:
+                restore_atom_map(mol)
+            identifiers = to_molecule_id(frag, canonicalization='openeye')
+            frag = identifiers['canonical_isomeric_smiles']
+            fragments_json_dict[frag] = {'identifiers': identifiers}
+            fragments_json_dict[frag]['provenance'] = copy.deepcopy(provenance)
+            fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
+            if has_atom_map(mol):
+                restored_map = oechem.OEMolToSmiles(mol)
+                fragments_json_dict[frag]['provenance']['routine']['enumerate_fragments']['map_to_parent'] = restored_map
 
         if json_filename:
             with open(json_filename, 'w') as f:
