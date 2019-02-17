@@ -203,11 +203,11 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
 
 class Fragmenter(object):
 
-    def __init__(self, molecule):
+    def __init__(self, molecule, functional_groups=None):
         if has_atom_map(molecule):
             remove_atom_map(molecule, keep_map_data=True)
         self.molecule = molecule
-        self._tag_fgroups()
+        self._tag_fgroups(functional_groups)
         self._nx_graph = self._mol_to_graph()
         self._fragments = list()  # all possible fragments without breaking rings
 
@@ -218,7 +218,7 @@ class Fragmenter(object):
     def n_rotors(self):
         return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
 
-    def _tag_fgroups(self, fgroups_smarts=None):
+    def _tag_fgroups(self, functional_groups):
         """
         This function tags atoms and bonds of functional groups defined in fgroup_smarts. fgroup_smarts is a dictionary
         that maps functional groups to their smarts pattern. It can be user generated or from yaml file.
@@ -235,12 +235,17 @@ class Fragmenter(object):
             a dictionary that maps indexed functional groups to corresponding atom and bond indices in mol
 
         """
-        if not fgroups_smarts:
+        if functional_groups is None:
             # Load yaml file
             fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts_comb.yml'))
-            f = open(fn, 'r')
-            fgroups_smarts = yaml.safe_load(f)
-            f.close()
+            with open(fn, 'r') as f:
+                fgroups_smarts = yaml.safe_load(f)
+        elif functional_groups is False:
+            # Don't tag fgroups
+            return
+        elif functional_groups:
+            with open(functional_groups, 'r') as f:
+                fgroups_smarts = yaml.safe_load(f)
 
         fgroup_tagged = {}
         for f_group in fgroups_smarts:

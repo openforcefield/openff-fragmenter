@@ -149,7 +149,7 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
         omega = oeomega.OEOmega()
 
     if cmiles.utils.has_atom_map(molcopy):
-        remove_map(molcopy)
+        cmiles.utils.remove_atom_map(molcopy)
 
     # These parameters were chosen to match http://docs.eyesopen.com/toolkits/cookbook/python/modeling/am1-bcc.html
     omega.SetMaxConfs(max_confs)
@@ -171,7 +171,7 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     if not status:
         raise(RuntimeError("omega returned error code %d" % status))
 
-    restore_map(molcopy)
+    cmiles.utils.restore_atom_map(molcopy)
 
     return molcopy
 
