@@ -51,7 +51,7 @@ class TestTorsions(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        atom_map = get_atom_map(mol_1, tagged_smiles, strict=False)
+        atom_map = get_atom_map(mol_1, tagged_smiles)
 
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
@@ -68,7 +68,7 @@ class TestTorsions(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        atom_map = get_atom_map(mol_1, tagged_smiles, strict=False)
+        atom_map = get_atom_map(mol_1, tagged_smiles)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
@@ -101,7 +101,7 @@ class TestTorsions(unittest.TestCase):
         oechem.OEReadMolecule(ifs, mol_2)
 
         mol_1 = chemi.generate_conformers(mol_1, max_confs=1)
-        atom_map = get_atom_map(mol_1, tagged_smiles, strict=False)
+        atom_map = get_atom_map(mol_1, tagged_smiles)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
