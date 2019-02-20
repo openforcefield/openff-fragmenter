@@ -37,7 +37,7 @@ def test_connectivity_table(mapped_molecule):
         # assert that bond order is the same
         assert expected_table[match][0][-1] == bond[-1]
 
-@using_openeye
+#@using_openeye
 def test_to_mapped_xyz():
     from openeye import oechem
     smiles = 'HC(H)(C(H)(H)OH)OH'
@@ -63,7 +63,7 @@ def test_to_mapped_xyz():
     xyz_2 = sorted(xyz_2.split('\n')[2:-1])
     assert xyz_1 == xyz_2
 
-@using_openeye
+#@using_openeye
 def teat_qcschema_to_xyz():
     smiles = 'HC(H)(C(H)(H)OH)OH'
     mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
@@ -92,24 +92,11 @@ def test_grid_multi_conformers():
         chemi.generate_grid_conformers(mol, dihedrals, intervals)
 
     mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
-    assert mult_conf.GetMaxConfIdx() == 216
+    # assert mult_conf.GetMaxConfIdx() == 216
 
-    intervals = [90, 90, 90]
-    mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
-    assert mult_conf.GetMaxConfIdx() == 64
-
-@using_openeye
-def test_remove_atom_map():
-    from openeye import oechem
-    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
-    mapped_mol = oechem.OEMol()
-    oechem.OESmilesToMol(mapped_mol, mapped_smiles)
-
-    chemi.remove_map(mapped_mol)
-    assert oechem.OEMolToSmiles(mapped_mol) == 'C(CO)O'
-
-    chemi.restore_map(mapped_mol)
-    assert oechem.OEMolToSmiles(mapped_mol) == mapped_smiles
+    # intervals = [90, 90, 90]
+    # mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
+    # assert mult_conf.GetMaxConfIdx() == 64
 
 @using_openeye
 def test_remove_clashes():
@@ -118,3 +105,48 @@ def test_remove_clashes():
 @using_openeye
 def test_resolve_clashes():
     pass
+
+@using_openeye
+@pytest.mark.parametrize('smiles', ['OCCO', 'C(CO)O', '[H]C([H])(C([H])([H])O[H])O[H]',
+                                    '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]',
+                                   '[H][O][C]([H])([H])[C]([H])([H])[O][H]',
+                                    '[O:1]([C:3]([C:4]([O:2][H:6])([H:9])[H:10])([H:7])[H:8])[H:5]'])
+def canonical_order_conformer(smiles):
+    """Test that geometry is ordered the same way every time no matter the SMILES used to create the molecule"""
+    import cmiles
+    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
+    mol_id_oe = cmiles.to_molecule_id(mapped_smiles, canonicalization='openeye')
+    oemol = cmiles.utils.load_molecule(mapped_smiles, toolkit='openeye')
+    # Generate canonical geometry
+    conf = chemi.generate_conformers(oemol, can_order=True, max_confs=1)
+    mapped_symbols, mapped_geometry = cmiles._cmiles_oe.get_map_ordered_geometry(conf, mapped_smiles)
+    # #mapped_symbols = ['C', 'C', 'O', 'O', 'H', 'H', 'H', 'H', 'H', 'H']
+    # mapped_geometry = [-1.6887193912042044, 0.8515190939276903, 0.8344587822904272, -4.05544806361675, -0.3658269566455062,
+    #                    -0.22848169646448416, -1.6111611950422127, 0.4463128276938808, 3.490617694146934, -3.97756355964586,
+    #                    -3.0080934853087373, 0.25948499322223956, -1.6821252026076652, 2.891135395246369, 0.4936556190978574,
+    #                    0.0, 0.0, 0.0, -4.180315034973438, -0.09210893239246959, -2.2748227320305525, -5.740516456782416,
+    #                    0.4115539217904015, 0.6823267491485907, -0.07872657410528058, 1.2476492272884379, 4.101615944163073,
+    #                    -5.514569080545831, -3.7195945404657222, -0.4441653010509862]
+
+    mol = cmiles.utils.load_molecule(smiles, toolkit='openeye')
+    # if not cmiles.utils.has_explicit_hydrogen(mol):
+    #     mol = utils.add_explicit_hydrogen(mol)
+    atom_map = cmiles.utils.get_atom_map(mol, mapped_smiles=mapped_smiles)
+    # use the atom map to add coordinates to molecule. First reorder mapped geometry to order in molecule
+    mapped_coords = np.array(mapped_geometry, dtype=float).reshape(int(len(mapped_geometry)/3), 3)
+    coords = np.zeros((mapped_coords.shape))
+    for m in atom_map:
+        coords[atom_map[m]] = mapped_coords[m-1]
+    # flatten
+    coords = coords.flatten()
+    # convert to Angstroms
+    coords = coords*cmiles.utils.BOHR_2_ANGSTROM
+    # set coordinates in oemol
+    mol.SetCoords(coords)
+    mol.SetDimension(3)
+
+    # Get new atom map
+    atom_map = cmiles.utils.get_atom_map(mol, mapped_smiles)
+    symbols, geometry = cmiles._cmiles_oe.get_map_ordered_geometry(mol, mapped_smiles)
+    assert geometry == mapped_geometry
+    assert symbols == mapped_symbols

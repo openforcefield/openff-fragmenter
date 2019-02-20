@@ -113,7 +113,6 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     return charged_copy
 
 
-
 def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
                         can_order=True, copy=True):
     """Generate conformations for the supplied molecule
@@ -148,7 +147,9 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     else:
         omega = oeomega.OEOmega()
 
+    atom_map = False
     if cmiles.utils.has_atom_map(molcopy):
+        atom_map = True
         cmiles.utils.remove_atom_map(molcopy)
 
     # These parameters were chosen to match http://docs.eyesopen.com/toolkits/cookbook/python/modeling/am1-bcc.html
@@ -171,7 +172,8 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     if not status:
         raise(RuntimeError("omega returned error code %d" % status))
 
-    cmiles.utils.restore_atom_map(molcopy)
+    if atom_map:
+        cmiles.utils.restore_atom_map(molcopy)
 
     return molcopy
 
@@ -193,10 +195,8 @@ def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, c
     # molecule must be mapped
     if copy_mol:
         molecule = copy.deepcopy(molecule)
-    if cmiles.utils.has_atom_map(molecule):
-        cmiles.utils.remove_atom_map(molecule)
-    else:
-        raise ValueError("Molecule must have map indices")
+    if cmiles.utils.is_missing_atom_map(molecule):
+        raise ValueError("Molecule must have atom indices")
 
     # Check length of dihedrals match length of intervals
 
