@@ -1013,7 +1013,62 @@ def tag_conjugated_bond(mol, tautomers=None, tag=None, threshold=1.05):
     return atom_indices
 
 
-def highlight_bonds(mol_copy, fname, conjugation=True, rotor=False, width=600, height=400, label=None):
+def highlight_bond_by_map_idx(mol, bond_map_idx, fname, width=600, height=400, wbo=None):
+    """
+
+    Parameters
+    ----------
+    mol
+    bonds: list of tuples
+        tuples should be map idx of atoms in bond
+    fname
+
+    Returns
+    -------
+
+    """
+    mol = cmiles.utils.load_molecule(mol, toolkit='openeye')
+    # make copy
+    mol = oechem.OEMol(mol)
+    # make sure mol has atom map
+    if not cmiles.utils.has_atom_map(mol):
+        raise ValueError("molecule needs atom map")
+    atom_bond_set = oechem.OEAtomBondSet()
+    if not isinstance(bond_map_idx, list):
+        bond_map_idx = [bond_map_idx]
+    for bond in bond_map_idx:
+        a1 = mol.GetAtom(oechem.OEHasMapIdx(bond[0]))
+        a2 = mol.GetAtom(oechem.OEHasMapIdx(bond[1]))
+        b = mol.GetBond(a1, a2)
+        if wbo:
+            b.SetData('WibergBondOrder', wbo)
+        if not b:
+            raise RuntimeError("{} is not connected in molecule".format(bond))
+        atom_bond_set.AddAtom(a1)
+        atom_bond_set.AddAtom(a2)
+        atom_bond_set.AddBond(b)
+
+    dopt = oedepict.OEPrepareDepictionOptions()
+    dopt.SetSuppressHydrogens(True)
+    oedepict.OEPrepareDepiction(mol, dopt)
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+
+    if wbo is not None:
+        opts.SetBondPropertyFunctor(LabelWibergBondOrder())
+
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+
+    hstyle = oedepict.OEHighlightStyle_BallAndStick
+    hcolor = oechem.OEColor(oechem.OELightBlue)
+    oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+
+    return oedepict.OERenderMolecule(fname, disp)
+
+
+def highlight_bonds_with_label(mol_copy, fname, conjugation=True, rotor=False, width=600, height=400, label=None):
     """
     Generate image of molecule with highlighted bonds. The bonds can either be highlighted with a conjugation tag
     or if it is rotatable.
@@ -1268,6 +1323,7 @@ def mol_to_image_atoms_label(mol, fname, map_idx=True, width=600, height=400, la
         # Try converting smiles to mol
         mol = cmiles.utils.load_molecule(mol, toolkit='openeye')
 
+    mol = oechem.OEMol(mol)
     oedepict.OEPrepareDepiction(mol)
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
 
@@ -1362,9 +1418,11 @@ class LabelWibergBondOrder(oedepict.OEDisplayBondPropBase):
         oedepict.OEDisplayBondPropBase.__init__(self)
 
     def __call__(self, bond):
-        bondOrder = bond.GetData('WibergBondOrder')
-        label = "{:.2f}".format(bondOrder)
-        return label
+        if 'WibergBondOrder' in bond.GetData():
+            bondOrder = bond.GetData('WibergBondOrder')
+            label = "{:.3f}".format(bondOrder)
+            return label
+        return ' '
 
     def CreateCopy(self):
         copy = LabelWibergBondOrder()
