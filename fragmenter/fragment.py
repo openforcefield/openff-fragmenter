@@ -205,6 +205,7 @@ class Fragmenter(object):
 
     def __init__(self, molecule, functional_groups=None):
         if has_atom_map(molecule):
+            print('removing atom map')
             remove_atom_map(molecule, keep_map_data=True)
         self.molecule = molecule
         self._tag_fgroups(functional_groups)
@@ -404,12 +405,15 @@ class Fragmenter(object):
         # check for stereo defined
         if not has_stereo_defined(fragment):
             # Try to convert to smiles and back. A molecule might look like it's missing stereo because of submol
+            # first restore atom map so map on mol is not lost
+            restore_atom_map(fragment)
             new_smiles = oechem.OEMolToSmiles(fragment)
             fragment = oechem.OEMol()
             oechem.OESmilesToMol(fragment, new_smiles)
             # add explicit H
             oechem.OEAddExplicitHydrogens(fragment)
             oechem.OEPerceiveChiral(fragment)
+            remove_atom_map(fragment, keep_map_data=True)
             # If it's still missing stereo, expand states
             if not has_stereo_defined(fragment):
                 if expand_stereoisomers:
