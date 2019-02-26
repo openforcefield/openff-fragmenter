@@ -7,6 +7,9 @@ from fragmenter import workflow_api, chemi
 from fragmenter.tests.utils import get_fn, has_crank, has_openeye
 import json
 import copy
+
+# Import QCFractal and bounce if not available
+qcfractal = pytest.importorskip("qcfractal")
 from qcfractal import testing
 from qcfractal.testing import fractal_compute_server
 
