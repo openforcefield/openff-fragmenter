@@ -217,6 +217,7 @@ class Fragmenter(object):
         self.fragment_combinations = {} # Dict that maps SMILES to all equal combined fragments
         self.rotors_wbo = {}
         self.ring_systems = {}
+        self.fragments = {}
 
     @property
     def n_rotors(self):
@@ -277,10 +278,19 @@ class Fragmenter(object):
                         bond.SetData(tag, ringidx)
             self.ring_systems[ringidx] = (ringidx_atoms, ringidx_bonds)
 
-    def compare_wbo(self, fragment):
-        pass
+    def compare_wbo(self, fragment, bond_tuple):
 
-    def get_bond(self, bond_tuple):
+        restore_atom_map(fragment)
+        charged_fragment = get_charges(fragment)
+        # Get new WBO
+        a1 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
+        a2 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[-1]))
+        bond = charged_fragment.GetBond(a1, a2)
+        frag_wbo = bond.GetData('WibergBondOrder')
+        mol_wbo = self.rotors_wbo[bond_tuple]
+        return abs(mol_wbo - frag_wbo)
+
+    def get_bond(self, bond_tuple, threshold=0.02):
         """
         Get bond in molecule by atom indices of atom A and atom B
 
@@ -329,8 +339,31 @@ class Fragmenter(object):
                 # Grab the ring
                 ring_idx = a.GetData('ringsystem')
                 atom_map_idx.update(self.ring_systems[ring_idx][0])
+                bond_tuples.update(self.ring_systems[ring_idx][-1])
+            if 'fgroup' in a.GetData():
+                # Grab rest of fgroup
+                fgroup = a.GetData('fgroup')
+                atom_map_idx.update(self.fgroups[fgroup][0])
+                bond_tuples.update(self.fgroups[fgroup][-1])
+        atom_bond_set = self._to_atom_bond_set(atom_map_idx, bond_tuples)
+        fragment_mol = self.frag_to_mol(atom_bond_set, expand_stereoisomers=False)
+        if self.compare_wbo(fragment_mol, bond_tuple) > threshold:
+            #ToDo add on by bond with greatest WBO
+            pass
+        self.fragments[bond_tuple] = fragment_mol
 
-
+    def _to_atom_bond_set(self, atoms, bonds):
+        atom_bond_set = oechem.OEAtomBondSet()
+        for a_mdx in atoms:
+            atom = self.molecule.GetAtom(oechem.OEHasMapIdx(a_mdx))
+            atom_bond_set.AddAtom(atom)
+        for b_tuple in bonds:
+            a1 = self.molecule.GetAtom(oechem.OEHasMapIdx(b_tuple[0]))
+            a2 = self.molecule.GetAtom(oechem.OEHasMapIdx(b_tuple[-1]))
+            bond = self.molecule.GetBond(a1, a2)
+            if not bond:
+                raise ValueError("{} is a disconnected bond".format(b_tuple))
+        return atom_bond_set
 
     def _tag_fgroups(self, functional_groups):
         #ToDo clean up to use different yaml files for combinatorial vs. robust fragmentation
