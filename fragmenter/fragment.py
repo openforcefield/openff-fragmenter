@@ -1,7 +1,7 @@
 from itertools import combinations
 import openeye as oe
 from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
-from cmiles.utils import mol_to_smiles, has_stereo_defined, has_atom_map, remove_atom_map, restore_atom_map
+from cmiles.utils import mol_to_smiles, has_stereo_defined, has_atom_map, is_missing_atom_map, remove_atom_map, restore_atom_map
 
 import yaml
 import os
@@ -205,21 +205,135 @@ class Fragmenter(object):
 
     def __init__(self, molecule, functional_groups=None):
         if has_atom_map(molecule):
-            print('removing atom map')
+            # This is done for the combinatorial fragmentation. I should move this inside the combinatorial fragmentation
             remove_atom_map(molecule, keep_map_data=True)
         self.molecule = molecule
+        self.fgroups = {}
         self._tag_fgroups(functional_groups)
         self._nx_graph = self._mol_to_graph()
         self._fragments = list()  # all possible fragments without breaking rings
 
         self._fragment_combinations = list() # AtomBondSets of combined fragments. Used internally to generate PDF
         self.fragment_combinations = {} # Dict that maps SMILES to all equal combined fragments
+        self.rotors_wbo = {}
+        self.ring_systems = {}
 
     @property
     def n_rotors(self):
         return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
 
+    def calculate_wbo(self, fragment=None):
+        if not fragment:
+            self.molecule = get_charges(self.molecule)
+        else:
+            fragment = get_charges(fragment)
+        return fragment
+
+    def _get_rotor_wbo(self):
+        # Should we consider all bonds not in rings or not terminal as rotors?
+        # First check if WBO was already calculated
+        if 'nrotor' not in self.molecule.GetData() and 'cputime' not in self.molecule.GetData():
+            logger().info("WBO was not calculated for this molecule. Calculating WBO...")
+            self.calculate_wbo()
+        for bond in self.molecule.GetBonds():
+            if bond.IsRotor():
+                a1 = bond.GetBgn()
+                a2 = bond.GetEnd()
+                self.rotors_wbo[(a1.GetData('MapIdx')), a2.GetData('MapIdx')] = bond.GetData('WibergBondOrder')
+
+    def _find_ring_systems(self):
+
+        """
+        This function tags ring atom and bonds with ringsystem index
+
+        Parameters
+        ----------
+        mol: OpenEye OEMolGraph
+
+        Returns
+        -------
+        tagged_rings: dict
+            maps ringsystem index to ring atom and bond indices
+
+        """
+        nringsystems, parts = oechem.OEDetermineRingSystems(self.molecule)
+        for ringidx in range(1, nringsystems +1):
+            ringidx_atoms = set()
+            for atom in self.molecule.GetAtoms():
+                if parts[atom.GetIdx()] == ringidx:
+                    ringidx_atoms.add(atom.GetMapIdx())
+                    tag = oechem.OEGetTag('ringsystem')
+                    atom.SetData(tag, ringidx)
+            # Find bonds in ring and tag
+            ringidx_bonds = set()
+            for a_idx in ringidx_atoms:
+                atom = self.molecule.GetAtom(oechem.OEHasMapIdx(a_idx))
+                for bond in atom.GetBonds():
+                    nbrAtom = bond.GetNbr(atom)
+                    nbrIdx = nbrAtom.GetMapIdx()
+                    if nbrIdx in ringidx_atoms and nbrIdx != a_idx:
+                        ringidx_bonds.add(bond.GetIdx())
+                        tag = oechem.OEGetTag('ringsystem')
+                        bond.SetData(tag, ringidx)
+            self.ring_systems[ringidx] = (ringidx_atoms, ringidx_bonds)
+
+    def compare_wbo(self, fragment):
+        pass
+
+    def get_bond(self, bond_tuple):
+        """
+        Get bond in molecule by atom indices of atom A and atom B
+
+        Parameters
+        ----------
+        bond_tuple : tuple
+            (mapidx, mapidx)
+
+        Returns
+        -------
+        oechem.OEBondBase
+
+        """
+        if is_missing_atom_map(self.molecule):
+            restore_atom_map(self.molecule)
+        a1 = self.molecule.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
+        a2 = self.molecule.GetAtom(oechem.OEHasMapIdx(bond_tuple[-1]))
+        bond = self.molecule.GetBond(a1, a2)
+        if not bond:
+            raise ValueError("({}) atoms are not connected".format(bond_tuple))
+        return bond
+
+    def build_fragment(self, bond_tuple):
+        """
+        Build fragment around bond
+        Parameters
+        ----------
+        bond_tuple : tuple
+            tuple of atom maps of atoms in bond
+
+        Returns
+        -------
+
+        """
+        bond = self.get_bond(bond_tuple=bond_tuple)
+        atom_map_idx = set()
+        bond_tuples = set()
+        a1, a2 = bond.GetBgn(), bond.GetEnd()
+        m1, m2 = a1.GetMapIdx(), a2.GetMapIdx()
+        atom_map_idx.update(m1, m2)
+        bond_tuples.add((m1, m2))
+        for a in a1.GetAtoms():
+            m = a.GetMapIdx()
+            atom_map_idx.add(m)
+            if 'ringsystem' in a.GetData():
+                # Grab the ring
+                ring_idx = a.GetData('ringsystem')
+                atom_map_idx.update(self.ring_systems[ring_idx][0])
+
+
+
     def _tag_fgroups(self, functional_groups):
+        #ToDo clean up to use different yaml files for combinatorial vs. robust fragmentation
         """
         This function tags atoms and bonds of functional groups defined in fgroup_smarts. fgroup_smarts is a dictionary
         that maps functional groups to their smarts pattern. It can be user generated or from yaml file.
@@ -248,7 +362,6 @@ class Fragmenter(object):
             with open(functional_groups, 'r') as f:
                 fgroups_smarts = yaml.safe_load(f)
 
-        fgroup_tagged = {}
         for f_group in fgroups_smarts:
             qmol = oechem.OEQMol()
             if not oechem.OEParseSmarts(qmol, fgroups_smarts[f_group]):
@@ -259,7 +372,7 @@ class Fragmenter(object):
             for i, match in enumerate(ss.Match(self.molecule, True)):
                 fgroup_atoms = set()
                 for ma in match.GetAtoms():
-                    fgroup_atoms.add(ma.target.GetIdx())
+                    fgroup_atoms.add(ma.target.GetMapIdx())
                     tag = oechem.OEGetTag('fgroup')
                     ma.target.SetData(tag, '{}_{}'.format(f_group, str(i)))
                 fgroup_bonds = set()
@@ -269,8 +382,7 @@ class Fragmenter(object):
                     tag =oechem.OEGetTag('fgroup')
                     ma.target.SetData(tag, '{}_{}'.format(f_group, str(i)))
 
-                fgroup_tagged['{}_{}'.format(f_group, str(i))] = (fgroup_atoms, fgroup_bonds)
-        return fgroup_tagged
+                self.fgroups['{}_{}'.format(f_group, str(i))] = (fgroup_atoms, fgroup_bonds)
 
     def _mol_to_graph(self):
 
@@ -1182,7 +1294,7 @@ def _ring_substiuents(mol, bond, rotor_bond, tagged_rings, ring_idx, fgroup_tagg
     return rs_atoms, rs_bonds
 
 
-def frag_to_smiles(frags, mol, adjust_hcount=True, expand_stereoisomers=True):
+def frag_to_smiles(frags, mol, adjust_hcount=True, expand_stereoisomers=True, explicit_hydrogen=True):
     """
     Convert fragments (AtomBondSet) to canonical isomeric SMILES string
     Parameters
@@ -1238,7 +1350,7 @@ def frag_to_smiles(frags, mol, adjust_hcount=True, expand_stereoisomers=True):
                     s.append(sm)
             else:
                 # generate non isomeric smiles
-                s = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=explicit_hydrogens, isomeric=False)
+                s = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=False)
 
         #s = mol_to_smiles(fragment, mapped=False, explicit_hydrogen=True, isomeric=True)
         if not isinstance(s, list):
