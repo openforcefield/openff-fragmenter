@@ -204,9 +204,9 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
 class Fragmenter(object):
 
     def __init__(self, molecule, functional_groups=None):
-        if has_atom_map(molecule):
+        #if has_atom_map(molecule):
             # This is done for the combinatorial fragmentation. I should move this inside the combinatorial fragmentation
-            remove_atom_map(molecule, keep_map_data=True)
+        #    remove_atom_map(molecule, keep_map_data=True)
         self.molecule = molecule
         self.fgroups = {}
         self._tag_fgroups(functional_groups)
@@ -224,6 +224,19 @@ class Fragmenter(object):
         return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
 
     def calculate_wbo(self, fragment=None):
+        """
+        Calculate WBO
+        Parameters
+        ----------
+        fragment : oechem.OEMol
+            fragment to recalculate WBO. When fragment is None, fragmenter assumes it's the full molecule and saves the
+            calculated values in self.molecule
+
+        Returns
+        -------
+        fragment with WBOs
+
+        """
         if not fragment:
             self.molecule = get_charges(self.molecule)
         else:
@@ -242,7 +255,7 @@ class Fragmenter(object):
                 a2 = bond.GetEnd()
                 self.rotors_wbo[(a1.GetData('MapIdx')), a2.GetData('MapIdx')] = bond.GetData('WibergBondOrder')
 
-    def _find_ring_systems(self):
+    def _find_ring_systems(self, non_rotor_substituent=True):
 
         """
         This function tags ring atom and bonds with ringsystem index
@@ -273,10 +286,72 @@ class Fragmenter(object):
                     nbrAtom = bond.GetNbr(atom)
                     nbrIdx = nbrAtom.GetMapIdx()
                     if nbrIdx in ringidx_atoms and nbrIdx != a_idx:
-                        ringidx_bonds.add(bond.GetIdx())
+                        ringidx_bonds.add((a_idx, nbrIdx))
                         tag = oechem.OEGetTag('ringsystem')
                         bond.SetData(tag, ringidx)
+            non_rotor_atoms = set()
+            non_rotor_bond = set()
+            if non_rotor_substituent:
+                for m in ringidx_atoms:
+                    ring_atom = self.molecule.GetAtom(oechem.OEHasMapIdx(m))
+                    for a in ring_atom.GetAtoms():
+                        if a.GetMapIdx() not in ringidx_atoms and not a.IsHydrogen():
+                            # Check bond
+                            bond = self.molecule.GetBond(ring_atom, a)
+                            if not bond.IsRotor():
+                                # Add atom and bond to ring system
+                                non_rotor_atoms.add(a.GetMapIdx())
+                                non_rotor_bond.add((a.GetMapIdx(), m))
+            ringidx_atoms.update(non_rotor_atoms)
+            ringidx_bonds.update(non_rotor_bond)
             self.ring_systems[ringidx] = (ringidx_atoms, ringidx_bonds)
+
+    def _find_ortho_substituent(self, ring_idx, rot_bond):
+        """
+
+        Parameters
+        ----------
+        ring_idx :
+        rot_bond :
+
+        Returns
+        -------
+
+        """
+        # Get the ring atom
+        ring_atom = None
+        for m in rot_bond:
+            a = self.molecule.GetAtom(oechem.OEHasMapIdx(m))
+            if a.IsInRing() and m in self.ring_systems[ring_idx][0]:
+                ring_atom = a
+        if not ring_atom:
+            # rotatable bond is not directly bonded to this ring
+            return
+
+        # Get all atoms in the ring
+        ring_atoms = [self.molecule.GetAtom(oechem.OEHasMapIdx(i)) for i in self.ring_systems[ring_idx][0]]
+        ortho_atoms = set()
+        ortho_bonds = set()
+        for atom in ring_atoms:
+            for a in atom.GetAtoms():
+                if not a.IsHydrogen() and not a.GetMapIdx() in self.ring_systems[ring_idx]:
+                    # Check if atom is bonded to ring atom of rotatable bond
+                    if self.molecule.GetBond(atom, ring_atom):
+                        # This is an ortho group
+                        ortho_atoms.add(a.GetMapIdx())
+                        ortho_bonds.add((a.GetMapIdx(), atom.GetMapIdx()))
+                        # Check if substituent is part of functional group
+                        if 'fgroup' in a.GetData():
+                            fgroup = a.GetData('fgroup')
+                            ortho_atoms.update(self.fgroups[fgroup][0])
+                            ortho_bonds.update(self.fgroups[fgroup][-1])
+                        # Check if substituent is a ring
+                        if 'ringsystem' in a.GetData() and a.GetData('ringsystem') != ring_idx:
+                            ring_system = a.GetData('ringsystem')
+                            ortho_atoms.update(self.ring_systems[ring_system][0])
+                            ortho_bonds.update(self.ring_systems[ring_system][-1])
+        return ortho_atoms, ortho_bonds
+
 
     def compare_wbo(self, fragment, bond_tuple):
 
@@ -313,7 +388,7 @@ class Fragmenter(object):
             raise ValueError("({}) atoms are not connected".format(bond_tuple))
         return bond
 
-    def build_fragment(self, bond_tuple):
+    def build_fragment(self, bond_tuple, threshold=0.02):
         """
         Build fragment around bond
         Parameters
@@ -328,26 +403,46 @@ class Fragmenter(object):
         bond = self.get_bond(bond_tuple=bond_tuple)
         atom_map_idx = set()
         bond_tuples = set()
+        #bond_idx = set()
         a1, a2 = bond.GetBgn(), bond.GetEnd()
         m1, m2 = a1.GetMapIdx(), a2.GetMapIdx()
-        atom_map_idx.update(m1, m2)
+        atom_map_idx.update((m1, m2))
+        #bond = self.molecule.GetBond(a1, a2)
+        #bond_idx.add(bond.GetIdx())
         bond_tuples.add((m1, m2))
-        for a in a1.GetAtoms():
-            m = a.GetMapIdx()
-            atom_map_idx.add(m)
-            if 'ringsystem' in a.GetData():
-                # Grab the ring
-                ring_idx = a.GetData('ringsystem')
-                atom_map_idx.update(self.ring_systems[ring_idx][0])
-                bond_tuples.update(self.ring_systems[ring_idx][-1])
-            if 'fgroup' in a.GetData():
-                # Grab rest of fgroup
-                fgroup = a.GetData('fgroup')
-                atom_map_idx.update(self.fgroups[fgroup][0])
-                bond_tuples.update(self.fgroups[fgroup][-1])
+        for atom in (a1, a2):
+            for a in atom.GetAtoms():
+                m = a.GetMapIdx()
+                atom_map_idx.add(m)
+                bond = self.molecule.GetBond(atom, a)
+                #bond_idx.add(bond.GetIdx())
+                bond_tuples.add((atom.GetMapIdx(), m))
+                print(a.GetData())
+                if 'ringsystem' in a.GetData():
+                    # Grab the ring
+                    ring_idx = a.GetData('ringsystem')
+                    atom_map_idx.update(self.ring_systems[ring_idx][0])
+                    bond_tuples.update(self.ring_systems[ring_idx][-1])
+                    #bond_idx.update(self.ring_systems[ring_idx][-1])
+                    # Check for ortho substituents here
+                    print('bond tuple {}'.format(bond_tuple))
+                    ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond_tuple)
+                    if ortho:
+                        atom_map_idx.update(ortho[0])
+                        bond_tuples.update(ortho[1])
+                if 'fgroup' in a.GetData():
+                    # Grab rest of fgroup
+                    fgroup = a.GetData('fgroup')
+                    atom_map_idx.update(self.fgroups[fgroup][0])
+                    bond_tuples.update(self.fgroups[fgroup][-1])
+        print(atom_map_idx)
+        print(bond_tuples)
         atom_bond_set = self._to_atom_bond_set(atom_map_idx, bond_tuples)
         fragment_mol = self.frag_to_mol(atom_bond_set, expand_stereoisomers=False)
-        if self.compare_wbo(fragment_mol, bond_tuple) > threshold:
+        #return fragment_mol
+        diff = self.compare_wbo(fragment_mol, bond_tuple)
+        print(diff)
+        if diff > threshold:
             #ToDo add on by bond with greatest WBO
             pass
         self.fragments[bond_tuple] = fragment_mol
@@ -363,6 +458,7 @@ class Fragmenter(object):
             bond = self.molecule.GetBond(a1, a2)
             if not bond:
                 raise ValueError("{} is a disconnected bond".format(b_tuple))
+            atom_bond_set.AddBond(bond)
         return atom_bond_set
 
     def _tag_fgroups(self, functional_groups):
@@ -383,6 +479,9 @@ class Fragmenter(object):
             a dictionary that maps indexed functional groups to corresponding atom and bond indices in mol
 
         """
+        # Check for atom maps - it is used for finding atoms to tag
+        if is_missing_atom_map(self.molecule):
+            raise ValueError('Molecule is missing atom maps')
         if functional_groups is None:
             # Load yaml file
             fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts_comb.yml'))
@@ -411,7 +510,10 @@ class Fragmenter(object):
                 fgroup_bonds = set()
                 for ma in match.GetBonds():
                     #if not ma.target.IsInRing():
-                    fgroup_bonds.add(ma.target.GetIdx())
+                    m1 = ma.target.GetBgn().GetMapIdx()
+                    m2 = ma.target.GetEnd().GetMapIdx()
+                    fgroup_bonds.add((m1, m2))
+                    #fgroup_bonds.add(ma.target.GetIdx())
                     tag =oechem.OEGetTag('fgroup')
                     ma.target.SetData(tag, '{}_{}'.format(f_group, str(i)))
 
