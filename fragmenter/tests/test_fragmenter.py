@@ -143,3 +143,41 @@ def test_tag_fgroups():
             if b:
                 assert b.GetData('fgroup') == group
 
+@using_openeye
+def test_rotor_wbo():
+    from openeye import oechem
+    smiles ='[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]'
+    mol = oechem.OEMol()
+    oechem.OESmilesToMol(mol, smiles)
+    f = fragmenter.fragment.Fragmenter(mol)
+    assert f.rotors_wbo == {}
+    f._get_rotor_wbo()
+    assert list(f.rotors_wbo.keys()) == [(3, 4)]
+    assert round(f.rotors_wbo[(3, 4)], ndigits=3) ==  0.986
+
+
+@using_openeye
+def test_get_bond():
+    from openeye import oechem
+    smiles ='[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]'
+    mol = oechem.OEMol()
+    oechem.OESmilesToMol(mol, smiles)
+    f = fragmenter.fragment.Fragmenter(mol)
+    bond = f.get_bond(bond_tuple=(3, 4))
+    assert bond.IsRotor()
+
+@using_openeye
+def test_build_fragment():
+    pass
+
+def test_to_atom_bond_set():
+    pass
+
+def test_frag_to_mol():
+    pass
+
+def test_compare_wbo():
+    pass
+
+def test_find_ortho_substituent():
+    pass
