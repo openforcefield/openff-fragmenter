@@ -30,7 +30,8 @@
         "version": "v0.0.1",
         "restricted": true,
         "torsiondrive_options": {
-          "max_conf": 1,
+          "multiple_confs": 1,
+          "initial_conf_grid_resolution": 90,
           "terminal_torsion_resolution": 30,
           "internal_torsion_resolution": 30,
           "scan_internal_terminal_combination": 0,
