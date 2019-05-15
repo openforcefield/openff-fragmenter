@@ -5,7 +5,7 @@ import json
 import numpy as np
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
-from cmiles import to_molecule_id
+from cmiles import get_molecule_ids
 from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema, restore_atom_map, has_atom_map
 from openeye import oechem
 import copy
@@ -179,15 +179,31 @@ class WorkFlow(object):
         fragments_json_dict = {}
         for frag in fragments:
             for mol in fragments[frag]:
-                restore_atom_map(mol)
-            identifiers = to_molecule_id(frag, canonicalization='openeye')
-            frag = identifiers['canonical_isomeric_smiles']
-            fragments_json_dict[frag] = {'identifiers': identifiers}
-            fragments_json_dict[frag]['provenance'] = copy.deepcopy(provenance)
-            fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
-            if has_atom_map(mol):
-                restored_map = oechem.OEMolToSmiles(mol)
-                fragments_json_dict[frag]['provenance']['routine']['enumerate_fragments']['map_to_parent'] = restored_map
+                if isinstance(mol, oechem.OEMol):
+                    restore_atom_map(mol)
+                    identifiers = get_molecule_ids(frag, canonicalization='openeye')
+                    frag = identifiers['canonical_isomeric_smiles']
+                    fragments_json_dict[frag] = {'identifiers': identifiers}
+                    fragments_json_dict[frag]['provenance'] = provenance
+                    fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
+                    if has_atom_map(mol):
+                        fragments_json_dict[frag]['provenance']['routine']['enumerate_fragments']['map_to_parent'] = restored_map
+
+                else:
+                    identifiers = get_molecule_ids(mol, canonicalization='openeye')
+                    frag = identifiers['canonical_isomeric_smiles']
+                    fragments_json_dict[frag] = {'identifiers': identifiers}
+                    fragments_json_dict[frag]['provenance'] = provenance
+                    fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
+
+            # identifiers = (frag, canonicalization='openeye')
+            # frag = identifiers['canonical_isomeric_smiles']
+            # fragments_json_dict[frag] = {'identifiers': identifiers}
+            # fragments_json_dict[frag]['provenance'] = copy.deepcopy(provenance)
+            # fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
+            # if has_atom_map(mol):
+            #     restored_map = oechem.OEMolToSmiles(mol)
+            #     fragments_json_dict[frag]['provenance']['routine']['enumerate_fragments']['map_to_parent'] = restored_map
 
         if json_filename:
             with open(json_filename, 'w') as f:
@@ -216,7 +232,7 @@ class WorkFlow(object):
 
         """
 
-        options = self.off_workflow.get_options('torsiondrive_input')
+        options = self.off_workflow.get_options('torsiondrive_input')['options']
         provenance = _get_provenance(workflow_id=self.workflow_id, routine='torsiondrive_input')
         frag['provenance']['routine']['torsiondrive_input'] = provenance['routine']['torsiondrive_input']
         provenance = frag['provenance']
@@ -225,6 +241,7 @@ class WorkFlow(object):
 
         mapped_smiles = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
         mapped_mol = chemi.smiles_to_oemol(mapped_smiles)
+        print(options)
         needed_torsions = torsions.find_torsions(mapped_mol, options['restricted'])
 
         if options['multiple_confs']:
