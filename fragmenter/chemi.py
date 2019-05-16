@@ -605,9 +605,12 @@ def file_to_oemols(filename, title=True, verbose=False):
     #moldb = oechem.OEMolDatabase(ifs)
     mollist = []
 
-    molecule = oechem.OECreateOEGraphMol()
+    molecule = oechem.OEMol()
     while oechem.OEReadMolecule(ifs, molecule):
         molecule_copy = oechem.OEMol(molecule)
+        oechem.OEPerceiveChiral(molecule)
+        oechem.OE3DToAtomStereo(molecule)
+        oechem.OE3DToBondStereo(molecule)
         if title:
             title = molecule_copy.GetTitle()
             if verbose:
@@ -695,7 +698,7 @@ def oemols_to_smiles_list(OEMols, isomeric=True):
 
     SMILES = []
     for mol in OEMols:
-        SMILES.append(cmiles.to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=False, isomeric=isomeric))
+        SMILES.append(cmiles.utils.mol_to_smiles(mol, mapped=False, explicit_hydrogen=False, isomeric=isomeric))
 
     return SMILES
 
@@ -1268,7 +1271,7 @@ def bond_order_tag(molecule, atom_map, bond_order_array):
             bond.SetData(tag, mbo)
 
 
-def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
+def png_atoms_labeled(mol, fname, map_idx=True, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
     """Write out png file of molecule with atoms labeled with their map index.
 
     Parameters
@@ -1282,8 +1285,9 @@ def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_
 
     """
 
-    mol = oechem.OEGraphMol()
-    oechem.OESmilesToMol(mol, smiles)
+    if isinstance(mol, str):
+        mol = oechem.OEGraphMol()
+        oechem.OESmilesToMol(mol, smiles)
     oedepict.OEPrepareDepiction(mol)
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
 
@@ -1296,7 +1300,6 @@ def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_
     if not map_idx:
         opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
 
-    opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
     opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
     opts.SetAtomPropLabelFontScale(label_scale)
     opts.SetBondWidthScaling(scale_bondwidth)
