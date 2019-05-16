@@ -218,7 +218,7 @@ class WorkFlow(object):
             chemi.resolve_clashes(conformers)
         else:
             try:
-                max_confs = options['torsiondrive_options'].pop('max_conf')
+                max_confs = options['torsiondrive_options'].pop('max_confs')
                 conformers = chemi.generate_conformers(mapped_mol, max_confs=max_confs)
             except RuntimeError:
                 utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
