@@ -33,7 +33,7 @@ dependencies:
     # Pip depends
   - pip:
     - codecov
-    - git+git://github.com/openforcefield/cmiles.git@v0.1.3#egg=cmiles
+    - git+git://github.com/openforcefield/cmiles.git@v0.1.4#egg=cmiles
 
       # Fractal depends
     - git+git://github.com/MolSSI/QCFractal@v0.4.0a#egg=qcfractal

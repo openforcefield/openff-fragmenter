@@ -28,9 +28,9 @@
       "torsiondrive_input": {
         "version": "v0.0.1",
         "restricted": true,
-        "multiple_confs": 1,
         "initial_conf_grid_resolution": 180,
         "torsiondrive_options": {
+          "max_confs": 100,
           "terminal_torsion_resolution": 30,
           "internal_torsion_resolution": 30,
           "scan_internal_terminal_combination": 0,
@@ -42,29 +42,31 @@
         }
       },
       "torsiondrive_static_options": {
-        "torsiondrive_meta": {},
-        "optimization_meta": {
+        "optimization_spec": {
           "program": "geometric",
-          "coordsys": "tric"
+          "keywords": {
+            "coordsys": "tric"
+          }
         },
-        "qc_meta": {
+        "qc_spec": {
           "driver": "gradient",
           "method": "UFF",
           "basis": "",
-          "options": "none",
+          "keywords": null,
           "program": "rdkit"
-        }
+        },
+        "keywords": {}
       },
       "optimization_static_options":{
-        "optimization_meta": {
           "program": "geometric",
-          "coordsys": "tric"
-        },
-        "qc_meta":{
-          "driver": "gradient",
+          "keywords": {
+            "coordsys": "tric"
+          },
+        "qc_spec":{
+           "driver": "gradient",
           "method": "UFF",
           "basis": "",
-          "options": "none",
+          "keywords": null,
           "program": "rdkit"
         }
       }

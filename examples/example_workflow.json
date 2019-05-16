@@ -42,29 +42,92 @@
         }
       },
       "torsiondrive_static_options": {
-        "torsiondrive_meta": {},
-        "optimization_meta": {
+        "optimization_spec": {
           "program": "geometric",
-          "coordsys": "tric"
+          "keywords": {
+            "coordsys": "tric"
+          }
         },
-        "qc_meta": {
+        "qc_spec": {
           "driver": "gradient",
           "method": "UFF",
           "basis": "",
-          "options": "none",
+          "keywords": null,
           "program": "rdkit"
-        }
+        },
+        "keywords": {}
       },
       "optimization_static_options":{
-        "optimization_meta": {
           "program": "geometric",
-          "coordsys": "tric"
+          "keywords": {
+            "coordsys": "tric"
+          },
+        "qc_spec":{
+           "driver": "gradient",
+          "method": "UFF",
+          "basis": "",
+          "keywords": null,
+          "program": "rdkit"
+        }
+      }
+    }
+  },
+  "torsiondrive_input": {
+    "fragmenter": {
+      "enumerate_states": {
+        "version": "v0.0.1",
+        "options": {
+          "protonation": false,
+          "tautomers": false,
+          "stereoisomers": false,
+          "max_states": 0,
+          "level": 0,
+          "reasonable": true,
+          "carbon_hybridization": true,
+          "suppress_hydrogen": true
+        }
+      },
+      "torsiondrive_input": {
+        "version": "v0.0.1",
+        "restricted": false,
+        "torsiondrive_options": {
+          "max_conf": 10,
+          "terminal_torsion_resolution": 15,
+          "internal_torsion_resolution": 15,
+          "scan_internal_terminal_combination": 0,
+          "scan_dimension": 1
         },
-        "qc_meta":{
+        "restricted_optimization_options": {
+          "maximum_rotation": 30,
+          "interval": 5
+        }
+      },
+      "torsiondrive_static_options": {
+        "optimization_spec": {
+          "program": "geometric",
+          "keywords": {
+            "coordsys": "tric"
+          }
+        },
+        "qc_spec": {
           "driver": "gradient",
           "method": "UFF",
           "basis": "",
-          "options": "none",
+          "keywords": null,
+          "program": "rdkit"
+        },
+        "keywords": {}
+      },
+      "optimization_static_options":{
+          "program": "geometric",
+          "keywords": {
+            "coordsys": "tric"
+          },
+        "qc_spec":{
+           "driver": "gradient",
+          "method": "UFF",
+          "basis": "",
+          "keywords": null,
           "program": "rdkit"
         }
       }
