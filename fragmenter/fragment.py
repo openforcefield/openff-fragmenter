@@ -202,26 +202,66 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
 
 
 class Fragmenter(object):
+    #ToDo This should be a base class with separate classes for different fragmentation schemes
 
-    def __init__(self, molecule, functional_groups=None):
-        #if has_atom_map(molecule):
-            # This is done for the combinatorial fragmentation. I should move this inside the combinatorial fragmentation
-        #    remove_atom_map(molecule, keep_map_data=True)
+    def __init__(self, molecule, functional_groups=None, fragmentation_scheme='wbo'):
         self.molecule = molecule
         self.fgroups = {}
         self._tag_fgroups(functional_groups)
+        self.fragmentation_scheme = fragmentation_scheme
+
+        # attributes for combinatorial fragmentation
         self._nx_graph = self._mol_to_graph()
         self._fragments = list()  # all possible fragments without breaking rings
-
         self._fragment_combinations = list() # AtomBondSets of combined fragments. Used internally to generate PDF
         self.fragment_combinations = {} # Dict that maps SMILES to all equal combined fragments
+
+        # Attributes for fragmentation scheme
         self.rotors_wbo = {}
         self.ring_systems = {}
-        self.fragments = {}
+        self.fragments = {} # Fragments from fragmentation scheme for each rotatable bond
 
     @property
     def n_rotors(self):
         return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
+
+    def combinatorial_fragmentation(self, min_rotors=1, max_rotors=None, min_heavy_atoms=4):
+        """
+
+        Returns
+        -------
+
+        """
+        # Remove atom map and store it in data. This is needed to keep track of the fragments
+        if has_atom_map(self.molecule):
+            remove_atom_map(self.molecule, keep_map_data=True)
+        self.fragment_all_bonds_not_in_ring_systems()
+        if max_rotors is None:
+            max_rotors = self.n_rotors + 1
+        self.combine_fragments(min_rotors=min_rotors, max_rotors=max_rotors, min_heavy_atoms=min_heavy_atoms)
+
+
+    def fragment(self, heuristic='path_length', threshold=0.009, keep_non_rotor_ring_substituents=True):
+        """
+
+        Parameters
+        ----------
+        heuristic :
+        threshold :
+
+        Returns
+        -------
+
+        """
+        # Calculate WBO for molecule
+        self._get_rotor_wbo()
+        # Find ring systems
+        self._find_ring_systems(non_rotor_substituent=keep_non_rotor_ring_substituents)
+
+        # Build fragments
+        for bond in self.rotors_wbo:
+            self.build_fragment(bond, heuristic=heuristic, threshold=threshold)
+
 
     def calculate_wbo(self, fragment=None):
         """
@@ -243,17 +283,44 @@ class Fragmenter(object):
             fragment = get_charges(fragment)
         return fragment
 
+
+    def _find_rotatable_bonds(self):
+        """
+        Using SMARTS instead of OpenEye's built in IsRotor function so double bonds are also captured
+
+        Returns
+        -------
+
+        """
+        rotatable_bonds = []
+        smarts = '[!$(*#*)&!D1]-,=&!@[!$(*#*)&!D1]'
+        # Suppress H to avoid finding terminal bonds
+        copy_mol = oechem.OEMol(self.molecule)
+        oechem.OESuppressHydrogens(copy_mol)
+        oechem.OESuppressHydrogens(copy_mol)
+        qmol = oechem.OEQMol()
+        if not oechem.OEParseSmarts(qmol, smarts):
+            raise RuntimeError('Cannot parse SMARTS {}'.format(smarts))
+        ss = oechem.OESubSearch(qmol)
+        oechem.OEPrepareSearch(copy_mol, ss)
+        unique = True
+        for match in ss.Match(copy_mol, unique):
+            b = []
+            for ma in match.GetAtoms():
+                b.append(ma.target.GetMapIdx())
+            rotatable_bonds.append(tuple(b))
+        return rotatable_bonds
+
     def _get_rotor_wbo(self):
-        # Should we consider all bonds not in rings or not terminal as rotors?
-        # First check if WBO was already calculated
+
         if 'nrotor' not in self.molecule.GetData() and 'cputime' not in self.molecule.GetData():
             logger().info("WBO was not calculated for this molecule. Calculating WBO...")
             self.calculate_wbo()
-        for bond in self.molecule.GetBonds():
-            if bond.IsRotor():
-                a1 = bond.GetBgn()
-                a2 = bond.GetEnd()
-                self.rotors_wbo[(a1.GetData('MapIdx')), a2.GetData('MapIdx')] = bond.GetData('WibergBondOrder')
+        rotatable_bonds = self._find_rotatable_bonds()
+        for bond in rotatable_bonds:
+            b = self.get_bond(bond)
+            self.rotors_wbo[bond] = b.GetData('WibergBondOrder')
+
 
     def _find_ring_systems(self, non_rotor_substituent=True):
 
@@ -356,7 +423,7 @@ class Fragmenter(object):
     def compare_wbo(self, fragment, bond_tuple):
 
         restore_atom_map(fragment)
-        charged_fragment = get_charges(fragment)
+        charged_fragment = get_charges(fragment, strict_stereo=False)
         # Get new WBO
         a1 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
         a2 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[-1]))
@@ -365,7 +432,7 @@ class Fragmenter(object):
         mol_wbo = self.rotors_wbo[bond_tuple]
         return abs(mol_wbo - frag_wbo)
 
-    def get_bond(self, bond_tuple, threshold=0.02):
+    def get_bond(self, bond_tuple):
         """
         Get bond in molecule by atom indices of atom A and atom B
 
@@ -388,7 +455,7 @@ class Fragmenter(object):
             raise ValueError("({}) atoms are not connected".format(bond_tuple))
         return bond
 
-    def build_fragment(self, bond_tuple, threshold=0.02):
+    def build_fragment(self, bond_tuple, threshold=0.009, heuristic='path_length'):
         """
         Build fragment around bond
         Parameters
@@ -417,7 +484,6 @@ class Fragmenter(object):
                 bond = self.molecule.GetBond(atom, a)
                 #bond_idx.add(bond.GetIdx())
                 bond_tuples.add((atom.GetMapIdx(), m))
-                print(a.GetData())
                 if 'ringsystem' in a.GetData():
                     # Grab the ring
                     ring_idx = a.GetData('ringsystem')
@@ -425,7 +491,6 @@ class Fragmenter(object):
                     bond_tuples.update(self.ring_systems[ring_idx][-1])
                     #bond_idx.update(self.ring_systems[ring_idx][-1])
                     # Check for ortho substituents here
-                    print('bond tuple {}'.format(bond_tuple))
                     ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond_tuple)
                     if ortho:
                         atom_map_idx.update(ortho[0])
@@ -435,17 +500,73 @@ class Fragmenter(object):
                     fgroup = a.GetData('fgroup')
                     atom_map_idx.update(self.fgroups[fgroup][0])
                     bond_tuples.update(self.fgroups[fgroup][-1])
-        print(atom_map_idx)
-        print(bond_tuples)
+
         atom_bond_set = self._to_atom_bond_set(atom_map_idx, bond_tuples)
         fragment_mol = self.frag_to_mol(atom_bond_set, expand_stereoisomers=False)
-        #return fragment_mol
+        # #return fragment_mol
         diff = self.compare_wbo(fragment_mol, bond_tuple)
-        print(diff)
         if diff > threshold:
-            #ToDo add on by bond with greatest WBO
-            pass
+            fragment_mol = self._add_next_substituent(atom_map_idx, bond_tuples, target_bond=bond_tuple,
+                                                      threshold=threshold, heuristic=heuristic)
         self.fragments[bond_tuple] = fragment_mol
+
+
+    def _add_next_substituent(self, atoms, bonds, target_bond, threshold=0.009, heuristic='path_length'):
+        """
+        If the difference between WBO in fragment and molecules is greater than threshold, add substituents to
+        fragment until difference is within threshold
+        Parameters
+        ----------
+        atoms :
+        bonds :
+        target_bond :
+        threshold :
+        heuristic: str
+            How to add substituents. Choices are path_length or wbo
+
+        Returns
+        -------
+
+        """
+        bond_atom = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[0]))
+        atoms_to_add = []
+        sort_by = []
+        for m_idx in atoms:
+            a = self.molecule.GetAtom(oechem.OEHasMapIdx(m_idx))
+            for nbr in a.GetAtoms():
+                nbr_m_idx = nbr.GetMapIdx()
+                if not nbr.IsHydrogen() and not nbr_m_idx in atoms:
+                    b = self.molecule.GetBond(a, nbr)
+                    atoms_to_add.append((nbr_m_idx, (m_idx, nbr_m_idx)))
+                    if heuristic == 'wbo':
+                        sort_by.append(b.GetData('WibergBonOrder'))
+                        reverse = True
+                    elif heuristic == 'path_length':
+                        sort_by.append(oechem.OEGetPathLength(bond_atom, nbr))
+                        reverse = False
+                    else:
+                        raise ValueError('Only wbo and path_lenght are supported heuristics')
+        sorted_atoms = [a for _, a in sorted(zip(sort_by, atoms_to_add), reverse=reverse)]
+        for atom, bond in sorted_atoms:
+            a = self.molecule.GetAtom(oechem.OEHasMapIdx(atom))
+            if 'ringsystem' in a.GetData():
+                ring_idx = a.GetData('ringsystem')
+                atoms.update(self.ring_systems[ring_idx][0])
+                bonds.update(self.ring_systems[ring_idx][1])
+            if 'fgroup' in a.GetData():
+                fgroup = a.GetData('fgroup')
+                atoms.update(self.fgroups[fgroup][0])
+                bonds.update(self.fgroups[fgroup][1])
+            atoms.add(atom)
+            bonds.add(bond)
+            # Check new WBO
+            atom_bond_set = self._to_atom_bond_set(atoms, bonds)
+            fragment_mol = self.frag_to_mol(atom_bond_set, expand_stereoisomers=False)
+            if self.compare_wbo(fragment_mol, target_bond) < threshold:
+                return fragment_mol
+            else:
+                return self._add_next_substituent(atoms=atoms, bonds=bonds, target_bond=target_bond)
+
 
     def _to_atom_bond_set(self, atoms, bonds):
         atom_bond_set = oechem.OEAtomBondSet()
