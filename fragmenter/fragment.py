@@ -241,6 +241,8 @@ class Fragmenter(object):
         # Check for atom maps - it is used for finding atoms to tag
         if is_missing_atom_map(self.molecule):
             raise ValueError('Molecule is missing atom maps')
+        if functional_groups:
+            fgroups_smarts = functional_groups
         if functional_groups is None:
             # Load yaml file
             fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts.yml'))
@@ -249,8 +251,6 @@ class Fragmenter(object):
         elif functional_groups is False:
             # Don't tag fgroups
             return
-        elif functional_groups:
-            fgroups_smarts = functional_groups
 
         for f_group in fgroups_smarts:
             qmol = oechem.OEQMol()
@@ -638,6 +638,7 @@ class WBOFragmenter(Fragmenter):
         self.rotors_wbo = {}
         self.ring_systems = {}
         self.fragments = {} # Fragments from fragmentation scheme for each rotatable bond
+        self._fragments = {} # Used internally for depiction
 
     def fragment(self, heuristic='path_length', threshold=0.009, keep_non_rotor_ring_substituents=True):
         """
@@ -684,7 +685,7 @@ class WBOFragmenter(Fragmenter):
                 logger().info('WBO took {} seconds to calculate'.format(time2-time1))
         else:
             time1 = time.time()
-            fragment = get_charges(fragment)
+            fragment = get_charges(fragment, strict_stereo=False)
             time2 = time.time()
             if self.verbose:
                 logger().info('WBO took {} seconds to calculate'.format(time2-time1))
@@ -827,10 +828,10 @@ class WBOFragmenter(Fragmenter):
         return ortho_atoms, ortho_bonds
 
 
-    def compare_wbo(self, fragment, bond_tuple):
+    def compare_wbo(self, fragment, bond_tuple, verbose=True):
 
         restore_atom_map(fragment)
-        charged_fragment = get_charges(fragment, strict_stereo=False)
+        charged_fragment = self.calculate_wbo(fragment=fragment)
         # Get new WBO
         a1 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
         a2 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[-1]))
@@ -912,6 +913,8 @@ class WBOFragmenter(Fragmenter):
         fragment_mol = self.frag_to_mol(atom_bond_set, expand_stereoisomers=False)
         # #return fragment_mol
         diff = self.compare_wbo(fragment_mol, bond_tuple)
+        if diff <= threshold:
+            self._fragments[bond_tuple] = atom_bond_set
         if diff > threshold:
             fragment_mol = self._add_next_substituent(atom_map_idx, bond_tuples, target_bond=bond_tuple,
                                                       threshold=threshold, heuristic=heuristic)
@@ -946,7 +949,7 @@ class WBOFragmenter(Fragmenter):
                     b = self.molecule.GetBond(a, nbr)
                     atoms_to_add.append((nbr_m_idx, (m_idx, nbr_m_idx)))
                     if heuristic == 'wbo':
-                        sort_by.append(b.GetData('WibergBonOrder'))
+                        sort_by.append(b.GetData('WibergBondOrder'))
                         reverse = True
                     elif heuristic == 'path_length':
                         sort_by.append(oechem.OEGetPathLength(bond_atom, nbr))
@@ -970,9 +973,11 @@ class WBOFragmenter(Fragmenter):
             atom_bond_set = self._to_atom_bond_set(atoms, bonds)
             fragment_mol = self.frag_to_mol(atom_bond_set, expand_stereoisomers=False)
             if self.compare_wbo(fragment_mol, target_bond) < threshold:
+                self._fragments[target_bond] = atom_bond_set
                 return fragment_mol
             else:
-                return self._add_next_substituent(atoms=atoms, bonds=bonds, target_bond=target_bond)
+                return self._add_next_substituent(atoms=atoms, bonds=bonds, target_bond=target_bond,
+                                                  heuristic=heuristic)
 
     def depict_fragments(self, fname):
         itf = oechem.OEInterface()
@@ -993,34 +998,19 @@ class WBOFragmenter(Fragmenter):
         opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
         opts.SetAtomLabelFontScale(1.2)
 
-        # stag = "fragment idx"
-        # itag = oechem.OEGetTag(stag)
-        # for fidx, bond_tuple in enumerate(self.fragments):
-        #     print(fidx, bond_tuple)
-        #     for bond in self.fragments[bond_tuple].GetBonds():
-        #         bond.SetData(itag, fidx)
-
-        # # setup depiction styles
-        # nrfrags = len(self.fragments)
-        # colors = [c for c in oechem.OEGetLightColors()]
-        # if len(colors) < nrfrags:
-        #     colors = [c for c in oechem.OEGetColors(oechem.OEYellowTint, oechem.OEDarkOrange, nrfrags)]
-
-        # bondglyph = ColorBondByFragmentIndex(colors, itag)
-
         lineWidthScale = 0.75
         fadehighlight = oedepict.OEHighlightByColor(oechem.OEGrey, lineWidthScale)
 
         # depict each fragment combinations
 
-        for bond_tuple in self.fragments:
+        for bond_tuple in self._fragments:
 
             cell = report.NewCell()
             disp = oedepict.OE2DMolDisplay(self.molecule, opts)
 
             # ToDo get AtomBondSet for fragments so depiction works properly
-            fragatoms = oechem.OEIsAtomMember(self.fragments[bond_tuple].GetAtoms())
-            fragbonds = oechem.OEIsBondMember(self.fragments[bond_tuple].GetBonds())
+            fragatoms = oechem.OEIsAtomMember(self._fragments[bond_tuple].GetAtoms())
+            fragbonds = oechem.OEIsBondMember(self._fragments[bond_tuple].GetBonds())
 
             notfragatoms = oechem.OENotAtom(fragatoms)
             notfragbonds = oechem.OENotBond(fragbonds)
@@ -1059,78 +1049,6 @@ class WBOFragmenter(Fragmenter):
             oedepict.OEDrawBorder(header, headerpen)
 
         return oedepict.OEWriteReport(fname, report)
-
-
-
-
-def ToPdf(mol, oname, frags):#, fragcombs):
-    """
-    Parameters
-    ----------
-    mol: charged OEMolGraph
-    oname: str
-        Output file name
-    Returns
-    -------
-
-    """
-    itf = oechem.OEInterface()
-    oedepict.OEPrepareDepiction(mol)
-
-    ropts = oedepict.OEReportOptions()
-    oedepict.OESetupReportOptions(ropts, itf)
-    ropts.SetFooterHeight(25.0)
-    ropts.SetHeaderHeight(ropts.GetPageHeight() / 4.0)
-    report = oedepict.OEReport(ropts)
-
-    # setup decpiction options
-    opts = oedepict.OE2DMolDisplayOptions()
-    oedepict.OESetup2DMolDisplayOptions(opts, itf)
-    cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
-    opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
-    opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
-    opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
-    opts.SetAtomLabelFontScale(1.2)
-
-    DepictMoleculeWithFragmentCombinations(report, mol, frags, opts)
-
-    return oedepict.OEWriteReport(oname, report)
-
-    #return 0
-
-class ColorBondByFragmentIndex(oegrapheme.OEBondGlyphBase):
-    """
-    This class was taken from OpeneEye cookbook
-    https://docs.eyesopen.com/toolkits/cookbook/python/depiction/enumfrags.html
-    """
-    def __init__(self, colorlist, tag):
-        oegrapheme.OEBondGlyphBase.__init__(self)
-        self.colorlist = colorlist
-        self.tag = tag
-
-    def RenderGlyph(self, disp, bond):
-
-        bdisp = disp.GetBondDisplay(bond)
-        if bdisp is None or not bdisp.IsVisible():
-            return False
-
-        if not bond.HasData(self.tag):
-            return False
-
-        linewidth = disp.GetScale() / 2.0
-        color = self.colorlist[bond.GetData(self.tag)]
-        pen = oedepict.OEPen(color, color, oedepict.OEFill_Off, linewidth)
-
-        adispB = disp.GetAtomDisplay(bond.GetBgn())
-        adispE = disp.GetAtomDisplay(bond.GetEnd())
-
-        layer = disp.GetLayer(oedepict.OELayerPosition_Below)
-        layer.DrawLine(adispB.GetCoords(), adispE.GetCoords(), pen)
-
-        return True
-
-    def ColorBondByFragmentIndex(self):
-        return ColorBondByFragmentIndex(self.colorlist, self.tag).__disown__()
 
 
 class ColorAtomByFragmentIndex(oegrapheme.OEAtomGlyphBase):
