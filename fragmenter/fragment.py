@@ -1,20 +1,18 @@
 from itertools import combinations
 import openeye as oe
-from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega, oeiupac
+from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega
 from cmiles.utils import mol_to_smiles, has_stereo_defined, has_atom_map, is_missing_atom_map, remove_atom_map, restore_atom_map
 
 import yaml
 import os
 from pkg_resources import resource_filename
-import copy
-import itertools
-import json
+
 import warnings
 import networkx as nx
 import time
 
-from .utils import logger, make_python_identifier
-from .chemi import to_smi, normalize_molecule, get_charges
+from .utils import logger
+from .chemi import to_smi, get_charges
 
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
@@ -325,7 +323,7 @@ class Fragmenter(object):
         if restore_maps:
             restore_atom_map(fragment)
         # check for stereo defined
-        if not has_stereo_defined(fragment):
+        if not has_stereo_defined(fragment) and expand_stereoisomers:
             # Try to convert to smiles and back. A molecule might look like it's missing stereo because of submol
             # first restore atom map so map on mol is not lost
             restore_atom_map(fragment)
