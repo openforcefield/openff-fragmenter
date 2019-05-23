@@ -289,13 +289,12 @@ class Fragmenter(object):
             atom_bond_set.AddBond(bond)
         return atom_bond_set
 
-    def frag_to_mol(self, frag, adjust_hcount=True, explicit_hydrogens=True, expand_stereoisomers=True,
-                       restore_maps=False):
+    def atom_bond_set_to_mol(self, frag, adjust_hcount=True, expand_stereoisomers=True, restore_maps=False):
         """
         Convert fragments (AtomBondSet) to OEMol
         Parameters
         ----------
-        frags: list
+        frag: OEAtomBondSet
         mol: OEMol
         OESMILESFlag: str
             Either 'ISOMERIC' or 'DEFAULT'. This flag determines which OE function to use to generate SMILES string
@@ -463,7 +462,7 @@ class CombinatorialFragmenter(Fragmenter):
                         if self._count_heavy_atoms_in_fragment(frag) >= min_heavy_atoms:
                             self._fragment_combinations.append(frag)
                             # convert to mol
-                            mol = self.frag_to_mol(frag, **kwargs)
+                            mol = self.atom_bond_set_to_mol(frag, **kwargs)
                             smiles = []
                             if not isinstance(mol, list):
                                 mol = [mol]
@@ -699,7 +698,7 @@ class WBOFragmenter(Fragmenter):
 
         """
         rotatable_bonds = []
-        smarts = '[!$(*#*)&!D1]-,=&!@[!$(*#*)&!D1]'
+        smarts = '[!$(*#*)&!D1]-,=;!@[!$(*#*)&!D1]'
         # Suppress H to avoid finding terminal bonds
         copy_mol = oechem.OEMol(self.molecule)
         oechem.OESuppressHydrogens(copy_mol)
@@ -807,7 +806,7 @@ class WBOFragmenter(Fragmenter):
         ortho_bonds = set()
         for atom in ring_atoms:
             for a in atom.GetAtoms():
-                if not a.IsHydrogen() and not a.GetMapIdx() in self.ring_systems[ring_idx]:
+                if not a.IsHydrogen() and not a.GetMapIdx() in self.ring_systems[ring_idx][0]:
                     # Check if atom is bonded to ring atom of rotatable bond
                     if self.molecule.GetBond(atom, ring_atom):
                         # This is an ortho group
@@ -908,7 +907,7 @@ class WBOFragmenter(Fragmenter):
                     bond_tuples.update(self.functional_groups[fgroup][-1])
 
         atom_bond_set = self._to_atom_bond_set(atom_map_idx, bond_tuples)
-        fragment_mol = self.frag_to_mol(atom_bond_set, expand_stereoisomers=False)
+        fragment_mol = self.atom_bond_set_to_mol(atom_bond_set, expand_stereoisomers=False)
         # #return fragment_mol
         diff = self.compare_wbo(fragment_mol, bond_tuple)
         if diff <= threshold:
@@ -969,7 +968,7 @@ class WBOFragmenter(Fragmenter):
             bonds.add(bond)
             # Check new WBO
             atom_bond_set = self._to_atom_bond_set(atoms, bonds)
-            fragment_mol = self.frag_to_mol(atom_bond_set, expand_stereoisomers=False)
+            fragment_mol = self.atom_bond_set_to_mol(atom_bond_set, expand_stereoisomers=False)
             if self.compare_wbo(fragment_mol, target_bond) < threshold:
                 self._fragments[target_bond] = atom_bond_set
                 return fragment_mol
