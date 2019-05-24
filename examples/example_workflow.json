@@ -1,12 +1,12 @@
 {
-  "example": {
+  "WBO_scheme_example": {
     "fragmenter": {
       "enumerate_states": {
         "version": "v0.0.1",
         "options": {
           "protonation": false,
           "tautomers": false,
-          "stereoisomers": true,
+          "stereoisomers": false,
           "max_states": 200,
           "level": 0,
           "reasonable": true,
@@ -16,14 +16,12 @@
       },
       "enumerate_fragments": {
         "version": "v0.0.1",
+        "scheme": "wiberg_bond_order",
         "options": {
-          "combinatorial": {
-            "min_rotors": 1,
-            "max_rotors": 0,
-            "min_heavy_atoms": 4,
-            "cap": false
-          },
-          "depth_first_search": {}
+          "functional_groups": null,
+          "heuristic": "path_length",
+          "threshold": 0.009,
+          "keep_non_rotor_ring_substituents": false
         }
       },
       "torsiondrive_input": {
@@ -43,29 +41,103 @@
         }
       },
       "torsiondrive_static_options": {
-        "torsiondrive_meta": {},
-        "optimization_meta": {
+        "optimization_spec": {
           "program": "geometric",
-          "coordsys": "tric"
+          "keywords": {
+            "coordsys": "tric"
+          }
         },
-        "qc_meta": {
+        "qc_spec": {
           "driver": "gradient",
           "method": "UFF",
           "basis": "",
-          "options": "none",
+          "keywords": null,
+          "program": "rdkit"
+        },
+        "keywords": {}
+      },
+      "optimization_static_options": {
+        "program": "geometric",
+        "keywords": {
+          "coordsys": "tric"
+        },
+        "qc_spec": {
+          "driver": "gradient",
+          "method": "UFF",
+          "basis": "",
+          "keywords": null,
           "program": "rdkit"
         }
+      }
+    }
+  },
+  "combinatorial_scheme_example": {
+    "fragmenter": {
+      "enumerate_states": {
+        "version": "v0.0.1",
+        "options": {
+          "protonation": false,
+          "tautomers": false,
+          "stereoisomers": false,
+          "max_states": 200,
+          "level": 0,
+          "reasonable": true,
+          "carbon_hybridization": true,
+          "suppress_hydrogen": true
+        }
       },
-      "optimization_static_options":{
-        "optimization_meta": {
-          "program": "geometric",
-          "coordsys": "tric"
+      "enumerate_fragments": {
+        "version": "v0.0.1",
+        "scheme": "combinatorial",
+        "options": {
+          "functional_groups": null,
+          "min_rotors": 1,
+          "max_rotors": null,
+          "min_heavy_atoms": 4
+        }
+      },
+      "torsiondrive_input": {
+        "version": "v0.0.1",
+        "restricted": true,
+        "torsiondrive_options": {
+          "multiple_confs": 1,
+          "initial_conf_grid_resolution": 90,
+          "terminal_torsion_resolution": 30,
+          "internal_torsion_resolution": 30,
+          "scan_internal_terminal_combination": 0,
+          "scan_dimension": 1
         },
-        "qc_meta":{
+        "restricted_optimization_options": {
+          "maximum_rotation": 30,
+          "interval": 5
+        }
+      },
+      "torsiondrive_static_options": {
+        "optimization_spec": {
+          "program": "geometric",
+          "keywords": {
+            "coordsys": "tric"
+          }
+        },
+        "qc_spec": {
           "driver": "gradient",
           "method": "UFF",
           "basis": "",
-          "options": "none",
+          "keywords": null,
+          "program": "rdkit"
+        },
+        "keywords": {}
+      },
+      "optimization_static_options": {
+        "program": "geometric",
+        "keywords": {
+          "coordsys": "tric"
+        },
+        "qc_spec": {
+          "driver": "gradient",
+          "method": "UFF",
+          "basis": "",
+          "keywords": null,
           "program": "rdkit"
         }
       }
