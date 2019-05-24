@@ -655,7 +655,6 @@ def smifile_to_rdmols(filename):
     if len(nones) > 0:
         # Find SMILES that did not parse
         smiles_list = smiles_txt.split('\n')[1:]
-        print(nones)
         missing_mols = [smiles_list[none] for none in nones]
         lines = [int(none) + 1 for none in nones]
         error = RuntimeError("Not all SMILES were parsed properly. {} indices are None in the rd_mols list. The corresponding"
@@ -1038,7 +1037,6 @@ def highlight_bond_by_map_idx(mol, fname, bond_map_idx=None, width=600, height=4
         bond_map_idx = [bond_map_idx]
     b = None
     for bond in bond_map_idx:
-        print(bond)
         if not bond:
             break
         atom_bond_set = oechem.OEAtomBondSet()
@@ -1474,7 +1472,7 @@ class LabelMayerPsiBondOrder(oedepict.OEDisplayBondPropBase):
 
         return copy.__disown__()
 
-def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supress_h=True):
+def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supress_h=True, color=None):
     itf = oechem.OEInterface()
     PageByPage = True
 
@@ -1488,29 +1486,35 @@ def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
     cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
     opts = oedepict.OE2DMolDisplayOptions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
     oedepict.OESetup2DMolDisplayOptions(opts, itf)
-    if bo:
+    #if bo:
         #b.SetData('WibergBondOrder', bo)
-        opts.SetBondPropertyFunctor(LabelWibergBondOrder())
+    #    opts.SetBondPropertyFunctor(LabelWibergBondOrder())
     b = None
     for i, mol in enumerate(molecules):
         cell = report.NewCell()
         mol_copy = oechem.OEMol(mol)
         oedepict.OEPrepareDepiction(mol_copy, False, supress_h)
-        disp = oedepict.OE2DMolDisplay(mol_copy, opts)
-        if bo:
-            #b.SetData('WibergBondOrder', bo)
-            opts.SetBondPropertyFunctor(LabelWibergBondOrder())
+        # if bo:
+        #     b.SetData('WibergBondOrder', bo[i])
+        #     opts.SetBondPropertyFunctor(LabelWibergBondOrder())
 
         if isinstance(bond_map_idx, tuple):
             atom_bond_set = oechem.OEAtomBondSet()
             a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[0]))
             a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[1]))
             b = mol_copy.GetBond(a1, a2)
+            if bo:
+                b.SetData('WibergBondOrder', bo[i])
+                opts.SetBondPropertyFunctor(LabelWibergBondOrder())
             atom_bond_set.AddAtom(a1)
             atom_bond_set.AddAtom(a2)
             atom_bond_set.AddBond(b)
             hstyle = oedepict.OEHighlightStyle_BallAndStick
-            hcolor = oechem.OEColor(oechem.OELightBlue)
+            if color:
+                hcolor = color
+            else:
+                hcolor = oechem.OEColor(oechem.OELightBlue)
+            disp = oedepict.OE2DMolDisplay(mol_copy, opts)
             oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
         elif isinstance(bond_map_idx, list):
             atom_bond_set = oechem.OEAtomBondSet()
@@ -1521,13 +1525,15 @@ def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
             atom_bond_set.AddAtom(a2)
             atom_bond_set.AddBond(b)
             hstyle = oedepict.OEHighlightStyle_BallAndStick
-            hcolor = oechem.OEColor(oechem.OELightBlue)
+            if color:
+                hcolor = color
+            else:
+                hcolor = oechem.OEColor(oechem.OELightBlue)
+            disp = oedepict.OE2DMolDisplay(mol_copy, opts)
             oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
 
         if not b and bond_map_idx:
             raise RuntimeError("{} is not connected in molecule".format(bond_map_idx))
-
-
 
         oedepict.OERenderMolecule(cell, disp)
         oedepict.OEDrawCurvedBorder(cell, oedepict.OELightGreyPen, 10.0)
