@@ -115,10 +115,6 @@ class WorkFlow(object):
         ----------
         molecule: Input molecule. Very permissive. Can be anything that OpenEye can parse
             SMILES string of molecule to fragment
-        workflow_id: str
-            Which workflow to use for options.
-        options: dictionary, optional, default None
-            Dictionary of keyword options. If None, will use optiond defined in workflows
         title: str, optional. Default empty str
             The title or name of the molecule. If empty stirng will use the IUPAC name for molecule title.
         mol_provenance: dict, optional. Default is None
@@ -137,7 +133,9 @@ class WorkFlow(object):
         """
         routine = 'enumerate_fragments'
         provenance = _get_provenance(workflow_id=self.workflow_id, routine=routine)
-        options = self.off_workflow.get_options('enumerate_fragments')['options']
+        options = self.off_workflow.get_options('enumerate_fragments')
+        scheme = options['scheme']
+        options = options['options']
 
         parent_molecule = chemi.standardize_molecule(molecule, title)
         parent_molecule_smiles = mol_to_smiles(parent_molecule, isomeric=True, explicit_hydrogen=False,
@@ -145,28 +143,26 @@ class WorkFlow(object):
         provenance['routine']['enumerate_fragments']['parent_molecule_name'] = parent_molecule.GetTitle()
         provenance['routine']['enumerate_fragments']['parent_molecule'] = parent_molecule_smiles
 
-        fragmenter = fragment.Fragmenter(parent_molecule)
-        if options['combinatorial']:
-            fragmenter.fragment_all_bonds_not_in_ring_systems()
-            min_rotors = options['combinatorial']['min_rotors']
-            max_rotors = options['combinatorial']['max_rotors']
-            if not max_rotors:
-                max_rotors = fragmenter.n_rotors + 1
-            min_heavy_atoms = options['combinatorial']['min_heavy_atoms']
-            fragmenter.combine_fragments(min_rotors=min_rotors, max_rotors=max_rotors, min_heavy_atoms=min_heavy_atoms)
-            if generate_vis:
-                fname = '{}.pdf'.format(parent_molecule.GetTitle())
-                fragmenter.depict_fragment_combinations(fname=fname)
-            fragments = fragmenter.fragment_combinations
+        functional_groups = options.pop('functional_groups')
+        if scheme == 'combinatorial':
+            fragment_engine = fragment.CombinatorialFragmenter(parent_molecule, functional_groups=functional_groups)
+        elif scheme == 'wiberg_bond_order':
+            fragment_engine = fragment.WBOFragmenter(parent_molecule, functional_groups=functional_groups)
+        else:
+            raise ValueError("Only combinatorial and wiberg_bond_order are supported fragmenting schemes")
 
-        elif options['depth_first_search']:
-            fragments = fragment.generate_fragments(parent_molecule, generate_vis, **options['depth_first_search'])
-            if not fragments:
-                warnings.warn("No fragments were generated for {}".format(parent_molecule_smiles))
-                return
-            # convert to list
-            #fragments = fragments[list(fragments.keys())[0]]
+        fragment_engine.fragment(**options)
 
+        if generate_vis:
+            fname = '{}.pdf'.format(parent_molecule.GetTitle())
+            fragment_engine.depict_fragments(fname=fname)
+
+        if not fragment_engine.fragments:
+            warnings.warn("No fragments were generated for {}".format(parent_molecule_smiles))
+            # ToDo: if combinatorial does not have fragments it means that there was no point to cut and if
+            # wbo does not have fragments it means no internal rotatable bond was found but it might still have torsions
+            # to drive. Not yet sure how to handle these cases
+            return
 
         if self.states:
             # Check if current state exists
@@ -177,33 +173,24 @@ class WorkFlow(object):
 
         # Generate identifiers for fragments
         fragments_json_dict = {}
-        for frag in fragments:
-            for mol in fragments[frag]:
-                if isinstance(mol, oechem.OEMol):
-                    restore_atom_map(mol)
-                    identifiers = get_molecule_ids(frag, canonicalization='openeye')
-                    frag = identifiers['canonical_isomeric_smiles']
-                    fragments_json_dict[frag] = {'identifiers': identifiers}
-                    fragments_json_dict[frag]['provenance'] = provenance
-                    fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
-                    if has_atom_map(mol):
-                        fragments_json_dict[frag]['provenance']['routine']['enumerate_fragments']['map_to_parent'] = restored_map
-
-                else:
-                    identifiers = get_molecule_ids(mol, canonicalization='openeye')
-                    frag = identifiers['canonical_isomeric_smiles']
-                    fragments_json_dict[frag] = {'identifiers': identifiers}
-                    fragments_json_dict[frag]['provenance'] = provenance
-                    fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
-
-            # identifiers = (frag, canonicalization='openeye')
-            # frag = identifiers['canonical_isomeric_smiles']
-            # fragments_json_dict[frag] = {'identifiers': identifiers}
-            # fragments_json_dict[frag]['provenance'] = copy.deepcopy(provenance)
-            # fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
-            # if has_atom_map(mol):
-            #     restored_map = oechem.OEMolToSmiles(mol)
-            #     fragments_json_dict[frag]['provenance']['routine']['enumerate_fragments']['map_to_parent'] = restored_map
+        for frag in fragment_engine.fragments:
+            mols = fragment_engine.fragments[frag]
+            if not isinstance(mols, list):
+                mols = [mols]
+            for mol in mols:
+                parent_map_smiles = oechem.OEMolToSmiles(mol)
+                smiles = mol_to_smiles(mol, mapped=False)
+                identifiers = get_molecule_ids(smiles, canonicalization='openeye')
+                frag_smiles = identifiers['canonical_isomeric_smiles']
+                fragments_json_dict[frag_smiles] = {'identifiers': identifiers}
+                fragments_json_dict[frag_smiles]['provenance'] = provenance
+                fragments_json_dict[frag_smiles]['provenance']['canonicalization'] = identifiers.pop('provenance')
+                if has_atom_map(mol):
+                    fragments_json_dict[frag_smiles]['provenance']['routine']['enumerate_fragments']['map_to_parent'] \
+                        = parent_map_smiles
+                if scheme == 'wiberg_bond_order':
+                    # Add bond to provenance
+                    fragments_json_dict[frag_smiles]['provenance']['routine']['enumerate_fragments']['rot_bond'] = frag
 
         if json_filename:
             with open(json_filename, 'w') as f:
@@ -478,10 +465,10 @@ def _get_provenance(workflow_id, routine):
     return provenance
 
 def _check_workflow(workflow_json, off_workflow):
-
+    #ToDo this does not always raise an error (it raises one for enumerate states but not enumerate fragments)
     for key in workflow_json:
         if workflow_json[key] != off_workflow.get_options(key):
-            raise ValueError("The workflow ID provided already exists in the database. The options for {} are different"
+            raise ValueError("The workflow ID provided already exists in the database. The options for {} are different "
                              "in the registered workflow and provided workflow. The options provided are {} and "
                              "the options in the database are {}".format(key, workflow_json[key], off_workflow.get_options(key), key))
         else:
