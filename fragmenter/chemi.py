@@ -604,9 +604,12 @@ def file_to_oemols(filename, title=True, verbose=False):
     #moldb = oechem.OEMolDatabase(ifs)
     mollist = []
 
-    molecule = oechem.OECreateOEGraphMol()
+    molecule = oechem.OEMol()
     while oechem.OEReadMolecule(ifs, molecule):
         molecule_copy = oechem.OEMol(molecule)
+        oechem.OEPerceiveChiral(molecule)
+        oechem.OE3DToAtomStereo(molecule)
+        oechem.OE3DToBondStereo(molecule)
         if title:
             title = molecule_copy.GetTitle()
             if verbose:
@@ -702,7 +705,6 @@ def oemols_to_smiles_list(OEMols, isomeric=True, strict=False):
             s = oechem.OEMolToSmiles(mol)
             SMILES.append(s)
             warnings.warn("SMILES will be missing steroe. {}".format(s))
-
 
     return SMILES
 
@@ -1320,6 +1322,7 @@ def bond_order_tag(molecule, atom_map, bond_order_array):
 
 
 def mol_to_image_atoms_label(mol, fname, map_idx=True, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
+
     """Write out png file of molecule with atoms labeled with their map index.
 
     Parameters
@@ -1349,7 +1352,6 @@ def mol_to_image_atoms_label(mol, fname, map_idx=True, width=600, height=400, la
     if not map_idx:
         opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
 
-    #opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
     opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
     opts.SetAtomPropLabelFontScale(label_scale)
     opts.SetBondWidthScaling(scale_bondwidth)

@@ -31,10 +31,9 @@ def test_workflow(fractal_compute_server):
 
     assert len(workflow.qcfractal_jobs) == 1
     key = list(workflow.qcfractal_jobs.keys())[0]
-    assert len(workflow.qcfractal_jobs[key]) == 3
-    assert len(workflow.qcfractal_jobs[key]['optimization_input']) == 0
+    assert len(workflow.qcfractal_jobs[key]) == 2
     assert len(workflow.qcfractal_jobs[key]['torsiondrive_input']) == 3
-    assert len(workflow.qcfractal_jobs[key]['torsiondrive_input']['(0, 2, 3, 1)']['initial_molecule']) == 8
+    assert len(workflow.qcfractal_jobs[key]['torsiondrive_input']['[CH3:1][CH2:4][CH2:3][CH3:2]']['initial_molecule']) == 1
 
 def test_check_workflow_options():
     """Check that the workflow options are the same in the json and database"""

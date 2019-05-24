@@ -6,7 +6,7 @@ import numpy as np
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import get_molecule_ids
-from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema, restore_atom_map, has_atom_map
+from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema, has_atom_map
 from openeye import oechem
 import copy
 import warnings
@@ -231,7 +231,7 @@ class WorkFlow(object):
         print(options)
         needed_torsions = torsions.find_torsions(mapped_mol, options['restricted'])
 
-        if options['multiple_confs']:
+        if 'conf_grid' in options:
             # Generate grid of multiple conformers
             dihedrals = []
             for torsion_type in needed_torsions:
@@ -249,44 +249,46 @@ class WorkFlow(object):
                 return False
 
             chemi.resolve_clashes(conformers)
-            qcschema_molecules = [mol_to_map_ordered_qcschema(conf, mol_id) for conf in conformers.GetConfs()]
-        try:
-            conformer = chemi.generate_conformers(mapped_mol, max_confs=1)
-            # resolve clashes
-            qcschema_molecule = mol_to_map_ordered_qcschema(conformer, mol_id)
-        except RuntimeError:
-            utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
-                              "{} will not be included in fragments dictionary".format(
-                        mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
-            return False
+        else:
+            try:
+                max_confs = options['torsiondrive_options'].pop('max_confs')
+                conformers = chemi.generate_conformers(mapped_mol, max_confs=max_confs)
+            except RuntimeError:
+                utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
+                                  "{} will not be included in fragments dictionary".format(
+                            mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
+                return False
 
-        identifier = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
+        qcschema_molecules = [mol_to_map_ordered_qcschema(conf, mol_id) for conf in conformers.GetConfs()]
+        identifier = mol_id['canonical_isomeric_smiles']
         torsiondrive_inputs = {identifier: {'torsiondrive_input': {}, 'provenance': provenance}}
         restricted_torsions = needed_torsions.pop('restricted')
-
-        optimization_jobs = torsions.generate_constraint_opt_input(qcschema_molecule, restricted_torsions,
+        if restricted_torsions:
+            optimization_jobs = torsions.generate_constraint_opt_input(qcschema_molecules, restricted_torsions,
                                                              **options['restricted_optimization_options'])
-
-        torsiondrive_inputs[identifier]['optimization_input'] = optimization_jobs
+            torsiondrive_inputs[identifier]['optimization_input'] = optimization_jobs
         torsiondrive_jobs = torsions.define_torsiondrive_jobs(needed_torsions, **options['torsiondrive_options'])
 
-        if options['multiple_confs']:
-            qcschema_molecule = qcschema_molecules
+        #if options['multiple_confs']:
+        #    qcschema_molecule = qcschema_molecules
 
         # Currently, all jobs are started from same initial conformation
         # ToDo Start later job from optimized conformers from last job
         for i, job in enumerate(torsiondrive_jobs):
             torsiondrive_input = {'type': 'torsiondrive_input'}
-            torsiondrive_input['initial_molecule'] = qcschema_molecule
+            torsiondrive_input['initial_molecule'] = qcschema_molecules
             #torsiondrive_input['initial_molecule']['identifiers'] = mol_id
             torsiondrive_input['dihedrals'] = torsiondrive_jobs[job]['dihedrals']
             torsiondrive_input['grid_spacing'] = torsiondrive_jobs[job]['grid_spacing']
             job_name = ''
-            for j, torsion in enumerate(torsiondrive_input['dihedrals']):
-                if j > 0:
-                    job_name += '_{}'.format(torsion)
+            mapped_smiles = qcschema_molecules[0]['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
+            for i, torsion in enumerate(torsiondrive_input['dihedrals']):
+                label = to_canonical_label(mapped_smiles, torsion)
+                if i > 0:
+                    job_name += ' {}'.format(label)
                 else:
-                    job_name += '{}'.format(torsion)
+                    job_name += '{}'.format(label)
+
             torsiondrive_inputs[identifier]['torsiondrive_input'][job_name] = torsiondrive_input
 
         if json_filename:
