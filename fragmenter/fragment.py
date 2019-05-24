@@ -1,6 +1,7 @@
 from itertools import combinations
 import openeye as oe
 from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega
+import cmiles.utils
 from cmiles.utils import mol_to_smiles, has_stereo_defined, has_atom_map, is_missing_atom_map, remove_atom_map, restore_atom_map
 
 import yaml
@@ -219,7 +220,6 @@ class Fragmenter(object):
         return sum([not atom.IsHydrogen() for atom in fragment.GetAtoms()])
 
     def _tag_functional_groups(self, functional_groups):
-        #ToDo clean up to use different yaml files for combinatorial vs. robust fragmentation
         """
         This function tags atoms and bonds of functional groups defined in fgroup_smarts. fgroup_smarts is a dictionary
         that maps functional groups to their smarts pattern. It can be user generated or from yaml file.
@@ -236,9 +236,15 @@ class Fragmenter(object):
             a dictionary that maps indexed functional groups to corresponding atom and bond indices in mol
 
         """
+        # Add explicit hydrogen
+        if not cmiles.utils.has_explicit_hydrogen(self.molecule):
+            oechem.OEAddExplicitHydrogens(self.molecule)
         # Check for atom maps - it is used for finding atoms to tag
+        if not has_atom_map(self.molecule):
+            cmiles.utils.add_atom_map(self.molecule)
         if is_missing_atom_map(self.molecule):
-            raise ValueError('Molecule is missing atom maps')
+            warnings.warn("Some atoms are missing atom maps. This might cause a problem at several points during "
+                          "the fragmentation process. Make sure you know what you are doing. ")
         if functional_groups:
             fgroups_smarts = functional_groups
         if functional_groups is None:
@@ -289,7 +295,7 @@ class Fragmenter(object):
             atom_bond_set.AddBond(bond)
         return atom_bond_set
 
-    def atom_bond_set_to_mol(self, frag, adjust_hcount=True, expand_stereoisomers=True, restore_maps=False):
+    def atom_bond_set_to_mol(self, frag, adjust_hcount=True, expand_stereoisomers=True):
         """
         Convert fragments (AtomBondSet) to OEMol
         Parameters
@@ -318,21 +324,21 @@ class Fragmenter(object):
             if not list(atom.GetBonds()):
                 warnings.warn("Yikes!!! An atom that is not bonded to any other atom in the fragment. "
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
-
-        if restore_maps:
-            restore_atom_map(fragment)
+        #Always restore map?
+        #if restore_maps:
+        restore_atom_map(fragment)
         # check for stereo defined
         if not has_stereo_defined(fragment) and expand_stereoisomers:
             # Try to convert to smiles and back. A molecule might look like it's missing stereo because of submol
             # first restore atom map so map on mol is not lost
-            restore_atom_map(fragment)
+            #restore_atom_map(fragment)
             new_smiles = oechem.OEMolToSmiles(fragment)
             fragment = oechem.OEMol()
             oechem.OESmilesToMol(fragment, new_smiles)
             # add explicit H
             oechem.OEAddExplicitHydrogens(fragment)
             oechem.OEPerceiveChiral(fragment)
-            remove_atom_map(fragment, keep_map_data=True)
+            #remove_atom_map(fragment, keep_map_data=True)
             # If it's still missing stereo, expand states
             if not has_stereo_defined(fragment):
                 if expand_stereoisomers:
@@ -352,7 +358,7 @@ class CombinatorialFragmenter(Fragmenter):
         self._nx_graph = self._mol_to_graph()
         self._fragments = list()  # all possible fragments without breaking rings
         self._fragment_combinations = list() # AtomBondSets of combined fragments. Used internally to generate PDF
-        self.fragment_combinations = {} # Dict that maps SMILES to all equal combined fragments
+        self.fragments = {} # Dict that maps SMILES to all equal combined fragments
 
         if functional_groups is None:
             fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts_comb.yml'))
@@ -361,7 +367,7 @@ class CombinatorialFragmenter(Fragmenter):
         self._tag_functional_groups(functional_groups)
 
 
-    def combinatorial_fragmentation(self, min_rotors=1, max_rotors=None, min_heavy_atoms=4):
+    def fragment(self, min_rotors=1, max_rotors=None, min_heavy_atoms=4):
         """
 
         Returns
@@ -447,11 +453,12 @@ class CombinatorialFragmenter(Fragmenter):
             self._fragments.append(atom_bond_set)
 
     def fragment_all_bonds_not_in_ring_systems(self):
-        #ToDo - add option for fgroups
         subgraphs = self._fragment_graph()
         self._subgraphs_to_atom_bond_sets(subgraphs)
 
     def combine_fragments(self, max_rotors=3, min_rotors=1, min_heavy_atoms=5, **kwargs):
+        #Only keep unique molecules
+        unique_mols = set()
         nrfrags = len(self._fragments)
         for n in range(1, nrfrags):
             for fragcomb in combinations(self._fragments, n):
@@ -466,12 +473,17 @@ class CombinatorialFragmenter(Fragmenter):
                             smiles = []
                             if not isinstance(mol, list):
                                 mol = [mol]
+                            new_mols = []
                             for m in mol:
-                                smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=True))
+                                mapped_smiles = oechem.OEMolToSmiles(m)
+                                if not mapped_smiles in unique_mols:
+                                    unique_mols.add(mapped_smiles)
+                                    new_mols.append(m)
+                                    smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=True))
                             for sm in smiles:
-                                if sm not in self.fragment_combinations:
-                                    self.fragment_combinations[sm] = []
-                                self.fragment_combinations[sm].extend(mol)
+                                if sm not in self.fragments:
+                                    self.fragments[sm] = []
+                                self.fragments[sm].extend(new_mols)
 
     def _is_combination_adjacent(self, frag_combination):
         """
@@ -549,7 +561,7 @@ class CombinatorialFragmenter(Fragmenter):
 
         return combined
 
-    def depict_fragment_combinations(self, fname, line_width=0.75):
+    def depict_fragments(self, fname, line_width=0.75):
 
         itf = oechem.OEInterface()
         oedepict.OEConfigure2DMolDisplayOptions(itf)
