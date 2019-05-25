@@ -355,17 +355,15 @@ class CombinatorialFragmenter(Fragmenter):
     def __init__(self, molecule, functional_groups=None):
         super().__init__(molecule)
 
-        self._nx_graph = self._mol_to_graph()
-        self._fragments = list()  # all possible fragments without breaking rings
-        self._fragment_combinations = list() # AtomBondSets of combined fragments. Used internally to generate PDF
-        self.fragments = {} # Dict that maps SMILES to all equal combined fragments
-
         if functional_groups is None:
             fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts_comb.yml'))
             with open(fn, 'r') as f:
                 functional_groups = yaml.safe_load(f)
         self._tag_functional_groups(functional_groups)
-
+        self._nx_graph = self._mol_to_graph()
+        self._fragments = list()  # all possible fragments without breaking rings
+        self._fragment_combinations = list() # AtomBondSets of combined fragments. Used internally to generate PDF
+        self.fragments = {} # Dict that maps SMILES to all equal combined fragments
 
     def fragment(self, min_rotors=1, max_rotors=None, min_heavy_atoms=4):
         """
@@ -386,6 +384,7 @@ class CombinatorialFragmenter(Fragmenter):
 
         G = nx.Graph()
         for atom in self.molecule.GetAtoms():
+           # print(atom, atom.GetMapIdx())
             G.add_node(atom.GetIdx(), name=oechem.OEGetAtomicSymbol(atom.GetAtomicNum()), halogen=atom.IsHalogen())
         for bond in self.molecule.GetBonds():
             # Check for functional group tags
@@ -419,7 +418,6 @@ class CombinatorialFragmenter(Fragmenter):
                     and not (self._nx_graph.node[node[0]]['name'] == 'H' or self._nx_graph.node[node[-1]]['name'] == 'H')\
                     and not (self._nx_graph.edges[node]['fgroup']):
                 ebunch.append(node)
-
         # Cut molecule
         self._nx_graph.remove_edges_from(ebunch)
         # Generate fragments

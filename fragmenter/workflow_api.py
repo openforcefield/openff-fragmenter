@@ -228,7 +228,6 @@ class WorkFlow(object):
 
         mapped_smiles = mol_id['canonical_isomeric_explicit_hydrogen_mapped_smiles']
         mapped_mol = chemi.smiles_to_oemol(mapped_smiles)
-        print(options)
         needed_torsions = torsions.find_torsions(mapped_mol, options['restricted'])
 
         if 'conf_grid' in options:
@@ -467,14 +466,39 @@ def _get_provenance(workflow_id, routine):
     return provenance
 
 def _check_workflow(workflow_json, off_workflow):
-    #ToDo this does not always raise an error (it raises one for enumerate states but not enumerate fragments)
-    for key in workflow_json:
+    _json_keys = ['enumerate_states', 'enumerate_fragments', 'torsiondrive_input']
+    _model_keys = ['torsiondrive_static_options','optimization_static_options' ]
+    for key in _json_keys:
         if workflow_json[key] != off_workflow.get_options(key):
             raise ValueError("The workflow ID provided already exists in the database. The options for {} are different "
                              "in the registered workflow and provided workflow. The options provided are {} and "
                              "the options in the database are {}".format(key, workflow_json[key], off_workflow.get_options(key), key))
+    for key in _model_keys:
+        static_opts = off_workflow.get_options(key)
+        if key == 'torsiondrive_static_options':
+            if static_opts.optimization_spec.program != workflow_json[key]['optimization_spec']['program']:
+                raise ValueError("Options for optimization program is not the same as in QCArchive")
+            if static_opts.optimization_spec.keywords != workflow_json[key]['optimization_spec']['keywords']:
+                raise ValueError("Keywords are different for optimization program in QCArchive")
         else:
-            return True
+            if static_opts.program != workflow_json[key]['program']:
+                raise ValueError("Options for optimization program is not the same as in QCArchive")
+            if static_opts.keywords != workflow_json[key]['keywords']:
+                raise ValueError("Keywords are different for optimization program in QCArchive")
+        if static_opts.qc_spec.method.lower() != workflow_json[key]['qc_spec']['method'].lower():
+            raise ValueError("qc method is different in QCArchive workflow")
+        if static_opts.qc_spec.basis != workflow_json[key]['qc_spec']['basis']:
+            if not static_opts.qc_spec.basis and not workflow_json[key]['qc_spec']['basis']:
+                continue
+            raise ValueError('basis set is different in QCArchive {} and JSON workflow {}'.format(
+                static_opts.qc_spec.basis, workflow_json[key]['qc_spec']['basis']
+            ))
+        if static_opts.qc_spec.program != workflow_json[key]['qc_spec']['program']:
+            raise ValueError('program is different in QCArchive and JSON workflow')
+        if static_opts.qc_spec.keywords != workflow_json[key]['qc_spec']['keywords']:
+            raise ValueError('keywords are different in QCArchive and JSON workflow')
+
+    return True
 
 
 def serialize_key(key):
