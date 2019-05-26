@@ -84,9 +84,7 @@ class WorkFlow(object):
         # Load options for enumerate states
         routine = 'enumerate_states'
         options = self.off_workflow.get_options('enumerate_states')['options']
-        provenance = _get_provenance(workflow_id=self.workflow_id, routine=routine)
-        # if not options:
-        #     options = _get_options(workflow_id, routine)
+        provenance = self._get_provenance(workflow_id=self.workflow_id, routine=routine)
 
         molecule = chemi.standardize_molecule(molecule, title=title)
         if not options['stereoisomers']:
@@ -132,7 +130,7 @@ class WorkFlow(object):
 
         """
         routine = 'enumerate_fragments'
-        provenance = _get_provenance(workflow_id=self.workflow_id, routine=routine)
+        provenance = self._get_provenance(workflow_id=self.workflow_id, routine=routine)
         options = self.off_workflow.get_options('enumerate_fragments')
         scheme = options['scheme']
         if 'functional_groups' in options:
@@ -243,7 +241,7 @@ class WorkFlow(object):
         options = self.off_workflow.get_options('torsiondrive_input')
         torsiondrive_options = options['torsiondrive_options']
         restricted_torsiondrive_options = options['restricted_torsiondrive_options']
-        provenance = _get_provenance(workflow_id=self.workflow_id, routine='torsiondrive_input')
+        provenance = self._get_provenance(workflow_id=self.workflow_id, routine='torsiondrive_input')
         # ToDo check that versions are the same
         if 'provenance' not in frag:
             frag['provenance'] = {'routine': {'torsiondrive_input': {}}}
@@ -464,34 +462,40 @@ class WorkFlow(object):
 
 
 
-def _get_provenance(workflow_id, routine):
-    """
-    Get provenance with keywords for routine
+    def _get_provenance(self, workflow_id, routine):
+        """
+        Get provenance with keywords for routine
 
-    Parameters
-    ----------
-    routine: str
-        routine to get provenance for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
-    options: str, optional. Default is None
-        path to yaml file containing user specified options.
+        Parameters
+        ----------
+        routine: str
+            routine to get provenance for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
+        options: str, optional. Default is None
+            path to yaml file containing user specified options.
 
-    Returns
-    -------
-    provenance: dict
-        dictionary with provenance and routine keywords.
+        Returns
+        -------
+        provenance: dict
+            dictionary with provenance and routine keywords.
 
-    """
+        """
 
-    provenance = {'creator': fragmenter.__package__,
-                  'job_id': str(uuid.uuid4()),
-                  'hostname': socket.gethostname(),
-                  'username': getpass.getuser(),
-                  'workflow_id': workflow_id,
-                  'routine': {routine: {
-                      'version': fragmenter.__version__
-                  }}}
+        fragmenter_version = fragmenter.__version__
+        provenance = {'creator': fragmenter.__package__,
+                      'job_id': str(uuid.uuid4()),
+                      'hostname': socket.gethostname(),
+                      'username': getpass.getuser(),
+                      'workflow_id': workflow_id,
+                      'routine': {routine: {
+                          'version': fragmenter_version
+                      }}}
+        # check version against version in wf
+        version_in_wf = self.off_workflow.get_options(routine)['version']
+        if version_in_wf != fragmenter_version:
+            warnings.warn('You are using version {} of fragmenter for {}. The version specified in the registered QCArchive '
+                          'workflow is {} '.format(fragmenter_version, routine, version_in_wf))
 
-    return provenance
+        return provenance
 
 def _check_workflow(workflow_json, off_workflow):
     _json_keys = ['enumerate_states', 'enumerate_fragments', 'torsiondrive_input']
