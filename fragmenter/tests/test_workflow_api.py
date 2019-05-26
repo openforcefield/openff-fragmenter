@@ -94,6 +94,7 @@ def test_enumerate_fragments_combinatorial(fractal_compute_server):
 
     frags = wf.enumerate_fragments('CCCCC')
     assert len(frags) == 1
+    assert len(frags['CCCC']['provenance']['routine']['enumerate_fragments']['map_to_parent']) == 2
 
 def test_enumerate_fragments_wbo(fractal_compute_server):
     client = portal.FractalClient(fractal_compute_server)
@@ -103,9 +104,28 @@ def test_enumerate_fragments_wbo(fractal_compute_server):
     frags = wf.enumerate_fragments('CCCCC')
     assert 'CCCC' in frags
     assert len(frags) == 1
+    assert len(frags['CCCC']['provenance']['routine']['enumerate_fragments']['map_to_parent']) == 2
+    assert len(frags['CCCC']['provenance']['routine']['enumerate_fragments']['central_rot_bond']) == 2
 
-def test_generate_torsiondrive_input():
-    pass
+def test_generate_torsiondrive_input(fractal_compute_server):
+    client = portal.FractalClient(fractal_compute_server)
+    wf = workflow_api.WorkFlow(workflow_id='wbo', client=client)
+
+    frag = {'identifiers': {'canonical_smiles': 'CCCC',
+                            'canonical_isomeric_smiles': 'CCCC',
+                            'canonical_explicit_hydrogen_smiles': '[H]C([H])([H])C([H])([H])C([H])([H])C([H])([H])[H]',
+                            'canonical_isomeric_explicit_hydrogen_smiles': '[H]C([H])([H])C([H])([H])C([H])([H])C([H])([H])[H]',
+                            'canonical_isomeric_explicit_hydrogen_mapped_smiles': '[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]',
+                            'molecular_formula': 'C4H10',
+                            'standard_inchi': 'InChI=1S/C4H10/c1-3-4-2/h3-4H2,1-2H3',
+                            'inchi_key': 'IJDNQMDRQITEOD-UHFFFAOYSA-N',
+                            'unique_tautomer_representation': 'CCCC',
+                            'unique_protomer_representation': 'CCCC'},
+        }
+    td_input = wf.generate_torsiondrive_input(frag)
+    assert len(td_input) == 1
+    assert 'CCCC' in td_input
+    # Not testing number of jobs because it should be not include equivelant torsions
 
 def test_provenance():
     pass
