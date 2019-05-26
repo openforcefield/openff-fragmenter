@@ -93,12 +93,13 @@ def test_keep_track_of_map():
     oechem.OESmilesToMol(mapped_mol, mapped_smiles)
 
     frags = fragmenter.fragment.CombinatorialFragmenter(mapped_mol)
-    frags.fragment_all_bonds_not_in_ring_systems()
-    frags.combine_fragments(min_rotors=1, max_rotors=frags.n_rotors+1, restore_maps=True)
+    frags.fragment()
+    #frags.fragment_all_bonds_not_in_ring_systems()
+    #frags.combine_fragments(min_rotors=1, max_rotors=frags.n_rotors+1, restore_maps=True)
 
-    keys = list(frags.fragment_combinations.keys())
-    assert oechem.OEMolToSmiles(frags.fragment_combinations[keys[0]][0]) == '[H:45][c:8]1[cH:18][c:10]([c:19]([cH:17][c:7]1[H:44])[NH:35][H:67])[H:47]'
-    assert oechem.OEMolToSmiles(frags.fragment_combinations[keys[1]][0]) == '[H:46][c:9]1[cH:20][n:32][c:21]([n:31][c:12]1[H:49])[NH:35][H:67]'
+    keys = list(frags.fragments.keys())
+    assert oechem.OEMolToSmiles(frags.fragments[keys[0]][0]) == '[H:45][c:8]1[cH:18][c:10]([c:19]([cH:17][c:7]1[H:44])[NH:35][H:67])[H:47]'
+    assert oechem.OEMolToSmiles(frags.fragments[keys[1]][0]) == '[H:46][c:9]1[cH:20][n:32][c:21]([n:31][c:12]1[H:49])[NH:35][H:67]'
 
 
 @using_openeye
@@ -236,4 +237,8 @@ def test_find_rotatable_bonds():
         assert bond in expected_rot_bonds
 
 def test_add_substituent():
+    pass
+
+def test_fragment_expand_stereo():
+    """Test that stereo is expanded without loss of atom map information"""
     pass

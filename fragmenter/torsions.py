@@ -17,6 +17,7 @@ from .utils import BOHR_2_ANGSTROM, logger
 
 
 def find_torsions(molecule, restricted=True, terminal=True):
+    #ToDo: Get rid of equivalent torsions. Ex H-C-C-C and C-C-C-H.
     """
     This function takes an OEMol (atoms must be tagged with index map) and finds the map indices for torsion that need
     to be driven.
