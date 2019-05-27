@@ -285,9 +285,9 @@ class WorkFlow(object):
                             mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
                 return False
 
-        qcschema_molecules = [mol_to_map_ordered_qcschema(conf, mol_id) for conf in conformers.GetConfs()]
+        qcschema_molecules = [mol_to_map_ordered_qcschema(conf, mapped_smiles) for conf in conformers.GetConfs()]
         identifier = mol_id['canonical_isomeric_smiles']
-        torsiondrive_inputs = {identifier: {'torsiondrive_input': {}, 'provenance': provenance}}
+        torsiondrive_inputs = {identifier: {'torsiondrive_input': {}}}
         restricted_torsions = needed_torsions.pop('restricted')
         if restricted_torsions:
             optimization_jobs = torsions.generate_constraint_opt_input(qcschema_molecules, restricted_torsions,
@@ -298,13 +298,13 @@ class WorkFlow(object):
         # Currently, all jobs are started from same initial conformation
         # ToDo Start later job from optimized conformers from last job
         for i, job in enumerate(torsiondrive_jobs):
-            torsiondrive_input = {'type': 'torsiondrive_input'}
+            torsiondrive_input = {'type': 'torsiondrive_input', 'identifiers': mol_id, 'provenance': provenance}
             torsiondrive_input['initial_molecule'] = qcschema_molecules
             #torsiondrive_input['initial_molecule']['identifiers'] = mol_id
             torsiondrive_input['dihedrals'] = torsiondrive_jobs[job]['dihedrals']
             torsiondrive_input['grid_spacing'] = torsiondrive_jobs[job]['grid_spacing']
             job_name = ''
-            mapped_smiles = qcschema_molecules[0]['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
+            #mapped_smiles = qcschema_molecules[0]['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
             for i, torsion in enumerate(torsiondrive_input['dihedrals']):
                 label = to_canonical_label(mapped_smiles, torsion)
                 if i > 0:
@@ -392,14 +392,16 @@ class WorkFlow(object):
                 json.dump(all_jobs, f, indent=2, sort_keys=True)
         #return all_jobs
 
-    def add_fragments_to_db(self):
+    def add_fragments_to_db(self, **kwargs):
         for frag in self.qcfractal_jobs:
-            torsiondrive_input = self.qcfractal_jobs[frag]['torsiondrive_input']
-            optimization_input = self.qcfractal_jobs[frag]['optimization_input']
-            # combine both dictionaries
-            input_data = {**torsiondrive_input, **optimization_input}
+            input_data = {}
+            inputs = ['torsiondrive_input', 'optimization_input']
+            for input_type in inputs:
+                if input_type in self.qcfractal_jobs[frag]:
+                    input_data.update(self.qcfractal_jobs[frag][input_type])
+
             if input_data:
-                self.off_workflow.add_fragment(frag, input_data, self.qcfractal_jobs[frag]['provenance'])
+                self.off_workflow.add_fragment(frag, input_data, **kwargs)
 
     def add_fragments_from_json(self, json_filenam):
         with open(json_filenam) as f:

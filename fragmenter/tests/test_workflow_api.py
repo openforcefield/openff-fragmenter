@@ -32,7 +32,7 @@ def test_workflow(fractal_compute_server):
 
     assert len(workflow.qcfractal_jobs) == 1
     key = list(workflow.qcfractal_jobs.keys())[0]
-    assert len(workflow.qcfractal_jobs[key]) == 2
+    assert len(workflow.qcfractal_jobs[key]) == 1
     assert len(workflow.qcfractal_jobs[key]['torsiondrive_input']) == 3
     assert len(workflow.qcfractal_jobs[key]['torsiondrive_input']['[CH3:1][CH2:4][CH2:3][CH3:2]']['initial_molecule']) == 1
 
@@ -131,7 +131,15 @@ def test_provenance():
     pass
 
 
-
-
+def test_add_fragments_to_db(fractal_compute_server):
+    client = portal.FractalClient(fractal_compute_server)
+    wf = workflow_api.WorkFlow(workflow_id='wbo', client=client)
+    wf.workflow('CCCC')
+    wf.add_fragments_to_db()
+    fractal_compute_server.await_results()
+    wf.get_final_molecules()
+    assert len(wf.final_energies) == 0
+    #hmm, this should be longer than one
+    #assert len(wf.failed_jobs) == 1
 
 
