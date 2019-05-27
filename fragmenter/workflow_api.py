@@ -506,7 +506,7 @@ def _check_workflow(workflow_json, off_workflow):
         if workflow_json[key] != off_workflow.get_options(key):
             raise ValueError("The workflow ID provided already exists in the database. The options for {} are different "
                              "in the registered workflow and provided workflow. The options provided are {} and "
-                             "the options in the database are {}".format(key, workflow_json[key], off_workflow.get_options(key), key))
+                             "the options in the database are {}".format(key, workflow_json[key], off_workflow.get_options(key)))
     for key in _model_keys:
         static_opts = off_workflow.get_options(key)
         if key == 'torsiondrive_static_options':

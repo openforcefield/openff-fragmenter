@@ -103,7 +103,7 @@ def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers
                 logger().warn("Tautomer or protonation state has a chiral center. Expanding stereoisomers")
                 stereo_states = _expand_states(molecule, enumerate='steroisomers')
                 for state in stereo_states:
-                    states.add(mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False))
+                    states.add(mol_to_smiles(state, isomeric=True, mapped=False, explicit_hydrogen=False))
             else:
                 raise ValueError("molecule {} is missing stereochemistry".format(mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydorge=False)))
 
@@ -896,8 +896,6 @@ class WBOFragmenter(Fragmenter):
             for a in atom.GetAtoms():
                 m = a.GetMapIdx()
                 atom_map_idx.add(m)
-                bond = self.molecule.GetBond(atom, a)
-                #bond_idx.add(bond.GetIdx())
                 bond_tuples.add((atom.GetMapIdx(), m))
                 if 'ringsystem' in a.GetData():
                     # Grab the ring

@@ -229,7 +229,6 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
             for comb in itertools.combinations(internal_torsions, scan_dimension):
                 dihedrals = [internal_torsions[torsion] for torsion in comb]
                 grid = [internal_torsion_resolution]*len(dihedrals)
-                job_name = ''
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
             if internal_dimension < scan_dimension and internal_dimension > 0:
