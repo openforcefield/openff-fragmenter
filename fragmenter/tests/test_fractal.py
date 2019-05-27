@@ -29,28 +29,29 @@ def test_torsiondrive_run(fractal_compute_server):
         'name': 'HOOH',
         'connectivity': [[0, 1, 1], [1, 2, 1], [2, 3, 1]],
     }
-    mol_ret = client.add_molecules({"hooh": hooh})
 
     # Geometric options
-    instance_options = {
-        "torsiondrive_meta": {
-            "dihedrals": [[0, 1, 2, 3]],
-            "grid_spacing": [90]
-        },
-        "optimization_meta": {
-            "program": "geometric",
+    tdinput = {
+    "initial_molecule": [hooh],
+    "keywords": {
+        "dihedrals": [[0, 1, 2, 3]],
+        "grid_spacing": [90]
+    },
+    "optimization_spec": {
+        "program": "geometric",
+        "keywords": {
             "coordsys": "tric",
-        },
-        "qc_meta": {
-            "driver": "gradient",
-            "method": "UFF",
-            "basis": "",
-            "options": "none",
-            "program": "rdkit",
-        },
-    }
-
-    ret = client.add_service("torsiondrive", [mol_ret["hooh"]], instance_options)
+        }
+    },
+    "qc_spec": {
+        "driver": "gradient",
+        "method": "UFF",
+        "basis": None,
+        "keywords": None,
+        "program": "rdkit",
+    },
+}
+    ret = client.add_service([tdinput])
     fractal_compute_server.await_results()
     assert len(fractal_compute_server.list_current_tasks()) == 0
 

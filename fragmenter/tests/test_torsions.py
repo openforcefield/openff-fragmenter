@@ -142,7 +142,8 @@ class TestTorsions(unittest.TestCase):
 
         crank_job = torsions.define_torsiondrive_jobs(test_crank['needed_torsion_drives'], terminal_torsion_resolution=60)
         self.assertEqual(crank_job['crank_job_0']['grid_spacing'], [30])
-        self.assertEqual(crank_job['crank_job_1']['grid_spacing'], [60, 60])
+        # Terminal torsions are now only in 1D if not combined with internal torsions
+        self.assertEqual(crank_job['crank_job_1']['grid_spacing'], [60])
 
 @using_openeye
 @pytest.mark.parametrize('central_bond', [(0, 1), (0, 2), (1, 3)])

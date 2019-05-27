@@ -17,6 +17,7 @@ from .utils import BOHR_2_ANGSTROM, logger
 
 
 def find_torsions(molecule, restricted=True, terminal=True):
+    #ToDo: Get rid of equivalent torsions. Ex H-C-C-C and C-C-C-H.
     """
     This function takes an OEMol (atoms must be tagged with index map) and finds the map indices for torsion that need
     to be driven.
@@ -237,16 +238,22 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
                 crank_job +=1
 
         if terminal_torsion_resolution:
-            for comb in itertools.combinations(terminal_torsions, scan_dimension):
-                dihedrals = [terminal_torsions[torsion] for torsion in comb]
-                grid = [terminal_torsion_resolution]*scan_dimension
+            # If scanning terminal torsions separately, only do 1D torsion scans
+            for torsion in terminal_torsions:
+                dihedrals = [terminal_torsions[torsion]]
+                grid = [terminal_torsion_resolution]
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
-            if terminal_dimension < scan_dimension and terminal_dimension > 0:
-                dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
-                grid = [terminal_torsion_resolution]*len(dihedrals)
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
-                crank_job +=1
+            # for comb in itertools.combinations(terminal_torsions, scan_dimension):
+            #     dihedrals = [terminal_torsions[torsion] for torsion in comb]
+            #     grid = [terminal_torsion_resolution]*scan_dimension
+            #     crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
+            #     crank_job +=1
+            # if terminal_dimension < scan_dimension and terminal_dimension > 0:
+            #     dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
+            #     grid = [terminal_torsion_resolution]*len(dihedrals)
+            #     crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
+            #     crank_job +=1
     else:
         # combine both internal and terminal torsions
         all_torsion_idx = np.arange(0, torsion_dimension)
@@ -449,6 +456,7 @@ def find_equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
     mol = oechem.OEMol(mapped_mol)
     if not has_atom_map(mol):
         raise ValueError("OEMol must have map indices")
+
     terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
     terminal_torsions = _find_torsions_from_smarts(mol, terminal_smarts)
     mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(mapped_mol)]
@@ -457,10 +465,12 @@ def find_equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
         restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]'
         restricted_torsions = _find_torsions_from_smarts(mol, restricted_smarts)
         all_torsions = all_torsions + restricted_torsions
+
     tor_idx = []
     for tor in all_torsions:
         tor_name = (tor[0].GetMapIdx()-1, tor[1].GetMapIdx()-1, tor[2].GetMapIdx()-1, tor[3].GetMapIdx()-1)
         tor_idx.append(tor_name)
+
     if central_bonds:
         if not isinstance(central_bonds, list):
             central_bonds = [central_bonds]
@@ -469,6 +479,7 @@ def find_equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
 
     eq_torsions = {cb : [tor for tor in tor_idx if cb == (tor[1], tor[2]) or  cb ==(tor[2], tor[1])] for cb in
               central_bonds}
+
     return eq_torsions
 
 

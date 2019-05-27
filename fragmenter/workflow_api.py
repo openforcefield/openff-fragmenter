@@ -6,15 +6,16 @@ import numpy as np
 import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import get_molecule_ids
-from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema, to_canonical_label
+from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema, has_atom_map, to_canonical_label
+from openeye import oechem
 import copy
+import warnings
 #import qcportal as portal
 # For Travis CI
 try:
     import qcfractal.interface as portal
 except ImportError:
     pass
-
 
 class WorkFlow(object):
 
@@ -83,15 +84,16 @@ class WorkFlow(object):
         # Load options for enumerate states
         routine = 'enumerate_states'
         options = self.off_workflow.get_options('enumerate_states')['options']
-        provenance = _get_provenance(workflow_id=self.workflow_id, routine=routine)
-        # if not options:
-        #     options = _get_options(workflow_id, routine)
+        provenance = self._get_provenance(workflow_id=self.workflow_id, routine=routine)
 
         molecule = chemi.standardize_molecule(molecule, title=title)
-        can_iso_smiles = mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False)
+        if not options['stereoisomers']:
+            can_smiles = mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False)
+        else:
+            can_smiles = mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=False)
         states = fragment.expand_states(molecule, **options)
 
-        provenance['routine']['enumerate_states']['parent_molecule'] = can_iso_smiles
+        provenance['routine']['enumerate_states']['parent_molecule'] = can_smiles
         provenance['routine']['enumerate_states']['parent_molecule_name'] = molecule.GetTitle()
         json_dict = {'provenance': provenance, 'states': states}
 
@@ -111,10 +113,6 @@ class WorkFlow(object):
         ----------
         molecule: Input molecule. Very permissive. Can be anything that OpenEye can parse
             SMILES string of molecule to fragment
-        workflow_id: str
-            Which workflow to use for options.
-        options: dictionary, optional, default None
-            Dictionary of keyword options. If None, will use optiond defined in workflows
         title: str, optional. Default empty str
             The title or name of the molecule. If empty stirng will use the IUPAC name for molecule title.
         mol_provenance: dict, optional. Default is None
@@ -132,8 +130,14 @@ class WorkFlow(object):
 
         """
         routine = 'enumerate_fragments'
-        provenance = _get_provenance(workflow_id=self.workflow_id, routine=routine)
-        options = self.off_workflow.get_options('enumerate_fragments')['options']
+        provenance = self._get_provenance(workflow_id=self.workflow_id, routine=routine)
+        options = self.off_workflow.get_options('enumerate_fragments')
+        scheme = options['scheme']
+        if 'functional_groups' in options:
+            functional_groups = options['functional_groups']
+        else:
+            functional_groups = None
+        options = options['options']
 
         parent_molecule = chemi.standardize_molecule(molecule, title)
         parent_molecule_smiles = mol_to_smiles(parent_molecule, isomeric=True, explicit_hydrogen=False,
@@ -141,7 +145,26 @@ class WorkFlow(object):
         provenance['routine']['enumerate_fragments']['parent_molecule_name'] = parent_molecule.GetTitle()
         provenance['routine']['enumerate_fragments']['parent_molecule'] = parent_molecule_smiles
 
-        fragments = fragment.generate_fragments(parent_molecule, generate_vis, **options)
+
+        if scheme == 'combinatorial':
+            fragment_engine = fragment.CombinatorialFragmenter(parent_molecule, functional_groups=functional_groups)
+        elif scheme == 'wiberg_bond_order':
+            fragment_engine = fragment.WBOFragmenter(parent_molecule, functional_groups=functional_groups)
+        else:
+            raise ValueError("Only combinatorial and wiberg_bond_order are supported fragmenting schemes")
+
+        fragment_engine.fragment(**options)
+
+        if generate_vis:
+            fname = '{}.pdf'.format(parent_molecule.GetTitle())
+            fragment_engine.depict_fragments(fname=fname)
+
+        if not fragment_engine.fragments:
+            warnings.warn("No fragments were generated for {}".format(parent_molecule_smiles))
+            # ToDo: if combinatorial does not have fragments it means that there was no point to cut and if
+            # wbo does not have fragments it means no internal rotatable bond was found but it might still have torsions
+            # to drive. Not yet sure how to handle these cases
+            return
 
         if self.states:
             # Check if current state exists
@@ -152,14 +175,40 @@ class WorkFlow(object):
 
         # Generate identifiers for fragments
         fragments_json_dict = {}
-        for fragm in fragments:
-            for i, frag in enumerate(fragments[fragm]):
-                identifiers = get_molecule_ids(frag, toolkit='openeye')
-                frag = identifiers['canonical_isomeric_smiles']
-                fragments_json_dict[frag] = {'identifiers': identifiers}
-                fragments_json_dict[frag]['provenance'] = provenance
-                fragments_json_dict[frag]['provenance']['canonicalization'] = identifiers.pop('provenance')
-
+        for frag in fragment_engine.fragments:
+            mols = fragment_engine.fragments[frag]
+            if not isinstance(mols, list):
+                mols = [mols]
+            # Currently cmiles only takes SMILES or JSON as input. But maybe we should allow oemols?
+            smiles = mol_to_smiles(mols[0], mapped=False)
+            identifiers = get_molecule_ids(smiles, canonicalization='openeye')
+            frag_smiles = identifiers['canonical_isomeric_smiles']
+            if frag_smiles not in fragments_json_dict:
+                fragments_json_dict[frag_smiles] = {'identifiers': identifiers}
+                fragments_json_dict[frag_smiles]['provenance'] = provenance
+                fragments_json_dict[frag_smiles]['provenance']['canonicalization'] = identifiers.pop('provenance')
+                for i, mol in enumerate(mols):
+                    if has_atom_map(mol):
+                        parent_map_smiles = oechem.OEMolToSmiles(mol)
+                        if i == 0:
+                            fragments_json_dict[frag_smiles]['provenance']['routine']['enumerate_fragments']['map_to_parent'] \
+                                = [parent_map_smiles]
+                            if scheme == 'wiberg_bond_order':
+                                fragments_json_dict[frag_smiles]['provenance']['routine']['enumerate_fragments']['central_rot_bond'] \
+                                    = [frag]
+                        if i > 0:
+                            fragments_json_dict[frag_smiles]['provenance']['routine']['enumerate_fragments']['map_to_parent'].append(parent_map_smiles)
+            else:
+                # This is an equivalent fragment from a different part of the parent molecule
+                for mol in mols:
+                    if has_atom_map(mol):
+                        # This is the map to the parent. Meanwhile I'm storing this information in provenance because it's
+                        # helpful for analysis. This info is probably extraneous for regular use of fragmenter
+                        parent_map_smiles = oechem.OEMolToSmiles(mol)
+                        fragments_json_dict[frag_smiles]['provenance']['routine']['enumerate_fragments']['map_to_parent'].append(parent_map_smiles)
+                        # Also store rotatable bond this is from
+                        if scheme == 'wiberg_bond_order':
+                            fragments_json_dict[frag_smiles]['provenance']['routine']['enumerate_fragments']['central_rot_bond'].append(frag)
         if json_filename:
             with open(json_filename, 'w') as f:
                 json.dump(fragments_json_dict, f, indent=2, sort_keys=True)
@@ -167,6 +216,8 @@ class WorkFlow(object):
         return fragments_json_dict
 
     def generate_torsiondrive_input(self, frag, json_filename=None):
+        #ToDo Option for only driving a certain bond (or only rotatable bond from fragment)
+        # Should this be a general function to generate whatever input is needed?
         """
         Generate input for torsiondrive QCFractal portal
 
@@ -188,7 +239,12 @@ class WorkFlow(object):
         """
 
         options = self.off_workflow.get_options('torsiondrive_input')
-        provenance = _get_provenance(workflow_id=self.workflow_id, routine='torsiondrive_input')
+        torsiondrive_options = options['torsiondrive_options']
+        restricted_torsiondrive_options = options['restricted_torsiondrive_options']
+        provenance = self._get_provenance(workflow_id=self.workflow_id, routine='torsiondrive_input')
+        # ToDo check that versions are the same
+        if 'provenance' not in frag:
+            frag['provenance'] = {'routine': {'torsiondrive_input': {}}}
         frag['provenance']['routine']['torsiondrive_input'] = provenance['routine']['torsiondrive_input']
         provenance = frag['provenance']
 
@@ -198,13 +254,15 @@ class WorkFlow(object):
         mapped_mol = chemi.smiles_to_oemol(mapped_smiles)
         needed_torsions = torsions.find_torsions(mapped_mol, options['restricted'])
 
-        if 'conf_grid' in options:
+
+        initial_conformers = options['initial_conformers']
+        if initial_conformers == 'grid':
             # Generate grid of multiple conformers
             dihedrals = []
             for torsion_type in needed_torsions:
                 for tor in needed_torsions[torsion_type]:
                     dihedrals.append(needed_torsions[torsion_type][tor])
-            intervals = options['initial_conf_grid_resolution']
+            intervals = options['grid_resolution']
             if not isinstance(intervals, list):
                 intervals = [intervals]*len(dihedrals)
             try:
@@ -217,38 +275,36 @@ class WorkFlow(object):
 
             chemi.resolve_clashes(conformers)
         else:
+            # Use Omega to generate conformers
             try:
-                max_confs = options['torsiondrive_options'].pop('max_confs')
-                conformers = chemi.generate_conformers(mapped_mol, max_confs=max_confs)
+
+                conformers = chemi.generate_conformers(mapped_mol, max_confs=initial_conformers)
             except RuntimeError:
                 utils.logger().warning("{} does not have coordinates. This can happen for several reasons related to Omega. "
                                   "{} will not be included in fragments dictionary".format(
                             mol_id['canonical_isomeric_smiles'], mol_id['canonical_isomeric_smiles']))
                 return False
 
-        qcschema_molecules = [mol_to_map_ordered_qcschema(conf, mol_id) for conf in conformers.GetConfs()]
+        qcschema_molecules = [mol_to_map_ordered_qcschema(conf, mapped_smiles) for conf in conformers.GetConfs()]
         identifier = mol_id['canonical_isomeric_smiles']
-        torsiondrive_inputs = {identifier: {'torsiondrive_input': {}, 'provenance': provenance}}
+        torsiondrive_inputs = {identifier: {'torsiondrive_input': {}}}
         restricted_torsions = needed_torsions.pop('restricted')
         if restricted_torsions:
             optimization_jobs = torsions.generate_constraint_opt_input(qcschema_molecules, restricted_torsions,
-                                                             **options['restricted_optimization_options'])
+                                                             **restricted_torsiondrive_options)
             torsiondrive_inputs[identifier]['optimization_input'] = optimization_jobs
-        torsiondrive_jobs = torsions.define_torsiondrive_jobs(needed_torsions, **options['torsiondrive_options'])
-
-        #if options['multiple_confs']:
-        #    qcschema_molecule = qcschema_molecules
+        torsiondrive_jobs = torsions.define_torsiondrive_jobs(needed_torsions, **torsiondrive_options)
 
         # Currently, all jobs are started from same initial conformation
         # ToDo Start later job from optimized conformers from last job
         for i, job in enumerate(torsiondrive_jobs):
-            torsiondrive_input = {'type': 'torsiondrive_input'}
+            torsiondrive_input = {'type': 'torsiondrive_input', 'identifiers': mol_id, 'provenance': provenance}
             torsiondrive_input['initial_molecule'] = qcschema_molecules
             #torsiondrive_input['initial_molecule']['identifiers'] = mol_id
             torsiondrive_input['dihedrals'] = torsiondrive_jobs[job]['dihedrals']
             torsiondrive_input['grid_spacing'] = torsiondrive_jobs[job]['grid_spacing']
             job_name = ''
-            mapped_smiles = qcschema_molecules[0]['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
+            #mapped_smiles = qcschema_molecules[0]['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
             for i, torsion in enumerate(torsiondrive_input['dihedrals']):
                 label = to_canonical_label(mapped_smiles, torsion)
                 if i > 0:
@@ -266,6 +322,8 @@ class WorkFlow(object):
 
     def workflow(self, molecules_smiles, molecule_titles=None, generate_vis=False, write_json_intermediate=False,
                  json_filename=None):
+        # ToDo: Add the ability to skip fragment
+        # ToDo: Add the ability to skip torsiondrive inputs - just conformations and IDs
         """
         Convenience function to run Fragmenter workflow.
 
@@ -293,6 +351,9 @@ class WorkFlow(object):
         # Check input
         if not isinstance(molecules_smiles, list):
             molecules_smiles = [molecules_smiles]
+        if molecule_titles:
+            if not isinstance(molecule_titles, list):
+                molecule_titles = [molecule_titles]
 
         all_frags = {}
 
@@ -313,6 +374,8 @@ class WorkFlow(object):
                     filename = 'fragment_{}_{}.json'.format(utils.make_python_identifier(state)[0], j)
                 fragments = self.enumerate_fragments(state, title=title, mol_provenance=self.states['provenance'],
                                                 json_filename=filename, generate_vis=generate_vis)
+                if not fragments:
+                    continue
                 all_frags.update(**fragments)
         self.fragments = all_frags
 
@@ -329,16 +392,18 @@ class WorkFlow(object):
                 json.dump(all_jobs, f, indent=2, sort_keys=True)
         #return all_jobs
 
-    def add_fragments_to_db(self):
+    def add_fragments_to_db(self, **kwargs):
         for frag in self.qcfractal_jobs:
-            torsiondrive_input = self.qcfractal_jobs[frag]['torsiondrive_input']
-            optimization_input = self.qcfractal_jobs[frag]['optimization_input']
-            # combine both dictionaries
-            input_data = {**torsiondrive_input, **optimization_input}
-            if input_data:
-                self.off_workflow.add_fragment(frag, input_data, self.qcfractal_jobs[frag]['provenance'])
+            input_data = {}
+            inputs = ['torsiondrive_input', 'optimization_input']
+            for input_type in inputs:
+                if input_type in self.qcfractal_jobs[frag]:
+                    input_data.update(self.qcfractal_jobs[frag][input_type])
 
-    def add_fragment_from_json(self, json_filenam):
+            if input_data:
+                self.off_workflow.add_fragment(frag, input_data, **kwargs)
+
+    def add_fragments_from_json(self, json_filenam):
         with open(json_filenam) as f:
             self.qcfractal_jobs = json.load(f)
         self.add_fragments_to_db()
@@ -399,44 +464,75 @@ class WorkFlow(object):
 
 
 
-def _get_provenance(workflow_id, routine):
-    """
-    Get provenance with keywords for routine
+    def _get_provenance(self, workflow_id, routine):
+        """
+        Get provenance with keywords for routine
 
-    Parameters
-    ----------
-    routine: str
-        routine to get provenance for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
-    options: str, optional. Default is None
-        path to yaml file containing user specified options.
+        Parameters
+        ----------
+        routine: str
+            routine to get provenance for. Options are 'enumerate_states', 'enumerate_fragments', and 'generate_crank_jobs'
+        options: str, optional. Default is None
+            path to yaml file containing user specified options.
 
-    Returns
-    -------
-    provenance: dict
-        dictionary with provenance and routine keywords.
+        Returns
+        -------
+        provenance: dict
+            dictionary with provenance and routine keywords.
 
-    """
+        """
 
-    provenance = {'creator': fragmenter.__package__,
-                  'job_id': str(uuid.uuid4()),
-                  'hostname': socket.gethostname(),
-                  'username': getpass.getuser(),
-                  'workflow_id': workflow_id,
-                  'routine': {routine: {
-                      'version': fragmenter.__version__
-                  }}}
+        fragmenter_version = fragmenter.__version__
+        provenance = {'creator': fragmenter.__package__,
+                      'job_id': str(uuid.uuid4()),
+                      'hostname': socket.gethostname(),
+                      'username': getpass.getuser(),
+                      'workflow_id': workflow_id,
+                      'routine': {routine: {
+                          'version': fragmenter_version
+                      }}}
+        # check version against version in wf
+        version_in_wf = self.off_workflow.get_options(routine)['version']
+        if version_in_wf != fragmenter_version:
+            warnings.warn('You are using version {} of fragmenter for {}. The version specified in the registered QCArchive '
+                          'workflow is {} '.format(fragmenter_version, routine, version_in_wf))
 
-    return provenance
+        return provenance
 
 def _check_workflow(workflow_json, off_workflow):
-
-    for key in workflow_json:
+    _json_keys = ['enumerate_states', 'enumerate_fragments', 'torsiondrive_input']
+    _model_keys = ['torsiondrive_static_options','optimization_static_options' ]
+    for key in _json_keys:
         if workflow_json[key] != off_workflow.get_options(key):
-            raise ValueError("The workflow ID provided already exists in the database. The options for {} are different"
+            raise ValueError("The workflow ID provided already exists in the database. The options for {} are different "
                              "in the registered workflow and provided workflow. The options provided are {} and "
-                             "the options in the database are {}".format(key, workflow_json[key], off_workflow.get_options(key), key))
+                             "the options in the database are {}".format(key, workflow_json[key], off_workflow.get_options(key)))
+    for key in _model_keys:
+        static_opts = off_workflow.get_options(key)
+        if key == 'torsiondrive_static_options':
+            if static_opts.optimization_spec.program != workflow_json[key]['optimization_spec']['program']:
+                raise ValueError("Options for optimization program is not the same as in QCArchive")
+            if static_opts.optimization_spec.keywords != workflow_json[key]['optimization_spec']['keywords']:
+                raise ValueError("Keywords are different for optimization program in QCArchive")
         else:
-            return True
+            if static_opts.program != workflow_json[key]['program']:
+                raise ValueError("Options for optimization program is not the same as in QCArchive")
+            if static_opts.keywords != workflow_json[key]['keywords']:
+                raise ValueError("Keywords are different for optimization program in QCArchive")
+        if static_opts.qc_spec.method.lower() != workflow_json[key]['qc_spec']['method'].lower():
+            raise ValueError("qc method is different in QCArchive workflow")
+        if static_opts.qc_spec.basis != workflow_json[key]['qc_spec']['basis']:
+            if not static_opts.qc_spec.basis and not workflow_json[key]['qc_spec']['basis']:
+                continue
+            raise ValueError('basis set is different in QCArchive {} and JSON workflow {}'.format(
+                static_opts.qc_spec.basis, workflow_json[key]['qc_spec']['basis']
+            ))
+        if static_opts.qc_spec.program != workflow_json[key]['qc_spec']['program']:
+            raise ValueError('program is different in QCArchive and JSON workflow')
+        if static_opts.qc_spec.keywords != workflow_json[key]['qc_spec']['keywords']:
+            raise ValueError('keywords are different in QCArchive and JSON workflow')
+
+    return True
 
 
 def serialize_key(key):
@@ -459,6 +555,33 @@ def grid_id_from_str(grid_id_str):
 
     """
     return int(grid_id_str.split('[')[-1].split(']')[0])
+
+def serialize_fractal_output(final_json):
+    """
+
+    Parameters
+    ----------
+    final_json
+
+    Returns
+    -------
+
+    """
+    import qcelemental
+
+    serialized_dict = {}
+    for frag in final_json:
+        serialized_dict[frag] = {}
+        for job in final_json[frag]:
+            serialized_dict[frag][job] = {}
+            for key in final_json[frag][job]:
+                value = final_json[frag][job][key]
+                new_key = serialize_key(key)
+                if isinstance(value, qcelemental.models.molecule.Molecule):
+                    value = json.loads(value.json())
+                serialized_dict[frag][job][new_key] = value
+    return serialized_dict
+
 
 def sort_energies(final_energies):
     """
