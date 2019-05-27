@@ -1,4 +1,4 @@
-amide: '[NX3][CX3](=[OX1])[#6]'
+amide: '[NX3][CX3](=[OX1])'
 amide_2: '[NX3][CX3](=[OX1])[NX3]'
 aldehyde: '[CX3H1](=O)[#6]'
 alcohol: '[#6][OX2H]'
