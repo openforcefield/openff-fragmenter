@@ -25,4 +25,4 @@ dependencies:
     # Pip depends
   - pip:
     - codecov
-    - git+git://github.com/openforcefield/cmiles.git@v0.1.4#egg=cmiles
+    - git+git://github.com/openforcefield/cmiles.git@v0.1.5#egg=cmiles
