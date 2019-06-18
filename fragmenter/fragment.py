@@ -67,6 +67,8 @@ def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers
     states: set of SMILES for enumerated states
 
     """
+    #ToDo Stereoisomers should probably go first to avoid adding molecules that do not have stereo defined
+    #ToDo Separate each expansion to its own function
     title = inp_molecule.GetTitle()
     states = set()
     molecules = [inp_molecule]
@@ -84,7 +86,7 @@ def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers
     if stereoisomers:
         logger().info("Enumerating stereoisomers for {}".format(title))
         molecules.extend(_expand_states(molecules, enumerate='stereoisomers', max_states=max_states, verbose=verbose,
-                                        suppress_hydrogen=False))
+                                        suppress_hydrogen=suppress_hydrogen))
 
     # if stereoisomers:
     #     molecules.remove(inp_molecule)
@@ -97,13 +99,15 @@ def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers
         except ValueError:
             if stereoisomers:
                 continue
-            elif not strict:
-                states.add(mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=True ))
-            elif expand_internally:
+
+            if expand_internally:
                 logger().warn("Tautomer or protonation state has a chiral center. Expanding stereoisomers")
-                stereo_states = _expand_states(molecule, enumerate='steroisomers')
+                stereo_states = _expand_states(molecule, enumerate='stereoisomers')
                 for state in stereo_states:
                     states.add(mol_to_smiles(state, isomeric=True, mapped=False, explicit_hydrogen=False))
+            elif not strict:
+                states.add(mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=True ))
+
             else:
                 raise ValueError("molecule {} is missing stereochemistry".format(mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydorge=False)))
 
@@ -197,6 +201,7 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
                 enantiomer = oechem.OEMol(enantiomer)
                 oechem.OEWriteMolecule(ostream, enantiomer)
                 states.append(enantiomer)
+    print(len(states))
 
     return states
 
@@ -647,7 +652,7 @@ class WBOFragmenter(Fragmenter):
         self.fragments = {} # Fragments from fragmentation scheme for each rotatable bond
         self._fragments = {} # Used internally for depiction
 
-    def fragment(self, heuristic='path_length', threshold=0.009, keep_non_rotor_ring_substituents=True):
+    def fragment(self, heuristic='path_length', threshold=0.009, keep_non_rotor_ring_substituents=True, **kwargs):
         """
 
         Parameters
@@ -667,10 +672,10 @@ class WBOFragmenter(Fragmenter):
 
         # Build fragments
         for bond in self.rotors_wbo:
-            self.build_fragment(bond, heuristic=heuristic, threshold=threshold)
+            self.build_fragment(bond, heuristic=heuristic, threshold=threshold, **kwargs)
 
 
-    def calculate_wbo(self, fragment=None):
+    def calculate_wbo(self, fragment=None, **kwargs):
         """
         Calculate WBO
         Parameters
@@ -692,7 +697,7 @@ class WBOFragmenter(Fragmenter):
                 logger().info('WBO took {} seconds to calculate'.format(time2-time1))
         else:
             time1 = time.time()
-            fragment = get_charges(fragment, strict_stereo=False)
+            fragment = get_charges(fragment, **kwargs)
             time2 = time.time()
             if self.verbose:
                 logger().info('WBO took {} seconds to calculate'.format(time2-time1))
@@ -835,10 +840,13 @@ class WBOFragmenter(Fragmenter):
         return ortho_atoms, ortho_bonds
 
 
-    def compare_wbo(self, fragment, bond_tuple, verbose=True):
+    def compare_wbo(self, fragment, bond_tuple, **kwargs):
 
         restore_atom_map(fragment)
-        charged_fragment = self.calculate_wbo(fragment=fragment)
+        try:
+            charged_fragment = self.calculate_wbo(fragment=fragment, **kwargs)
+        except RuntimeError:
+            raise RuntimeError("Cannot calculate WBO for fragment built around bond {}".format(bond_tuple))
         # Get new WBO
         a1 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
         a2 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[-1]))
@@ -870,7 +878,7 @@ class WBOFragmenter(Fragmenter):
             raise ValueError("({}) atoms are not connected".format(bond_tuple))
         return bond
 
-    def build_fragment(self, bond_tuple, threshold=0.009, heuristic='path_length'):
+    def build_fragment(self, bond_tuple, threshold=0.009, heuristic='path_length', **kwargs):
         """
         Build fragment around bond
         Parameters
@@ -917,16 +925,16 @@ class WBOFragmenter(Fragmenter):
         atom_bond_set = self._to_atom_bond_set(atom_map_idx, bond_tuples)
         fragment_mol = self.atom_bond_set_to_mol(atom_bond_set, expand_stereoisomers=False)
         # #return fragment_mol
-        diff = self.compare_wbo(fragment_mol, bond_tuple)
+        diff = self.compare_wbo(fragment_mol, bond_tuple, **kwargs)
         if diff <= threshold:
             self._fragments[bond_tuple] = atom_bond_set
         if diff > threshold:
             fragment_mol = self._add_next_substituent(atom_map_idx, bond_tuples, target_bond=bond_tuple,
-                                                      threshold=threshold, heuristic=heuristic)
+                                                      threshold=threshold, heuristic=heuristic, **kwargs)
         self.fragments[bond_tuple] = fragment_mol
 
 
-    def _add_next_substituent(self, atoms, bonds, target_bond, threshold=0.009, heuristic='path_length'):
+    def _add_next_substituent(self, atoms, bonds, target_bond, threshold=0.009, heuristic='path_length', **kwargs):
         """
         If the difference between WBO in fragment and molecules is greater than threshold, add substituents to
         fragment until difference is within threshold
@@ -943,8 +951,11 @@ class WBOFragmenter(Fragmenter):
         -------
 
         """
-        bond_atom = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[0]))
+        bond_atom_1 = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[0]))
+        bond_atom_2 = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[1]))
         atoms_to_add = []
+        sort_by_1 = []
+        sort_by_2 = []
         sort_by = []
         for m_idx in atoms:
             a = self.molecule.GetAtom(oechem.OEHasMapIdx(m_idx))
@@ -957,10 +968,28 @@ class WBOFragmenter(Fragmenter):
                         sort_by.append(b.GetData('WibergBondOrder'))
                         reverse = True
                     elif heuristic == 'path_length':
-                        sort_by.append(oechem.OEGetPathLength(bond_atom, nbr))
+                        sort_by_1.append(oechem.OEGetPathLength(bond_atom_1, nbr))
+                        sort_by_2.append(oechem.OEGetPathLength(bond_atom_2, nbr))
                         reverse = False
                     else:
                         raise ValueError('Only wbo and path_lenght are supported heuristics')
+        if heuristic == 'path_length':
+            min_1 = min(sort_by_1)
+            min_2 = min(sort_by_2)
+            if min_1 < min_2:
+                sort_by = sort_by_1
+            elif min_2 < min_1:
+                sort_by = sort_by_2
+            elif min_1 == min_2:
+                indices = []
+                for l in [sort_by_1, sort_by_2]:
+                    indices.extend([i for i, x in enumerate(l) if x == min_1])
+                atoms_to_add = [atoms_to_add[i] for i in indices]
+                for a, b in atoms_to_add:
+                    bond = self.get_bond(b)
+                    sort_by.append(bond.GetData('WibergBondOrder'))
+                    reverse = True
+
         sorted_atoms = [a for _, a in sorted(zip(sort_by, atoms_to_add), reverse=reverse)]
         for atom, bond in sorted_atoms:
             a = self.molecule.GetAtom(oechem.OEHasMapIdx(atom))
@@ -977,12 +1006,12 @@ class WBOFragmenter(Fragmenter):
             # Check new WBO
             atom_bond_set = self._to_atom_bond_set(atoms, bonds)
             fragment_mol = self.atom_bond_set_to_mol(atom_bond_set, expand_stereoisomers=False)
-            if self.compare_wbo(fragment_mol, target_bond) < threshold:
+            if self.compare_wbo(fragment_mol, target_bond, **kwargs) < threshold:
                 self._fragments[target_bond] = atom_bond_set
                 return fragment_mol
             else:
                 return self._add_next_substituent(atoms=atoms, bonds=bonds, target_bond=target_bond,
-                                                  heuristic=heuristic)
+                                                  heuristic=heuristic, **kwargs)
 
     def depict_fragments(self, fname):
         itf = oechem.OEInterface()
