@@ -102,10 +102,15 @@ def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers
 
             if expand_internally:
                 logger().warn("Tautomer or protonation state has a chiral center. Expanding stereoisomers")
-                stereo_states = _expand_states(molecule, enumerate='stereoisomers')
+                max_stereo_states = int(max_states/len(molecules))
+                stereo_states = _expand_states(molecule, enumerate='stereoisomers', max_states=max_stereo_states)
                 for state in stereo_states:
                     if mapped:
-                        states.add(mol_to_smiles(state, isomeric=True, mapped=mapped, explicit_hydrogen=True))
+                        try:
+                            states.add(mol_to_smiles(state, isomeric=True, mapped=mapped, explicit_hydrogen=True))
+                        except ValueError:
+                            logger().warning('Cannot generate isomeric SMILES for {}. Skipping'.format(oechem.OEMolToSmiles(state)))
+                            continue
                     else:
                         states.add(mol_to_smiles(state, isomeric=True, mapped=mapped, explicit_hydrogen=False))
             elif not strict:
