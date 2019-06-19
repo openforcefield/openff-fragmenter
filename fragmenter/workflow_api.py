@@ -20,6 +20,7 @@ except ImportError:
 class WorkFlow(object):
 
     def __init__(self, workflow_id, client, workflow_json=None, verbose=False):
+        #ToDo allow use of workflow without client and / or without running QM
         """
 
         Parameters
@@ -87,9 +88,9 @@ class WorkFlow(object):
         provenance = self._get_provenance(workflow_id=self.workflow_id, routine=routine)
 
         molecule = chemi.standardize_molecule(molecule, title=title)
-        if not options['stereoisomers']:
+        try:
             can_smiles = mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False)
-        else:
+        except ValueError:
             can_smiles = mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=False)
         states = fragment.expand_states(molecule, **options)
 
