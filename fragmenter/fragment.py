@@ -104,7 +104,10 @@ def expand_states(inp_molecule, protonation=True, tautomers=False, stereoisomers
                 logger().warn("Tautomer or protonation state has a chiral center. Expanding stereoisomers")
                 stereo_states = _expand_states(molecule, enumerate='stereoisomers')
                 for state in stereo_states:
-                    states.add(mol_to_smiles(state, isomeric=True, mapped=mapped, explicit_hydrogen=False))
+                    if mapped:
+                        states.add(mol_to_smiles(state, isomeric=True, mapped=mapped, explicit_hydrogen=True))
+                    else:
+                        states.add(mol_to_smiles(state, isomeric=True, mapped=mapped, explicit_hydrogen=False))
             elif not strict:
                 states.add(mol_to_smiles(molecule, isomeric=False, mapped=mapped, explicit_hydrogen=True ))
 
