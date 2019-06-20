@@ -487,9 +487,18 @@ class CombinatorialFragmenter(Fragmenter):
                             for m in mol:
                                 mapped_smiles = oechem.OEMolToSmiles(m)
                                 if not mapped_smiles in unique_mols:
+                                    # ToDo what to do when fragment loses stereo info?
                                     unique_mols.add(mapped_smiles)
+                                    print(mapped_smiles)
                                     new_mols.append(m)
-                                    smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=True))
+                                    try:
+                                        smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=True))
+                                    except ValueError:
+                                        # fragment lost stereo information.
+                                        logger().warning("Fragment lost stereo information or now has a new sterecenter. Expanding to 2 stereoisomers")
+                                        states = _expand_states(m, enumerate='stereoisoemrs', max_states=2)
+                                        smiles.extend(list(states))
+                                        #smiles.append(mol_to_smiles(m, isomeric=False, mapped=False, explicit_hydrogen=True))
                             for sm in smiles:
                                 if sm not in self.fragments:
                                     self.fragments[sm] = []
