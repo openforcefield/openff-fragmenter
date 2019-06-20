@@ -489,7 +489,6 @@ class CombinatorialFragmenter(Fragmenter):
                                 if not mapped_smiles in unique_mols:
                                     # ToDo what to do when fragment loses stereo info?
                                     unique_mols.add(mapped_smiles)
-                                    print(mapped_smiles)
                                     new_mols.append(m)
                                     try:
                                         smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=True))
