@@ -10,7 +10,7 @@ from .utils import logger, ANGSROM_2_BOHR, BOHR_2_ANGSTROM
 
 import os
 import numpy as np
-import time
+import signal
 import itertools
 import warnings
 import copy
@@ -25,7 +25,7 @@ manipulate OpenEye molecules
 
 
 def get_charges(molecule, max_confs=800, strict_stereo=True,
-                normalize=True, keep_confs=None, legacy=True):
+                normalize=True, keep_confs=None, legacy=True, **kwargs):
     """Generate charges for an OpenEye OEMol molecule.
     Parameters
     ----------
@@ -73,7 +73,7 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     else:
         molecule = oechem.OEMol(molecule)
 
-    charged_copy = generate_conformers(molecule, max_confs=max_confs, strict_stereo=strict_stereo)  # Generate up to max_confs conformers
+    charged_copy = generate_conformers(molecule, max_confs=max_confs, strict_stereo=strict_stereo, **kwargs)  # Generate up to max_confs conformers
 
     if not legacy:
         # 2017.2.1 OEToolkits new charging function
@@ -112,7 +112,7 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
 
 
 def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
-                        can_order=True, copy=True):
+                        can_order=True, copy=True, timeout=100):
     """Generate conformations for the supplied molecule
     Parameters
     ----------
@@ -163,6 +163,7 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     omega.SetStrictAtomTypes(strict_types)
 
     omega.SetIncludeInput(False)  # don't include input
+    omega.SetMaxSearchTime(timeout)
     if max_confs is not None:
         omega.SetMaxConfs(max_confs)
 
@@ -1494,13 +1495,17 @@ def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
     b = None
     for i, mol in enumerate(molecules):
         cell = report.NewCell()
+        if isinstance(mol, str):
+            m = oechem.OEMol()
+            oechem.OESmilesToMol(m, mol)
+            mol = m
         mol_copy = oechem.OEMol(mol)
         oedepict.OEPrepareDepiction(mol_copy, False, supress_h)
         # if bo:
         #     b.SetData('WibergBondOrder', bo[i])
         #     opts.SetBondPropertyFunctor(LabelWibergBondOrder())
 
-        if isinstance(bond_map_idx, tuple):
+        if isinstance(bond_map_idx, tuple) and len(bond_map_idx) == 2:
             atom_bond_set = oechem.OEAtomBondSet()
             a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[0]))
             a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[1]))
@@ -1518,6 +1523,25 @@ def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
                 hcolor = oechem.OEColor(oechem.OELightBlue)
             disp = oedepict.OE2DMolDisplay(mol_copy, opts)
             oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+        elif isinstance(bond_map_idx, tuple) and len(bond_map_idx) != 2:
+            atom_bond_set = oechem.OEAtomBondSet()
+            # Find all atoms and bonds between them
+            for m1, m2 in itertools.combinations(bond_map_idx, 2):
+                a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(m1))
+                a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(m2))
+                atom_bond_set.AddAtom(a1)
+                atom_bond_set.AddAtom(a2)
+                b = mol_copy.GetBond(a1, a2)
+                if b:
+                    atom_bond_set.AddBond(b)
+            hstyle = oedepict.OEHighlightStyle_BallAndStick
+            if color:
+                hcolor = color
+            else:
+                hcolor = oechem.OEColor(oechem.OELightBlue)
+            disp = oedepict.OE2DMolDisplay(mol_copy, opts)
+            oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+
         elif isinstance(bond_map_idx, list):
             atom_bond_set = oechem.OEAtomBondSet()
             a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[i][0]))
@@ -1533,9 +1557,13 @@ def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
                 hcolor = oechem.OEColor(oechem.OELightBlue)
             disp = oedepict.OE2DMolDisplay(mol_copy, opts)
             oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+        else:
+            disp = oedepict.OE2DMolDisplay(mol_copy, opts)
 
         if not b and bond_map_idx:
-            raise RuntimeError("{} is not connected in molecule".format(bond_map_idx))
+            warnings.warn("{} is not connected in molecule".format(bond_map_idx))
+            #raise RuntimeError("{} is not connected in molecule".format(bond_map_idx))
+
 
         oedepict.OERenderMolecule(cell, disp)
         oedepict.OEDrawCurvedBorder(cell, oedepict.OELightGreyPen, 10.0)
