@@ -52,7 +52,7 @@ install:
 
 before_script:
   - python -V
-  - mongod --v
+  - mongod --version
   - conda list
   - psql --version
   - psql -c "create database test_qcarchivedb;" -U postgres
