@@ -186,7 +186,7 @@ class WorkFlow(object):
             frag_smiles = identifiers['canonical_isomeric_smiles']
             if frag_smiles not in fragments_json_dict:
                 fragments_json_dict[frag_smiles] = {'identifiers': identifiers}
-                fragments_json_dict[frag_smiles]['provenance'] = provenance
+                fragments_json_dict[frag_smiles]['provenance'] = copy.deepcopy(provenance)
                 fragments_json_dict[frag_smiles]['provenance']['canonicalization'] = identifiers.pop('provenance')
                 for i, mol in enumerate(mols):
                     if has_atom_map(mol):
