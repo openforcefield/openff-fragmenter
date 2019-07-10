@@ -784,6 +784,12 @@ class WBOFragmenter(Fragmenter):
                                 # Add atom and bond to ring system
                                 non_rotor_atoms.add(a.GetMapIdx())
                                 non_rotor_bond.add((a.GetMapIdx(), m))
+                                # Cehck if bond is in a functional group
+                                if 'fgroup' in bond.GetData():
+                                    # Grab all atoms and bonds
+                                    fgroup = a.GetData('fgroup')
+                                    non_rotor_atoms.update(self.functional_groups[fgroup][0])
+                                    non_rotor_bond.update(self.functional_groups[fgroup][-1])
             ringidx_atoms.update(non_rotor_atoms)
             ringidx_bonds.update(non_rotor_bond)
             self.ring_systems[ringidx] = (ringidx_atoms, ringidx_bonds)
