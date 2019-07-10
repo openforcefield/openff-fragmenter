@@ -1,10 +1,11 @@
 language: python
 
 # Run jobs on container-based infrastructure, can be overridden per job
-dist: trusty
+dist: xenial
 
 services:
   - mongodb
+  - postgresql
 
 addons:
   apt:
@@ -49,6 +50,14 @@ install:
     # Build and install package
   - python setup.py develop --no-deps
 
+before_script:
+  - python -V
+  - mongod --version
+  - conda list
+  - psql --version
+  - psql -c "create database test_qcarchivedb;" -U postgres
+  - psql -c "create user qcarchive with password 'mypass';" -U postgres
+  - psql -c "grant all privileges on database test_qcarchivedb to qcarchive;" -U postgres
 
 script:
   - export OE_LICENSE=`pwd`"/oe_license.txt"

@@ -20,6 +20,7 @@ except ImportError:
 class WorkFlow(object):
 
     def __init__(self, workflow_id, client, workflow_json=None, verbose=False):
+        #ToDo allow use of workflow without client and / or without running QM
         """
 
         Parameters
@@ -87,9 +88,9 @@ class WorkFlow(object):
         provenance = self._get_provenance(workflow_id=self.workflow_id, routine=routine)
 
         molecule = chemi.standardize_molecule(molecule, title=title)
-        if not options['stereoisomers']:
+        try:
             can_smiles = mol_to_smiles(molecule, isomeric=True, mapped=False, explicit_hydrogen=False)
-        else:
+        except ValueError:
             can_smiles = mol_to_smiles(molecule, isomeric=False, mapped=False, explicit_hydrogen=False)
         states = fragment.expand_states(molecule, **options)
 
@@ -185,7 +186,7 @@ class WorkFlow(object):
             frag_smiles = identifiers['canonical_isomeric_smiles']
             if frag_smiles not in fragments_json_dict:
                 fragments_json_dict[frag_smiles] = {'identifiers': identifiers}
-                fragments_json_dict[frag_smiles]['provenance'] = provenance
+                fragments_json_dict[frag_smiles]['provenance'] = copy.deepcopy(provenance)
                 fragments_json_dict[frag_smiles]['provenance']['canonicalization'] = identifiers.pop('provenance')
                 for i, mol in enumerate(mols):
                     if has_atom_map(mol):
