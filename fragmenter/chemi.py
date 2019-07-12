@@ -1441,7 +1441,7 @@ class LabelWibergBondOrder(oedepict.OEDisplayBondPropBase):
     def __call__(self, bond):
         if 'WibergBondOrder' in bond.GetData():
             bondOrder = bond.GetData('WibergBondOrder')
-            label = "{:.3f}".format(bondOrder)
+            label = "{:.2f}".format(bondOrder)
             return label
         return ' '
 
