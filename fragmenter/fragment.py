@@ -13,7 +13,8 @@ import networkx as nx
 import time
 
 from .utils import logger
-from .chemi import to_smi, get_charges
+from .chemi import to_smi, get_charges, generate_conformers, LabelWibergBondOrder
+from .torsions import find_torsion_around_bond
 
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
@@ -720,27 +721,38 @@ class WBOFragmenter(Fragmenter):
         self.fragments = {} # Fragments from fragmentation scheme for each rotatable bond
         self._fragments = {} # Used internally for depiction
 
-    def fragment(self, heuristic='path_length', keep_non_rotor_ring_substituents=True, **kwargs):
+        # For provenance
+        self._options = {'functional_groups': functional_groups}
+
+    def fragment(self,  keep_non_rotor_ring_substituents=True, **kwargs):
         """
+        Fragment molecules using the Wiberg Bond Order as a surrogate
 
         Parameters
         ----------
-        heuristic :
-        threshold :
-
-        Returns
-        -------
+        keep_non_rotor_ring_substituents: bool
+            If True, will always keep all non rotor substiuents on ring. If False, will only add them
+            if they are ortho to rotatable bond or if it's needed for WBO to be within the threshold
+        **heuristic : str, optional, default 'path_length'
+            The path fragmenter should take when fragment needs to be grown out. The other option is
+            'wbo'
+        **threshold : float, optional, default 0.01
+            The threshold for the central bond WBO. If the fragment WBO is below this threshold, fragmenter
+            will grow out the fragment one bond at a time via the path specified by the heuristic option
 
         """
+        # Capture options used
+        self._options['keep_non_rotor_ring_substituents'] = keep_non_rotor_ring_substituents
+        self._options.update(kwargs)
         # Calculate WBO for molecule
         self.calculate_wbo()
         self._get_rotor_wbo()
         # Find ring systems
-        self._find_ring_systems(non_rotor_substituent=keep_non_rotor_ring_substituents)
+        self._find_ring_systems(keep_non_rotor_ring_substituents=keep_non_rotor_ring_substituents)
 
         # Build fragments
         for bond in self.rotors_wbo:
-            self.build_fragment(bond, heuristic=heuristic, **kwargs)
+            self.build_fragment(bond,  **kwargs)
 
 
     def calculate_wbo(self, fragment=None, **kwargs):
@@ -773,8 +785,11 @@ class WBOFragmenter(Fragmenter):
 
 
     def _find_rotatable_bonds(self):
+        #ToDo: Add option to build fragments around terminal torsions (-OH, -NH2, -CH3)
         """
         Using SMARTS instead of OpenEye's built in IsRotor function so double bonds are also captured
+        This does not find terminal rotatable bonds such as -OH, -NH2 -CH3.
+
 
         Returns
         -------
@@ -810,7 +825,7 @@ class WBOFragmenter(Fragmenter):
             self.rotors_wbo[bond] = b.GetData('WibergBondOrder')
 
 
-    def _find_ring_systems(self, non_rotor_substituent=True):
+    def _find_ring_systems(self, keep_non_rotor_ring_substituents=True):
 
         """
         This function tags ring atom and bonds with ringsystem index
@@ -846,7 +861,7 @@ class WBOFragmenter(Fragmenter):
                         bond.SetData(tag, ringidx)
             non_rotor_atoms = set()
             non_rotor_bond = set()
-            if non_rotor_substituent:
+            if keep_non_rotor_ring_substituents:
                 for m in ringidx_atoms:
                     ring_atom = self.molecule.GetAtom(oechem.OEHasMapIdx(m))
                     for a in ring_atom.GetAtoms():
@@ -929,9 +944,10 @@ class WBOFragmenter(Fragmenter):
             raise RuntimeError('{} with _idx {} and {} with map_idx {} are not bonded'.format(a1,
                                                                                               bond_tuple[0],
                                                                                               a2,
-                                                                                              bond_tuple[1]))
+                                                                                     bond_tuple[1]))
         frag_wbo = bond.GetData('WibergBondOrder')
         mol_wbo = self.rotors_wbo[bond_tuple]
+        self.fragments[bond_tuple] = charged_fragment
         return abs(mol_wbo - frag_wbo)
 
     def get_bond(self, bond_tuple):
@@ -969,6 +985,11 @@ class WBOFragmenter(Fragmenter):
         -------
 
         """
+        # Capture options
+        if 'threshold' not in self._options:
+            self._options['threshold'] = threshold
+        if 'heuristic' not in self._options:
+            self._options['heuristic'] = heuristic
         bond = self.get_bond(bond_tuple=bond_tuple)
         atom_map_idx = set()
         bond_tuples = set()
@@ -1008,9 +1029,8 @@ class WBOFragmenter(Fragmenter):
         if diff <= threshold:
             self._fragments[bond_tuple] = atom_bond_set
         if diff > threshold:
-            fragment_mol = self._add_next_substituent(atom_map_idx, bond_tuples, target_bond=bond_tuple,
+            self._add_next_substituent(atom_map_idx, bond_tuples, target_bond=bond_tuple,
                                                       threshold=threshold, heuristic=heuristic, **kwargs)
-        self.fragments[bond_tuple] = fragment_mol
 
 
     def _add_next_substituent(self, atoms, bonds, target_bond, threshold=0.01, heuristic='path_length', **kwargs):
@@ -1092,6 +1112,127 @@ class WBOFragmenter(Fragmenter):
                 return self._add_next_substituent(atoms=atoms, bonds=bonds, target_bond=target_bond,
                                                   heuristic=heuristic, **kwargs)
 
+    def to_json(self):
+        """
+        Write out fragments to JSON with provenance
+        Returns
+        -------
+
+        """
+        json_dict = {}
+        for bond in self.fragments:
+            can_iso_smiles = cmiles.utils.mol_to_smiles(self.fragments[bond], mapped=False)
+            identifiers = cmiles.get_molecule_ids(can_iso_smiles)
+            can_iso_smiles = identifiers['canonical_isomeric_smiles']
+            json_dict[can_iso_smiles] = {'cmiles_identifiers': identifiers}
+            json_dict[can_iso_smiles]['provenance'] = self.get_provenance()
+        return json_dict
+
+    def _to_qcschema_mol(self, molecule, **kwargs):
+        """
+
+        Parameters
+        ----------
+        molecule :
+        kwargs :
+
+        Returns
+        -------
+
+        """
+        self._options.update(kwargs)
+        mol_copy = oechem.OEMol(molecule)
+        oechem.OEAddExplicitHydrogens(mol_copy)
+        explicit_h_smiles = cmiles.utils.mol_to_smiles(mol_copy, mapped=False)
+        cmiles_identifiers = cmiles.get_molecule_ids(explicit_h_smiles)
+        can_mapped_smiles = cmiles_identifiers['canonical_isomeric_explicit_hydrogen_mapped_smiles']
+
+        conformers = generate_conformers(mol_copy, **kwargs)
+        qcschema_mols = [cmiles.utils.mol_to_map_ordered_qcschema(conf, can_mapped_smiles) for conf in conformers.GetConfs()]
+
+        return {'initial_molecule': qcschema_mols,
+                'identifiers': cmiles_identifiers,
+                'provenance': self.get_provenance()}
+
+    def to_qcschema_mols(self, **kwargs):
+        """
+
+        Parameters
+        ----------
+        kwargs :
+
+        Returns
+        -------
+
+        """
+        qcschema_fragments = []
+        for bond in self.fragments:
+            molecule = self.fragments[bond]
+            qcschema_fragments.append(self._to_qcschema_mol(molecule, **kwargs))
+
+        return qcschema_fragments
+
+
+    def to_torsiondrive_json(self, **kwargs):
+        """
+
+        Returns
+        -------
+
+        """
+        # capture options
+        self._options.update(kwargs)
+        torsiondrive_json_dict = {}
+        for bond in self.fragments:
+            # find torsion around bond in fragment
+            molecule = self.fragments[bond]
+            mapped_smiles = oechem.OEMolToSmiles(molecule)
+            torsion_map_idx = find_torsion_around_bond(molecule, bond)
+            torsiondrive_job_label = cmiles.utils.to_canonical_label(mapped_smiles, torsion_map_idx)
+            torsiondrive_json_dict[torsiondrive_job_label] = {}
+
+            # prepare torsiondrive input
+            mol_copy = oechem.OEMol(molecule)
+
+            # Map torsion to canonical ordered molecule
+            # First canonical order the molecule
+            cmiles._cmiles_oe.canonical_order_atoms(mol_copy)
+            dih = []
+            for m_idx in torsion_map_idx:
+                atom = mol_copy.GetAtom(oechem.OEHasMapIdx(m_idx + 1))
+                dih.append(atom.GetIdx())
+
+            torsiondrive_json_dict[torsiondrive_job_label] = self._to_qcschema_mol(mol_copy, **kwargs)
+            torsiondrive_json_dict[torsiondrive_job_label].update({'dihedral': [dih],
+                                                              'grid': [15],
+                                                              'provenance': self.get_provenance()})
+        return torsiondrive_json_dict
+
+    def get_provenance(self):
+        """
+        Get version of fragmenter and options used
+        Returns
+        -------
+
+        """
+        import fragmenter
+        import uuid
+        import socket
+        import getpass
+        fragmenter_version = fragmenter.__version__
+        provenance = {'creator': fragmenter.__package__,
+                      'job_id': str(uuid.uuid4()),
+                      'hostname': socket.gethostname(),
+                      'username': getpass.getuser(),
+                      'routine': {'fragment_molecule': {
+                          'version': fragmenter_version,
+                          'options': self._options,
+                          'parent_molecule': cmiles.utils.mol_to_smiles(self.molecule, mapped=False,
+                                                                        explicit_hydrogen=False)
+                      }}}
+        return provenance
+
+
     def depict_fragments(self, fname):
         itf = oechem.OEInterface()
         oedepict.OEPrepareDepiction(self.molecule)
@@ -1119,7 +1260,20 @@ class WBOFragmenter(Fragmenter):
         for bond_tuple in self._fragments:
 
             cell = report.NewCell()
+            bond = self.get_bond(bond_tuple)
+            # Get bond in fragment
+            fragment = self.fragments[bond_tuple]
+            a1 = fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
+            a2 = fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[1]))
+            bond_in_frag = fragment.GetBond(a1, a2)
+            wbo_frag = bond_in_frag.GetData('WibergBondOrder')
+            bond.SetData('WibergBondOrder_frag', wbo_frag)
+
+            bondlabel_2 = LabelBondOrder()
+            opts.SetBondPropertyFunctor(bondlabel_2)
             disp = oedepict.OE2DMolDisplay(self.molecule, opts)
+
+            bond.DeleteData('WibergBondOrder_frag')
 
             # ToDo get AtomBondSet for fragments so depiction works properly
             fragatoms = oechem.OEIsAtomMember(self._fragments[bond_tuple].GetAtoms())
@@ -1129,8 +1283,6 @@ class WBOFragmenter(Fragmenter):
             notfragbonds = oechem.OENotBond(fragbonds)
 
             oedepict.OEAddHighlighting(disp, fadehighlight, notfragatoms, notfragbonds)
-
-            bond = self.get_bond(bond_tuple)
 
             atomBondSet = oechem.OEAtomBondSet()
             atomBondSet.AddBond(bond)
@@ -1151,7 +1303,7 @@ class WBOFragmenter(Fragmenter):
         opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
         opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
 
-        bondlabel = LabelBondOrder()
+        bondlabel = LabelWibergBondOrder()
         opts.SetBondPropertyFunctor(bondlabel)
         disp = oedepict.OE2DMolDisplay(self.molecule, opts)
         #oegrapheme.OEAddGlyph(disp, bondglyph, oechem.IsTrueBond())
@@ -1202,9 +1354,11 @@ class LabelBondOrder(oedepict.OEDisplayBondPropBase):
         oedepict.OEDisplayBondPropBase.__init__(self)
 
     def __call__(self, bond):
-        bondOrder = bond.GetData('WibergBondOrder')
-        label = "{:.2f}".format(bondOrder)
-        return label
+        if 'WibergBondOrder_frag' in bond.GetData():
+            bondOrder = bond.GetData('WibergBondOrder_frag')
+            label = "{:.2f}".format(bondOrder)
+            return label
+        return ' '
 
     def CreateCopy(self):
         copy = LabelBondOrder()
