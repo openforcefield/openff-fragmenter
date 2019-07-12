@@ -219,6 +219,19 @@ class Fragmenter(object):
         self.molecule = molecule
         self.functional_groups = {}
 
+         # Add explicit hydrogen
+        if not cmiles.utils.has_explicit_hydrogen(self.molecule):
+            oechem.OEAddExplicitHydrogens(self.molecule)
+        # Check for atom maps - it is used for finding atoms to tag
+        if not has_atom_map(self.molecule):
+            cmiles.utils.add_atom_map(self.molecule)
+
+        # Keep track of stereo to make sure it does not flip
+        self.stereo = {}
+        self._atom_stereo_map = {oechem.OECIPAtomStereo_S: 'S', oechem.OECIPAtomStereo_R: 'R'}
+        self._bond_stereo_map = {oechem.OECIPBondStereo_E: 'E', oechem.OECIPBondStereo_Z: 'Z'}
+        self._find_stereo()
+
     @property
     def n_rotors(self):
         return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
@@ -230,6 +243,37 @@ class Fragmenter(object):
     @staticmethod
     def _count_heavy_atoms_in_fragment(fragment):
         return sum([not atom.IsHydrogen() for atom in fragment.GetAtoms()])
+
+    def _find_stereo(self):
+        for a in self.molecule.GetAtoms():
+            if a.IsChiral():
+                self.stereo[a.GetMapIdx()] = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, a)]
+        for bond in self.molecule.GetBonds():
+            if bond.IsChiral():
+                m1 = bond.GetBgn().GetMapIdx()
+                m2 = bond.GetEnd().GetMapIdx()
+                self.stereo[(m1, m2)] = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, bond)]
+
+    def _check_stereo(self, fragment, use_parent=False):
+        for a in fragment.GetAtoms():
+            if a.IsChiral():
+                if use_parent:
+                    s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, a)]
+                else:
+                    s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
+                if not s == self.stereo[a.GetMapIdx()]:
+                    raise AssertionError('Stereochemistry for atom {} flipped from {} to {}'.format(a.GetMapIdx(), self.stereo[a.GetMapIdx()],
+                                                                                            s))
+        for b in fragment.GetBonds():
+            if b.IsChiral():
+                b_tuple = (b.GetBgh().GetMapIdx(), b.GetEnd().GetMapIdx())
+                if use_parent:
+                    s = oechem.OEPerceiveCIPStereo(self.molecule, b)
+                else:
+                    s = oechem.OEPerceiveCIPStereo(fragment, b)
+                if not s == self._bond_stereo_map[self.stereo[b_tuple]]:
+                    raise AssertionError('Stereochemistry fro bond {} flipped from {} to {}'.format(b_tuple, self.stereo[b_tuple],
+                                                                                                    self._bond_stereo_map[s]))
 
     def _tag_functional_groups(self, functional_groups):
         """
@@ -305,6 +349,7 @@ class Fragmenter(object):
             if not bond:
                 raise ValueError("{} is a disconnected bond".format(b_tuple))
             atom_bond_set.AddBond(bond)
+        self._check_stereo(atom_bond_set, use_parent=True)
         return atom_bond_set
 
     def atom_bond_set_to_mol(self, frag, adjust_hcount=True, expand_stereoisomers=True):
@@ -339,23 +384,31 @@ class Fragmenter(object):
         #Always restore map?
         #if restore_maps:
         restore_atom_map(fragment)
+
+        # Perceive stereo and check that defined stereo did not change
+        oechem.OEPerceiveChiral(fragment)
+        oechem.OE3DToAtomStereo(fragment)
+        oechem.OE3DToBondStereo(fragment)
+        if has_stereo_defined(fragment):
+            self._check_stereo(fragment)
+
         # check for stereo defined
-        if not has_stereo_defined(fragment) and expand_stereoisomers:
-            # Try to convert to smiles and back. A molecule might look like it's missing stereo because of submol
-            # first restore atom map so map on mol is not lost
-            #restore_atom_map(fragment)
-            new_smiles = oechem.OEMolToSmiles(fragment)
-            fragment = oechem.OEMol()
-            oechem.OESmilesToMol(fragment, new_smiles)
-            # add explicit H
-            oechem.OEAddExplicitHydrogens(fragment)
-            oechem.OEPerceiveChiral(fragment)
-            #remove_atom_map(fragment, keep_map_data=True)
-            # If it's still missing stereo, expand states
-            if not has_stereo_defined(fragment):
-                if expand_stereoisomers:
-                    enantiomers = _expand_states(fragment, enumerate='stereoisomers')
-                    return enantiomers
+        # if not has_stereo_defined(fragment) and expand_stereoisomers:
+        #     # Try to convert to smiles and back. A molecule might look like it's missing stereo because of submol
+        #     # first restore atom map so map on mol is not lost
+        #     #restore_atom_map(fragment)
+        #     new_smiles = oechem.OEMolToSmiles(fragment)
+        #     fragment = oechem.OEMol()
+        #     oechem.OESmilesToMol(fragment, new_smiles)
+        #     # add explicit H
+        #     oechem.OEAddExplicitHydrogens(fragment)
+        #     oechem.OEPerceiveChiral(fragment)
+        #     #remove_atom_map(fragment, keep_map_data=True)
+        #     # If it's still missing stereo, expand states
+        #     if not has_stereo_defined(fragment):
+        #         if expand_stereoisomers:
+        #             enantiomers = _expand_states(fragment, enumerate='stereoisomers')
+        #             return enantiomers
 
         return fragment
 
@@ -667,7 +720,7 @@ class WBOFragmenter(Fragmenter):
         self.fragments = {} # Fragments from fragmentation scheme for each rotatable bond
         self._fragments = {} # Used internally for depiction
 
-    def fragment(self, heuristic='path_length', threshold=0.009, keep_non_rotor_ring_substituents=True, **kwargs):
+    def fragment(self, heuristic='path_length', keep_non_rotor_ring_substituents=True, **kwargs):
         """
 
         Parameters
@@ -687,7 +740,7 @@ class WBOFragmenter(Fragmenter):
 
         # Build fragments
         for bond in self.rotors_wbo:
-            self.build_fragment(bond, heuristic=heuristic, threshold=threshold, **kwargs)
+            self.build_fragment(bond, heuristic=heuristic, **kwargs)
 
 
     def calculate_wbo(self, fragment=None, **kwargs):
@@ -865,13 +918,18 @@ class WBOFragmenter(Fragmenter):
 
         restore_atom_map(fragment)
         try:
-            charged_fragment = self.calculate_wbo(fragment=fragment, **kwargs)
+            charged_fragment = self.calculate_wbo(fragment=fragment, normalize=False,  **kwargs)
         except RuntimeError:
             raise RuntimeError("Cannot calculate WBO for fragment built around bond {}".format(bond_tuple))
         # Get new WBO
         a1 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
         a2 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[-1]))
         bond = charged_fragment.GetBond(a1, a2)
+        if bond is None:
+            raise RuntimeError('{} with _idx {} and {} with map_idx {} are not bonded'.format(a1,
+                                                                                              bond_tuple[0],
+                                                                                              a2,
+                                                                                              bond_tuple[1]))
         frag_wbo = bond.GetData('WibergBondOrder')
         mol_wbo = self.rotors_wbo[bond_tuple]
         return abs(mol_wbo - frag_wbo)
@@ -899,7 +957,7 @@ class WBOFragmenter(Fragmenter):
             raise ValueError("({}) atoms are not connected".format(bond_tuple))
         return bond
 
-    def build_fragment(self, bond_tuple, threshold=0.009, heuristic='path_length', **kwargs):
+    def build_fragment(self, bond_tuple, threshold=0.01, heuristic='path_length', **kwargs):
         """
         Build fragment around bond
         Parameters
@@ -955,7 +1013,7 @@ class WBOFragmenter(Fragmenter):
         self.fragments[bond_tuple] = fragment_mol
 
 
-    def _add_next_substituent(self, atoms, bonds, target_bond, threshold=0.009, heuristic='path_length', **kwargs):
+    def _add_next_substituent(self, atoms, bonds, target_bond, threshold=0.01, heuristic='path_length', **kwargs):
         """
         If the difference between WBO in fragment and molecules is greater than threshold, add substituents to
         fragment until difference is within threshold
