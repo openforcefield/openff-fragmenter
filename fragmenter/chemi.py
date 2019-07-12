@@ -378,19 +378,6 @@ def has_conformer(molecule, check_two_dimension=False):
     return conformer_bool
 
 
-# def mol_to_graph(molecule):
-#     """
-#     Generate networkx graph from oe molecule
-#     """
-#     import networkx as nx
-#     G = nx.Graph()
-#     for atom in molecule.GetAtoms():
-#         G.add_node(atom.GetIdx(), element=atom.GetElement())
-#     for bond in molecule.GetBonds():
-#         G.add_edge(bond.GetBgnIdx(), bond.GetEndIdx(), index=bond.GetIdx())
-#     return G
-
-
 def get_charge(molecule):
 
     charge = 0
@@ -754,12 +741,6 @@ def standardize_molecule(molecule, title=''):
     return mol
 
 
-# def multiconf_mol_to_qcschema(mapped_mol):
-#     """
-#
-#     """
-#     if not cmiles.utils.has_atom_map(mapped_mol):
-
 
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -769,7 +750,7 @@ These functions are used to keep the orders atoms consistent across different mo
 """
 
 
-def mol_to_tagged_smiles(infile, outfile):
+def mol_to_tagged_smiles_file(infile, outfile):
     """
     Generate .smi from input mol with index-tagged explicit hydrogen SMILES
     Parameters
@@ -855,40 +836,9 @@ def to_mapped_xyz(molecule, atom_map=None, conformer=None, xyz_format=True, file
         return xyz
 
 
-def get_mapped_connectivity_table(molecule, atom_map=None):
-    """
-    generate a connectivity table with map indices
-
-    Parameters
-    ----------
-    mapped_molecule: oemol or string
-        A mapped molecule or a mapped SMILES
-    Returns
-    -------
-    connectivity_table: list
-        list of list of map indices of bond and order [[map_idx_1, map_idx_2, bond_order] ...]
-    """
-    # Should I allow mapped SMILES too?
-    if isinstance(molecule, str):
-        # Input is a SMILES
-        molecule = smiles_to_oemol(molecule)
-    if isinstance(molecule, oechem.OEMol):
-        if not cmiles.utils.has_atom_map(molecule) and atom_map is None:
-            raise TypeError("Molecule must contain map indices. You can get this by generating a molecule from a mapped SMILES")
-
-    if atom_map is None:
-        connectivity_table = [[bond.GetBgn().GetMapIdx()-1, bond.GetEnd().GetMapIdx()-1, bond.GetOrder()]
-                              for bond in molecule.GetBonds()]
-    else:
-        # First convert mapping from map:idx to idx:map
-        inv_map = dict(zip(atom_map.values(), atom_map.keys()))
-        connectivity_table = [[inv_map[bond.GetBgnIdx()]-1, inv_map[bond.GetEndIdx()]-1, bond.GetOrder()]
-                              for bond in molecule.GetBonds()]
-    return connectivity_table
-
-
 def from_mapped_xyz_to_mol_idx_order(mapped_coords, atom_map):
     """
+    Reorder xyz coordinates from the mapped order to the order in the molecule atom map is from
     """
     # reshape
     mapped_coords = np.array(mapped_coords, dtype=float).reshape(int(len(mapped_coords)/3), 3)
