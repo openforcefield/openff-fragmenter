@@ -177,6 +177,43 @@ def one_torsion_per_rotatable_bond(torsion_list):
 
     return tors
 
+def find_torsion_around_bond(molecule, bond):
+    """
+    Find the torsion around a given bond
+    Parameters
+    ----------
+    molecule : molecule with atom maps
+    bond : tuple of map idx of bond atoms
+
+    Returns
+    -------
+    list of 4 atom map idx (-1)
+
+    Note:
+    This returns the map indices of the torsion -1, not the atom indices.
+
+    """
+    if not has_atom_map(molecule):
+        raise ValueError("Molecule must have atom maps")
+    #torsions = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
+
+    terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
+    terminal_torsions = _find_torsions_from_smarts(molecule, terminal_smarts)
+    mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(molecule)]
+    all_torsions = terminal_torsions + mid_torsions
+
+    tors = one_torsion_per_rotatable_bond(all_torsions)
+
+    tor_idx = [tuple(i.GetMapIdx() for i in tor) for tor in tors]
+    central_bonds = [(tor[1], tor[2]) for tor in tor_idx]
+    try:
+        idx = central_bonds.index(bond)
+    except ValueError:
+        idx = central_bonds.index(tuple(reversed(bond)))
+
+    torsion = [i-1 for i in tor_idx[idx]]
+    return torsion
+
 
 def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=30, terminal_torsion_resolution=0,
                      scan_internal_terminal_combination=0, scan_dimension=2):
