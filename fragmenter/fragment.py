@@ -215,6 +215,10 @@ def _expand_states(molecules, enumerate='protonation', max_states=200, suppress_
 
 
 class Fragmenter(object):
+    """
+    Base fragmenter class.
+    This class is inherited by CombinatorialFragmenter and WBOFragmenter
+    """
 
     def __init__(self, molecule):
         self.molecule = molecule
@@ -246,6 +250,12 @@ class Fragmenter(object):
         return sum([not atom.IsHydrogen() for atom in fragment.GetAtoms()])
 
     def _find_stereo(self):
+        """
+        Find chiral atoms and bonds, store the chirality.
+        This is needed to check if fragments flipped chirality. Currently this can happen and it
+        is a bug
+
+        """
         for a in self.molecule.GetAtoms():
             if a.IsChiral():
                 self.stereo[a.GetMapIdx()] = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, a)]
@@ -256,6 +266,17 @@ class Fragmenter(object):
                 self.stereo[(m1, m2)] = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, bond)]
 
     def _check_stereo(self, fragment, use_parent=False):
+        """
+        Check if stereo in fragment is different than stereo in parent. If stereo flips, it raises
+        an exception.
+
+        Parameters
+        ----------
+        fragment : oemol or AtomBondSet
+        use_parent : bool, optional, default False
+            When checking if an AtomBondSet has the same stereo, the parent molecule needs to be used.
+
+        """
         for a in fragment.GetAtoms():
             if a.IsChiral():
                 if use_parent:
@@ -283,14 +304,11 @@ class Fragmenter(object):
 
         Parameters
         ----------
-        mol: Openeye OEMolGraph
-        frgroups_smarts: dictionary of functional groups mapped to their smarts pattern.
-            Default is None. It uses 'fgroup_smarts.yaml'
-
-        Returns
-        -------
-        fgroup_tagged: dict
-            a dictionary that maps indexed functional groups to corresponding atom and bond indices in mol
+        functional_groups: dict, optional, default None.
+            fgroup_smarts is a dictionary of SMARTS of functional groups that should not be fragmented.
+            It can be user generated.
+            If it is None, fragmenter/fragmenter/data/fgroup_smarts.yaml will be used.
+            If False, no functional groups will be tagged and they will all be fragmented.
 
         """
         # Add explicit hydrogen
@@ -339,6 +357,20 @@ class Fragmenter(object):
                 self.functional_groups['{}_{}'.format(f_group, str(i))] = (fgroup_atoms, fgroup_bonds)
 
     def _to_atom_bond_set(self, atoms, bonds):
+        """
+        Convert sets of atom map indices and bond map indices tuples to OEAtomBondSet
+        Parameters
+        ----------
+        atoms : set of ints
+            set of map indices
+        bonds : set of tuples of ints
+            set of bond tuples (m1, m2)
+
+        Returns
+        -------
+        atom_bond_set: OEAtomBondSet with atoms and bonds specified in atoms bonds set
+
+        """
         atom_bond_set = oechem.OEAtomBondSet()
         for a_mdx in atoms:
             atom = self.molecule.GetAtom(oechem.OEHasMapIdx(a_mdx))
@@ -353,20 +385,18 @@ class Fragmenter(object):
         self._check_stereo(atom_bond_set, use_parent=True)
         return atom_bond_set
 
-    def atom_bond_set_to_mol(self, frag, adjust_hcount=True, expand_stereoisomers=True):
+    def atom_bond_set_to_mol(self, frag, adjust_hcount=True):
         """
         Convert fragments (AtomBondSet) to OEMol
         Parameters
         ----------
         frag: OEAtomBondSet
-        mol: OEMol
-        OESMILESFlag: str
-            Either 'ISOMERIC' or 'DEFAULT'. This flag determines which OE function to use to generate SMILES string
+        adjust_hcount: bool, optional, default True
+            If False, hydrogen counts will not be adjusted. Not recommended.
 
         Returns
         -------
-        smiles: dict of smiles to frag
-
+        fragment: OEMol
         """
         fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
         fragbondpred = oechem.OEIsBondMember(frag.GetBonds())
@@ -416,7 +446,10 @@ class Fragmenter(object):
 
 class CombinatorialFragmenter(Fragmenter):
     """
-
+    This fragmenter will fragment all bonds besides the ones in rings and sepcified functional
+    groups. Then it will generate all possible connected fragment.
+    This class should only be used to generate validation sets. It is not recommended for general
+    fragmentation because it generates a lot more fragments than is needed.
     """
     def __init__(self, molecule, functional_groups=None):
         super().__init__(molecule)
@@ -433,9 +466,17 @@ class CombinatorialFragmenter(Fragmenter):
 
     def fragment(self, min_rotors=1, max_rotors=None, min_heavy_atoms=4):
         """
-
-        Returns
-        -------
+        combinatorial fragmentation. Fragment along every bond that is not in a ring or specified
+        functional group.
+        Parameters:
+        ----------
+        min_rotor: int, optional, default 1
+            The minimum number of rotatable bond in resutling fragments
+        max_rotor: int, optional, default None
+            The maximum number of rotatable bond in resulting fragment
+            If None, the maximum number of rotors will be the amount in the parent molecule.
+        min_heavy_atoms: int, optional, default 4
+            minimum number of heavy atoms in the resulting fragments
 
         """
         # Remove atom map and store it in data. This is needed to keep track of the fragments
@@ -447,6 +488,11 @@ class CombinatorialFragmenter(Fragmenter):
         self.combine_fragments(min_rotors=min_rotors, max_rotors=max_rotors, min_heavy_atoms=min_heavy_atoms)
 
     def _mol_to_graph(self):
+        """
+        Convert molecule to networkx graph.
+        Nodes are the atoms, edges are the bonds.
+
+        """
 
         G = nx.Graph()
         for atom in self.molecule.GetAtoms():
@@ -465,16 +511,8 @@ class CombinatorialFragmenter(Fragmenter):
 
     def _fragment_graph(self):
         """
-        Fragment all bonds that are not in rings
-        Parameters
-        ----------
-        G: NetworkX graph
-        bondOrderThreshold: int
-            thershold for fragmenting graph. Default 1.2
+        Fragment all bonds that are not in rings or not tagged as a functional group
 
-        Returns
-        -------
-        subgraphs: list of subgraphs
         """
         import networkx as nx
 
@@ -496,13 +534,8 @@ class CombinatorialFragmenter(Fragmenter):
 
         Parameters
         ----------
-        graph: NetworkX graph
         subgraph: NetworkX subgraph
-        oemol: Openeye OEMolGraph
 
-        Returns
-        ------
-        atomBondSet: Openeye oechem atomBondSet
         """
         # Build openeye atombondset from subgraphs
         for subgraph in subgraphs:
@@ -517,10 +550,29 @@ class CombinatorialFragmenter(Fragmenter):
             self._fragments.append(atom_bond_set)
 
     def fragment_all_bonds_not_in_ring_systems(self):
+        """
+
+        Returns
+        -------
+
+        """
         subgraphs = self._fragment_graph()
         self._subgraphs_to_atom_bond_sets(subgraphs)
 
     def combine_fragments(self, max_rotors=3, min_rotors=1, min_heavy_atoms=5, **kwargs):
+        """
+
+        Parameters
+        ----------
+        max_rotors :
+        min_rotors :
+        min_heavy_atoms :
+        kwargs :
+
+        Returns
+        -------
+
+        """
         #Only keep unique molecules
         unique_mols = set()
         nrfrags = len(self._fragments)
@@ -593,6 +645,17 @@ class CombinatorialFragmenter(Fragmenter):
 
     @staticmethod
     def _are_atom_bond_sets_adjacent(frag_a, frag_b):
+        """
+
+        Parameters
+        ----------
+        frag_a :
+        frag_b :
+
+        Returns
+        -------
+
+        """
 
         for atom_a in frag_a.GetAtoms():
             for atom_b in frag_b.GetAtoms():
@@ -634,6 +697,17 @@ class CombinatorialFragmenter(Fragmenter):
         return combined
 
     def depict_fragments(self, fname, line_width=0.75):
+        """
+
+        Parameters
+        ----------
+        fname :
+        line_width :
+
+        Returns
+        -------
+
+        """
 
         itf = oechem.OEInterface()
         oedepict.OEConfigure2DMolDisplayOptions(itf)
@@ -815,6 +889,12 @@ class WBOFragmenter(Fragmenter):
         return rotatable_bonds
 
     def _get_rotor_wbo(self):
+        """
+
+        Returns
+        -------
+
+        """
 
         if 'nrotor' not in self.molecule.GetData() and 'cputime' not in self.molecule.GetData():
             logger().info("WBO was not calculated for this molecule. Calculating WBO...")
@@ -930,6 +1010,18 @@ class WBOFragmenter(Fragmenter):
 
 
     def compare_wbo(self, fragment, bond_tuple, **kwargs):
+        """
+
+        Parameters
+        ----------
+        fragment :
+        bond_tuple :
+        kwargs :
+
+        Returns
+        -------
+
+        """
 
         restore_atom_map(fragment)
         try:
@@ -1238,6 +1330,16 @@ class WBOFragmenter(Fragmenter):
 
 
     def depict_fragments(self, fname):
+        """
+
+        Parameters
+        ----------
+        fname :
+
+        Returns
+        -------
+
+        """
         itf = oechem.OEInterface()
         oedepict.OEPrepareDepiction(self.molecule)
 
