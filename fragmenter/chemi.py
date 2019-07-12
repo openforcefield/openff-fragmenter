@@ -330,6 +330,9 @@ def normalize_molecule(molecule, title=''):
     # Check for any missing atom names, if found reassign all of them.
     if any([atom.GetName() == '' for atom in molcopy.GetAtoms()]):
         oechem.OETriposAtomNames(molcopy)
+
+    # Add canonical ordered atom maps
+    cmiles.utils.add_atom_map(molcopy)
     return molcopy
 
 
@@ -682,7 +685,7 @@ def smiles_to_oemol(smiles, name='', normalize=True):
     """
 
     molecule = oechem.OEMol()
-    if not oechem.OEParseSmiles(molecule, smiles):
+    if not oechem.OESmilesToMol(molecule, smiles):
         raise ValueError("The supplied SMILES '%s' could not be parsed." % smiles)
 
     if normalize:
