@@ -1166,10 +1166,14 @@ class WBOFragmenter(Fragmenter):
 
         """
         qcschema_fragments = []
+        equivelant_frags = []
         for bond in self.fragments:
             molecule = self.fragments[bond]
-            qcschema_fragments.append(self._to_qcschema_mol(molecule, **kwargs))
-
+            qcschema_mol = self._to_qcschema_mol(molecule, **kwargs)
+            smiles = qcschema_mol['identifiers']['canonical_isomeric_smiles']
+            if smiles not in equivelant_frags:
+                equivelant_frags.append(smiles)
+                qcschema_fragments.append(qcschema_mol)
         return qcschema_fragments
 
 
