@@ -20,7 +20,7 @@ OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 
 
 def expand_states(molecule, tautomers=True, stereoisomers=True, verbose=False, return_mols=False,
-                  explicit_h=True, return_names=True, max_stereo_returns=1, **kwargs):
+                  explicit_h=True, return_names=False, max_stereo_returns=1, filter_nitro=True, **kwargs):
     """
     Expand tautomeric state and stereoisomers for molecule.
 
@@ -63,7 +63,9 @@ def expand_states(molecule, tautomers=True, stereoisomers=True, verbose=False, r
         list of oemols or SMILES of states generated for molecule
 
     """
-
+    # If incoming molecule has nitro in form ([NX3](=O)=O), do not filter out later
+    if _check_nitro(molecule):
+        filter_nitro = False
     title = molecule.GetTitle()
     states = []
     if return_names:
@@ -90,6 +92,9 @@ def expand_states(molecule, tautomers=True, stereoisomers=True, verbose=False, r
         if verbose:
             logger().info('Enumerated {} tautomers'.format(len(tau_mols)))
 
+        # check for nitro in ([NX3](=O)=O) form
+        if filter_nitro:
+            tau_mols[:] = [mol for mol in tau_mols if not _check_nitro(mol)]
 
     if stereoisomers and tautomers:
         all_mols = stereo_mols + tau_mols
@@ -200,6 +205,25 @@ def _expand_stereoisomers(molecule, max_states=200, force_flip=True, enum_nitrog
         enantiomer = oechem.OEMol(enantiomer)
         stereoisomers.append(enantiomer)
     return stereoisomers
+
+def _check_nitro(molecule):
+    """
+    Filter out nitro that is in ([NX3](=O)=O) form. OEGetReasonableTautomers generates this form.
+    Parameters
+    ----------
+    molecule :
+
+    Returns
+    -------
+
+    """
+    qmol = oechem.OEQMol()
+    if not oechem.OEParseSmarts(qmol, '([NX3](=O)=O)'):
+        print('OEParseSmarts failed')
+    ss = oechem.OESubSearch(qmol)
+    oechem.OEPrepareSearch(molecule, ss)
+    matches = [m for m in ss.Match(molecule)]
+    return bool(matches)
 
 
 class Fragmenter(object):
