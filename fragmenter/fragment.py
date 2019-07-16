@@ -22,25 +22,48 @@ OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
 def expand_states(molecule, tautomers=True, stereoisomers=True, verbose=False, return_mols=False,
                   explicit_h=True, return_names=True, max_stereo_returns=1, **kwargs):
     """
+    Expand tautomeric state and stereoisomers for molecule.
 
     Parameters
     ----------
-    molecule :
-    tautomers :
-    stereoisomers :
-    verbose :
-    return_mols :
-    explicit_h :
-    return_names :
-    max_stereo_returns :
-    kwargs :
+    molecule : OEMol
+    tautomers : bool, optional, default True
+        If False, will not generate tautomers
+    stereoisomers : bool, optional, default True
+        If False, will not generate all stereoisomers.
+    verbose : bool, optional, default False
+    return_mols : bool, optional, default False
+        If True, will return oemols instead of SMILES. Some molecules might be duplicate states
+    explicit_h : bool, optional, default True
+        If True, SMILES of states will have explicit hydrogen
+    return_names : bool, optional, default True
+        If True, will return names of molecules with SMILES
+    max_stereo_returns : int, optional, default 1
+        If stereoisomers is set to False, and the incoming molecule is missing stereo information, OEFlipper will
+        generate stereoisomers for missing stereo center. max_stereo_returns controls how many of those will be returned
+    ** max_states: int, optional, default 200
+        This gets passed to `_expand_tautomers` and `_expand_stereoisomers`
+        max number of states `_expand_tautomers` and `_expand_stereoisomers` generate
+    ** pka_norm: bool, optional, default True
+        This gets passed to `_expand_tautomers`. If True, ionization state of each tautomer will be assigned to a predominate
+        state at pH ~7.4
+    ** warts: bool, optional, default True
+        This gets passed to `_expand_tautomers` and _expand_stereoisomers`
+        If True, adds a wart to each new state. A 'wart' is a systematic
+    ** force_flip: bool, optional, default True
+        This gets passed to `_expand_stereoisomers`
+        Force flipping all stereocenters. If False, will only generate stereoisomers for stereocenters that are undefined
+    ** enum_nitorgen: bool, optional, default True
+        This gets passed to `_expand_stereoisomers`
+        If true, invert non-planer nitrogens
 
     Returns
     -------
+    states: list
+        list of oemols or SMILES of states generated for molecule
 
     """
 
-    # Fist expand stereo, then tautomers
     title = molecule.GetTitle()
     states = []
     if return_names:
@@ -50,18 +73,22 @@ def expand_states(molecule, tautomers=True, stereoisomers=True, verbose=False, r
         logger().info("Enumerating states for {}".format(title))
 
     if stereoisomers:
-        logger().info("Enumerating stereoisomers for {}".format(title))
+        if verbose:
+            logger().info("Enumerating stereoisomers for {}".format(title))
         stereo_mols = (_expand_stereoisomers(molecule, **kwargs))
-        logger().info('Enumerated {} stereoisomers'.format(len(stereo_mols)))
+        if verbose:
+            logger().info('Enumerated {} stereoisomers'.format(len(stereo_mols)))
 
     if tautomers:
         if not stereoisomers:
             stereo_mols = [molecule]
         tau_mols = []
-        logger().info("Enumerating tautomers states for {}".format(title))
+        if verbose:
+            logger().info("Enumerating tautomers states for {}".format(title))
         for mol in stereo_mols:
             tau_mols.extend(_expand_tautomers(mol, **kwargs))
-        logger().info('Enumerated {} tautomers'.format(len(tau_mols)))
+        if verbose:
+            logger().info('Enumerated {} tautomers'.format(len(tau_mols)))
 
 
     if stereoisomers and tautomers:
@@ -119,7 +146,7 @@ def expand_states(molecule, tautomers=True, stereoisomers=True, verbose=False, r
 def _expand_tautomers(molecule, max_states=200, pka_norm=True, warts=True):
     """
     Expand reasonable tautomer states. This function generates tautomers (which might be different ionization states
-    than parent) that are normalized to pKa
+    than parent) that are normalized to the predominant state at pH ~7.4
     Parameters
     ----------
     molecule : OEMol to expand states
@@ -143,20 +170,25 @@ def _expand_tautomers(molecule, max_states=200, pka_norm=True, warts=True):
         tautomers.append(tautomer)
     return tautomers
 
-def _expand_stereoisomers(molecule, max_states=200, force_flip=False, enum_nitrogen=True, warts=True, verbose=True):
+def _expand_stereoisomers(molecule, max_states=200, force_flip=True, enum_nitrogen=True, warts=True, verbose=True):
     """
-
+    Enumerate stereoisomers
     Parameters
     ----------
-    molecule :
-    max_states :
-    force_flip :
-    enum_nitrogen :
-    warts :
-    verbose :
+    molecule : OEMol
+    max_states : int, optional, default 200
+        max number of states to enumerate
+    force_flip : bool, optional, default True
+        If True, will flip all steocenters. If False, will only flip centers that are undefined
+    enum_nitrogen : bool, optional, default True
+        Invert non-planar nitrogen
+    warts : bool, optional, default True
+        If True, add int to molecule name
+    verbose : bool, optional, default True
 
     Returns
     -------
+    stereoisomers: list of oemols
 
     """
     stereoisomers = []
@@ -166,9 +198,6 @@ def _expand_stereoisomers(molecule, max_states=200, force_flip=False, enum_nitro
     for enantiomer in oeomega.OEFlipper(molecule, max_states, force_flip, enum_nitrogen, warts):
         i += 1
         enantiomer = oechem.OEMol(enantiomer)
-        # if warts:
-        #     name = enantiomer.GetTitle() + '_' + str(i)
-        #     enantiomer.SetTitle(name)
         stereoisomers.append(enantiomer)
     return stereoisomers
 
