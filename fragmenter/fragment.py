@@ -141,7 +141,8 @@ def expand_states(molecule, tautomers=True, stereoisomers=True, verbose=False, r
                     if return_names:
                         names.append(state.GetTitle())
 
-    logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
+    if verbose:
+        logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
 
     if return_names:
         return states, names
