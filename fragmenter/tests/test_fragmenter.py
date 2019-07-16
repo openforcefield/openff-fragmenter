@@ -7,83 +7,72 @@ import fragmenter
 from fragmenter import chemi
 from cmiles.utils import mol_to_smiles, restore_atom_map
 import sys
-import unittest
 from fragmenter.tests.utils import get_fn, has_openeye, using_openeye
+import pytest
 
 
 def test_fragmenter_imported():
     """Sample test, will always pass so long as import statement worked"""
     assert "fragmenter" in sys.modules
 
+@using_openeye
+def test_expand_tautomers():
+    from openeye import oechem
+    imidazol_smiles = 'CC1=CN=CN1'
+    oemol = oechem.OEMol()
+    oechem.OESmilesToMol(oemol, imidazol_smiles)
+    tautomers = fragmenter.fragment._expand_tautomers(oemol)
+    assert len(tautomers) == 2
+    for tau in tautomers:
+        assert chemi.get_charge(tau) == 0
 
-class TestFragment(unittest.TestCase):
-
-    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
-    def test_stereo_parent(self):
-        pass
-
-    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
-    def test_expand_protonation_states(self):
-        """Test expand protonation states"""
-        smiles = 'C5=C(C1=CN=CC=C1)N=C(NC2=C(C=CC(=C2)NC(C3=CC=C(C=C3)CN4CCN(CC4)C)=O)C)N=C5'
-        molecule = chemi.smiles_to_oemol(smiles)
-        protonation = fragmenter.fragment._expand_states(molecule)
-        protonation_1 = {'Cc1ccc(cc1Nc2nccc(n2)c3ccc[nH+]c3)NC(=O)c4ccc(cc4)CN5CCN(CC5)C',
-                         'Cc1ccc(cc1Nc2nccc(n2)c3ccc[nH+]c3)NC(=O)c4ccc(cc4)CN5CC[NH+](CC5)C',
-                         'Cc1ccc(cc1Nc2nccc(n2)c3ccc[nH+]c3)NC(=O)c4ccc(cc4)C[NH+]5CCN(CC5)C',
-                         'Cc1ccc(cc1Nc2nccc(n2)c3ccc[nH+]c3)NC(=O)c4ccc(cc4)C[NH+]5CC[NH+](CC5)C',
-                         'Cc1ccc(cc1Nc2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)CN5CCN(CC5)C',
-                         'Cc1ccc(cc1Nc2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)CN5CC[NH+](CC5)C',
-                         'Cc1ccc(cc1Nc2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)C[NH+]5CCN(CC5)C',
-                         'Cc1ccc(cc1Nc2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)C[NH+]5CC[NH+](CC5)C',
-                         'Cc1ccc(cc1[N-]c2nccc(n2)c3ccc[nH+]c3)NC(=O)c4ccc(cc4)CN5CCN(CC5)C',
-                         'Cc1ccc(cc1[N-]c2nccc(n2)c3ccc[nH+]c3)NC(=O)c4ccc(cc4)CN5CC[NH+](CC5)C',
-                         'Cc1ccc(cc1[N-]c2nccc(n2)c3ccc[nH+]c3)NC(=O)c4ccc(cc4)C[NH+]5CCN(CC5)C',
-                         'Cc1ccc(cc1[N-]c2nccc(n2)c3ccc[nH+]c3)NC(=O)c4ccc(cc4)C[NH+]5CC[NH+](CC5)C',
-                         'Cc1ccc(cc1[N-]c2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)CN5CCN(CC5)C',
-                         'Cc1ccc(cc1[N-]c2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)CN5CC[NH+](CC5)C',
-                         'Cc1ccc(cc1[N-]c2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)C[NH+]5CCN(CC5)C',
-                         'Cc1ccc(cc1[N-]c2nccc(n2)c3cccnc3)NC(=O)c4ccc(cc4)C[NH+]5CC[NH+](CC5)C'}
-        protonation_2 = set()
-        for mol in protonation:
-            protonation_2.add(mol_to_smiles(mol, mapped=False, explicit_hydrogen=False, isomeric=True))
-
-        intersection = protonation_1.intersection(protonation_2)
-        self.assertEqual(len(intersection), len(protonation_1))
-        self.assertEqual(len(intersection), len(protonation_2))
+    salsalate = 'OC(=O)C1=CC=CC=C1OC(=O)C1=CC=CC=C1O'
+    oemol = oechem.OEMol()
+    oechem.OESmilesToMol(oemol, salsalate)
+    tautomers = fragmenter.fragment._expand_tautomers(oemol)
+    assert len(tautomers) == 1
+    assert chemi.get_charge(tautomers[0]) == -1
 
 
-    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
-    def test_expand_tautomers(self):
-        """Test expand tautomer"""
-        smiles_1 ='c1ccc2c(c1)C=CCC2=O'
-        smiles_2 = 'c1ccc2c(c1)cccc2O'
-        molecule_1 = chemi.smiles_to_oemol(smiles_1)
-        molecule_2 = chemi.smiles_to_oemol(smiles_2)
-        tautomers_1 = fragmenter.fragment.expand_states(molecule_1, protonation=False, tautomers=True, stereoisomers=False)
-        tautomers_2 = fragmenter.fragment.expand_states(molecule_2, protonation=False, tautomers=True, stereoisomers=False)
+@using_openeye
+@pytest.mark.parametrize('smiles, forceflip, enum_n, output', [('C1=CN(C=N1)C(C1=CC=CC=C1)C1=CC=C(C=C1)C1=CC=CC=C1', True, False, 2),
+                                                      ('C[C@@H](C1=NC(=CS1)C1=CC=C(C=C1)C#N)[C@](O)(CN1C=NC=N1)C1=C(F)C=CC(F)=C1', False, False, 1),
+                                                      ('C[C@@H](C1=NC(=CS1)C1=CC=C(C=C1)C#N)[C@](O)(CN1C=NC=N1)C1=C(F)C=CC(F)=C1', True, False, 4),
+                                                      ('CN(CC=CC1=CC=CC=C1)CC1=CC=CC2=CC=CC=C12', True, True, 4),
+                                                      ('CN(CC=CC1=CC=CC=C1)CC1=CC=CC2=CC=CC=C12', False, False, 2)])
+def test_expand_stereoisomers(smiles, forceflip, enum_n, output):
+    from openeye import oechem
+    oemol = oechem.OEMol()
+    oechem.OESmilesToMol(oemol, smiles)
+    stereo = fragmenter.fragment._expand_stereoisomers(oemol, force_flip=forceflip, enum_nitrogen=enum_n, verbose=False)
+    assert len(stereo) == output
 
-        self.assertEqual(tautomers_1, tautomers_2)
+@using_openeye
+@pytest.mark.parametrize('smiles, tautomers, stereoisomers, max_stereo_return, filter_nitro, output',
+                        [('N[C@@H](CC1=CC(I)=C(OC2=CC(I)=C(O)C=C2)C(I)=C1)C(O)=O', True, True, 10, True, 4),
+                         ('N[C@@H](CC1=CC(I)=C(OC2=CC(I)=C(O)C=C2)C(I)=C1)C(O)=O', False, False, 10, True, 1),
+                         ('N[C@@H](CC1=CC(I)=C(OC2=CC(I)=C(O)C=C2)C(I)=C1)C(O)=O', True, False, 1, True, 2),
+                         ('N[C@@H](CC1=CC(I)=C(OC2=CC(I)=C(O)C=C2)C(I)=C1)C(O)=O', False, True, 1, True, 2),
+                         ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', True, True, 10, True, 2),
+                         ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', False, False, 1, True, 1),
+                         ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', True, True, 10, False, 4),
+                         ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', False, False, 10, False, 2)])
+def test_expand_states(smiles, tautomers, stereoisomers, max_stereo_return, filter_nitro, output):
+    from openeye import oechem
+    mol = oechem.OEMol()
+    oechem.OESmilesToMol(mol, smiles)
+    states = fragmenter.fragment.expand_states(mol, tautomers=tautomers, stereoisomers=stereoisomers,
+                                               max_stereo_returns=max_stereo_return, filter_nitro=filter_nitro, verbose=False)
+    assert len(states) == output
 
-
-    @unittest.skipUnless(has_openeye, 'Cannot test without OpenEye')
-    def test_expand_enantiomers(self):
-        smiles = 'CN(C)C/C=C/C(=O)NC1=C(C=C2C(=C1)C(=NC=N2)NC3=CC(=C(C=C3)F)Cl)O[C@H]4CCOC4'
-        molecule = chemi.smiles_to_oemol(smiles)
-        stereoisomers = fragmenter.fragment._expand_states(molecule, enumerate='stereoisomers')
-
-        stereoisomers_1 = {'CN(C)C/C=C/C(=O)Nc1cc2c(cc1O[C@@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F',
-                        'CN(C)C/C=C/C(=O)Nc1cc2c(cc1O[C@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F',
-                        'CN(C)C/C=C\\C(=O)Nc1cc2c(cc1O[C@@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F',
-                        'CN(C)C/C=C\\C(=O)Nc1cc2c(cc1O[C@H]3CCOC3)ncnc2Nc4ccc(c(c4)Cl)F'}
-
-        stereoisomers_2 = set()
-        for mol in stereoisomers:
-            stereoisomers_2.add(mol_to_smiles(mol, mapped=False, explicit_hydrogen=False, isomeric=True))
-        intersection = stereoisomers_1.intersection(stereoisomers_2)
-        self.assertEqual(len(intersection), len(stereoisomers_1))
-        self.assertEqual(len(intersection), len(stereoisomers_2))
-        self.assertEqual(len(stereoisomers_1), len(stereoisomers_2))
+@using_openeye
+@pytest.mark.parametrize('smiles, output', [('CCN(CCO)c1ccc(c(c1)C)/N=N/c2ncc(s2)N(=O)=O', True),
+                                            ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', False)])
+def test_filter_nitro(smiles, output):
+    from openeye import oechem
+    mol = oechem.OEMol()
+    oechem.OESmilesToMol(mol, smiles)
+    assert fragmenter.fragment._check_nitro(mol) == output
 
 @using_openeye
 def test_keep_track_of_map():
