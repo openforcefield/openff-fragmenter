@@ -13,7 +13,7 @@ import networkx as nx
 import time
 
 from .utils import logger
-from .chemi import to_smi, get_charges
+from .chemi import get_charges
 
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
@@ -130,8 +130,8 @@ def expand_states(molecule, tautomers=True, stereoisomers=True, verbose=False, r
                     stereo_states_forced = _expand_stereoisomers(mol, force_flip=True, enum_nitrogen=True, warts=True)
                     if len(stereo_states_forced) > max_stereo_returns:
                         stereo_states_forced = stereo_states_forced[:max_stereo_returns]
-                    for state in stereo_states_forced:
-                        smiles = mol_to_smiles(state, isomeric=True, mapped=False, explicit_hydrogen=explicit_h)
+                    for state_forced in stereo_states_forced:
+                        smiles = mol_to_smiles(state_forced, isomeric=True, mapped=False, explicit_hydrogen=explicit_h)
                         if smiles not in states:
                             states.append(smiles)
                             if return_names:
