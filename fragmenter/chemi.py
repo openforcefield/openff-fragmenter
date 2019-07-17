@@ -295,7 +295,7 @@ def remove_clash(multi_conformer, in_place=True):
         return multi_conformer
 
 
-def normalize_molecule(molecule, title=''):
+def normalize_molecule(molecule, name='', add_atom_map=False):
     """Normalize a copy of the molecule by checking aromaticity, adding explicit hydrogens and renaming by IUPAC name
     or given title
 
@@ -321,17 +321,18 @@ def normalize_molecule(molecule, title=''):
     oechem.OEAddExplicitHydrogens(molcopy)
 
     # Set title to IUPAC name.
-    name = title
-    if not name:
-        name = oeiupac.OECreateIUPACName(molcopy)
-    molcopy.SetTitle(name)
+    title = name
+    if not title:
+        title = oeiupac.OECreateIUPACName(molcopy)
+    molcopy.SetTitle(title)
 
     # Check for any missing atom names, if found reassign all of them.
     if any([atom.GetName() == '' for atom in molcopy.GetAtoms()]):
         oechem.OETriposAtomNames(molcopy)
 
     # Add canonical ordered atom maps
-    cmiles.utils.add_atom_map(molcopy)
+    if add_atom_map:
+        cmiles.utils.add_atom_map(molcopy)
     return molcopy
 
 
@@ -658,7 +659,7 @@ def smifile_to_rdmols(filename):
     return rd_mols
 
 
-def smiles_to_oemol(smiles, name='', normalize=True):
+def smiles_to_oemol(smiles, normalize=True, **kwargs):
     """Create a OEMolBuilder from a smiles string.
     Parameters
     ----------
@@ -675,7 +676,7 @@ def smiles_to_oemol(smiles, name='', normalize=True):
         raise ValueError("The supplied SMILES '%s' could not be parsed." % smiles)
 
     if normalize:
-        molecule = normalize_molecule(molecule, name)
+        molecule = normalize_molecule(molecule, **kwargs)
 
     return molecule
 
