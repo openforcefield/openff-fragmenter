@@ -2,6 +2,7 @@ fragmenter
 ==============================
 [![Travis Build Status](https://travis-ci.org/openforcefield/fragmenter.svg?branch=master)](https://travis-ci.org/openforcefield/fragmenter)
 [![codecov](https://codecov.io/gh/openforcefield/fragmenter/branch/master/graph/badge.svg)](https://codecov.io/gh/openforcefield/fragmenter/branch/master)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/openforcefield/fragmenter.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/openforcefield/fragmenter/context:python)
 
 Fragment molecules for quantum mechanics torsion scans.
 
