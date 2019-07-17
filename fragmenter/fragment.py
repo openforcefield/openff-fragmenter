@@ -300,8 +300,9 @@ class Fragmenter(object):
                 else:
                     s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
                 if not s == self.stereo[a.GetMapIdx()]:
-                    raise AssertionError('Stereochemistry for atom {} flipped from {} to {}'.format(a.GetMapIdx(), self.stereo[a.GetMapIdx()],
+                    logger().warning('Stereochemistry for atom {} flipped from {} to {}'.format(a.GetMapIdx(), self.stereo[a.GetMapIdx()],
                                                                                             s))
+                    return False
         for b in fragment.GetBonds():
             if b.IsChiral():
                 b_tuple = (b.GetBgh().GetMapIdx(), b.GetEnd().GetMapIdx())
@@ -310,8 +311,27 @@ class Fragmenter(object):
                 else:
                     s = oechem.OEPerceiveCIPStereo(fragment, b)
                 if not s == self._bond_stereo_map[self.stereo[b_tuple]]:
-                    raise AssertionError('Stereochemistry fro bond {} flipped from {} to {}'.format(b_tuple, self.stereo[b_tuple],
-                                                                                                    self._bond_stereo_map[s]))
+                    logger().warning('Stereochemistry fro bond {} flipped from {} to {}'.format(b_tuple, self.stereo[b_tuple],
+                                     self._bond_stereo_map[s]))
+                    return False
+        return True
+
+    def _fix_stereo(self, fragment):
+        """
+        Flip all stereocenters and find the stereoisomer that matches the parent
+
+        Parameters
+        ----------
+        fragment :
+
+        Returns
+        -------
+
+        """
+        all_stereo = _expand_stereoisomers(fragment, force_flip=True)
+        for mol in all_stereo:
+            if self._check_stereo(mol):
+                return mol
 
     def _tag_functional_groups(self, functional_groups):
         """
@@ -437,7 +457,8 @@ class Fragmenter(object):
         oechem.OE3DToAtomStereo(fragment)
         oechem.OE3DToBondStereo(fragment)
         if has_stereo_defined(fragment):
-            self._check_stereo(fragment)
+            if not self._check_stereo(fragment):
+                fragment = self._fix_stereo(fragment)
 
         # check for stereo defined
         # if not has_stereo_defined(fragment) and expand_stereoisomers:
@@ -1081,7 +1102,7 @@ class WBOFragmenter(Fragmenter):
             raise ValueError("({}) atoms are not connected".format(bond_tuple))
         return bond
 
-    def build_fragment(self, bond_tuple, threshold=0.01, heuristic='path_length', **kwargs):
+    def build_fragment(self, bond_tuple, threshold=0.05, heuristic='path_length', **kwargs):
         """
         Build fragment around bond
         Parameters
@@ -1131,7 +1152,7 @@ class WBOFragmenter(Fragmenter):
                     bond_tuples.update(self.functional_groups[fgroup][-1])
 
         atom_bond_set = self._to_atom_bond_set(atom_map_idx, bond_tuples)
-        fragment_mol = self.atom_bond_set_to_mol(atom_bond_set, expand_stereoisomers=False)
+        fragment_mol = self.atom_bond_set_to_mol(atom_bond_set)
         # #return fragment_mol
         diff = self.compare_wbo(fragment_mol, bond_tuple, **kwargs)
         if diff <= threshold:
@@ -1141,7 +1162,7 @@ class WBOFragmenter(Fragmenter):
                                                       threshold=threshold, heuristic=heuristic, **kwargs)
 
 
-    def _add_next_substituent(self, atoms, bonds, target_bond, threshold=0.01, heuristic='path_length', **kwargs):
+    def _add_next_substituent(self, atoms, bonds, target_bond, threshold=0.05, heuristic='path_length', **kwargs):
         """
         If the difference between WBO in fragment and molecules is greater than threshold, add substituents to
         fragment until difference is within threshold
@@ -1212,7 +1233,7 @@ class WBOFragmenter(Fragmenter):
             bonds.add(bond)
             # Check new WBO
             atom_bond_set = self._to_atom_bond_set(atoms, bonds)
-            fragment_mol = self.atom_bond_set_to_mol(atom_bond_set, expand_stereoisomers=False)
+            fragment_mol = self.atom_bond_set_to_mol(atom_bond_set)
             if self.compare_wbo(fragment_mol, target_bond, **kwargs) < threshold:
                 self._fragments[target_bond] = atom_bond_set
                 return fragment_mol
