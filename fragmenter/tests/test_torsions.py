@@ -146,3 +146,9 @@ def test_all_equivelant_torsions():
                 (0, 2): [(4, 0, 2, 8), (5, 0, 2, 8), (1, 0, 2, 8)]}
     eq_torsions = torsions.find_equivelant_torsions(oemol)
     assert eq_torsions == expected
+
+@using_openeye
+def test_find_torsion_around_bond():
+    mol = chemi.smiles_to_oemol('CCCC', add_atom_map=True)
+    dihedral = torsions.find_torsion_around_bond(mol, (3, 4))
+    assert dihedral == [0, 2, 3, 1]
