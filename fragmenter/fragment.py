@@ -305,14 +305,14 @@ class Fragmenter(object):
                     return False
         for b in fragment.GetBonds():
             if b.IsChiral():
-                b_tuple = (b.GetBgh().GetMapIdx(), b.GetEnd().GetMapIdx())
+                b_tuple = (b.GetBgn().GetMapIdx(), b.GetEnd().GetMapIdx())
                 if use_parent:
-                    s = oechem.OEPerceiveCIPStereo(self.molecule, b)
+                    s = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, b)]
                 else:
-                    s = oechem.OEPerceiveCIPStereo(fragment, b)
-                if not s == self._bond_stereo_map[self.stereo[b_tuple]]:
+                    s = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(fragment, b)]
+                if not s == self.stereo[b_tuple]:
                     logger().warning('Stereochemistry fro bond {} flipped from {} to {}'.format(b_tuple, self.stereo[b_tuple],
-                                     self._bond_stereo_map[s]))
+                                     s))
                     return False
         return True
 
@@ -322,10 +322,11 @@ class Fragmenter(object):
 
         Parameters
         ----------
-        fragment :
+        fragment : oemol
 
         Returns
         -------
+        mol: oemol with same stereochemistry as parent molecule
 
         """
         all_stereo = _expand_stereoisomers(fragment, force_flip=True)
@@ -835,7 +836,8 @@ class WBOFragmenter(Fragmenter):
         # For provenance
         self._options = {'functional_groups': functional_groups}
 
-    def fragment(self,  keep_non_rotor_ring_substituents=True, **kwargs):
+
+    def fragment(self,  threshold=0.05, keep_non_rotor_ring_substituents=True, **kwargs):
         """
         Fragment molecules using the Wiberg Bond Order as a surrogate
 
@@ -854,6 +856,11 @@ class WBOFragmenter(Fragmenter):
         """
         # Capture options used
         self._options['keep_non_rotor_ring_substituents'] = keep_non_rotor_ring_substituents
+        if 'threshold' not in self._options:
+            self._options['threshold'] = threshold
+
+        # Add threshold as attribute because it is used in more than one function
+        setattr(self, 'threshold', threshold)
         self._options.update(kwargs)
         # Calculate WBO for molecule
         self.calculate_wbo()
@@ -1102,7 +1109,7 @@ class WBOFragmenter(Fragmenter):
             raise ValueError("({}) atoms are not connected".format(bond_tuple))
         return bond
 
-    def build_fragment(self, bond_tuple, threshold=0.05, heuristic='path_length', **kwargs):
+    def build_fragment(self, bond_tuple, heuristic='path_length', **kwargs):
         """
         Build fragment around bond
         Parameters
@@ -1115,8 +1122,7 @@ class WBOFragmenter(Fragmenter):
 
         """
         # Capture options
-        if 'threshold' not in self._options:
-            self._options['threshold'] = threshold
+
         if 'heuristic' not in self._options:
             self._options['heuristic'] = heuristic
         bond = self.get_bond(bond_tuple=bond_tuple)
@@ -1155,14 +1161,14 @@ class WBOFragmenter(Fragmenter):
         fragment_mol = self.atom_bond_set_to_mol(atom_bond_set)
         # #return fragment_mol
         diff = self.compare_wbo(fragment_mol, bond_tuple, **kwargs)
-        if diff <= threshold:
+        if diff <= self.threshold:
             self._fragments[bond_tuple] = atom_bond_set
-        if diff > threshold:
+        if diff > self.threshold:
             self._add_next_substituent(atom_map_idx, bond_tuples, target_bond=bond_tuple,
-                                                      threshold=threshold, heuristic=heuristic, **kwargs)
+                                       heuristic=heuristic, **kwargs)
 
 
-    def _add_next_substituent(self, atoms, bonds, target_bond, threshold=0.05, heuristic='path_length', **kwargs):
+    def _add_next_substituent(self, atoms, bonds, target_bond, heuristic='path_length', **kwargs):
         """
         If the difference between WBO in fragment and molecules is greater than threshold, add substituents to
         fragment until difference is within threshold
@@ -1234,7 +1240,7 @@ class WBOFragmenter(Fragmenter):
             # Check new WBO
             atom_bond_set = self._to_atom_bond_set(atoms, bonds)
             fragment_mol = self.atom_bond_set_to_mol(atom_bond_set)
-            if self.compare_wbo(fragment_mol, target_bond, **kwargs) < threshold:
+            if self.compare_wbo(fragment_mol, target_bond, **kwargs) < self.threshold:
                 self._fragments[target_bond] = atom_bond_set
                 return fragment_mol
             else:

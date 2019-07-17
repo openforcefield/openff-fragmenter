@@ -151,6 +151,7 @@ def test_build_fragment():
     f = fragmenter.fragment.WBOFragmenter(mol)
     f.calculate_wbo()
     f._get_rotor_wbo()
+    setattr(f, 'threshold', 0.05)
     for bond in f.rotors_wbo:
         f.build_fragment(bond)
     assert len(f.fragments) == 3
@@ -342,3 +343,42 @@ def test_td_inputs():
 
     td_inputs = f.to_torsiondrive_json()
     assert len(td_inputs) == 1
+
+@pytest.mark.parametrize('smiles, output',
+                        [('OC1(CN(C1)C(=O)C1=C(NC2=C(F)C=C(I)C=C2)C(F)=C(F)C=C1)[C@@H]1CCCCN1', {20: 'S'}),
+                         ('OC1(CN(C1)C(=O)C1=C(NC2=C(F)C=C(I)C=C2)C(F)=C(F)C=C1)[C@H]1CCCCN1', {20: 'R'}),
+                         ('C\C=C\C', {(1, 2): 'E'}),
+                         ('C/C=C\C', {(1, 2): 'Z'})])
+def test_find_stereo(smiles, output):
+    mol = chemi.smiles_to_oemol(smiles)
+    f = fragmenter.fragment.WBOFragmenter(mol)
+    f._find_stereo()
+    assert f.stereo == output
+
+@pytest.mark.parametrize('smiles, frag, output',
+                        [('C[C@@](F)(Cl)I','C[C@@](F)(Cl)I', True ),
+                         ('C[C@@](F)(Cl)I','C[C@](F)(Cl)I',  False),
+                         ('C\C=C\C', 'C\C=C\C', True),
+                         ('C/C=C\C', 'C\C=C\C', False)])
+
+def test_check_stereo(smiles, frag, output):
+    mol = chemi.smiles_to_oemol(smiles)
+    f = fragmenter.fragment.WBOFragmenter(mol)
+    f._find_stereo()
+    frag = chemi.smiles_to_oemol(frag, add_atom_map=True)
+    assert f._check_stereo(frag) == output
+
+
+@pytest.mark.parametrize('smiles, frag',
+                        [('C[C@@](F)(Cl)I','C[C@@](F)(Cl)I'),
+                         ('C[C@@](F)(Cl)I','C[C@](F)(Cl)I'),
+                         ('C\C=C\C', 'C\C=C\C'),
+                         ('C/C=C\C', 'C\C=C\C')])
+def tet_fix_stereo(smiles, frag):
+    mol = chemi.smiles_to_oemol(smiles)
+    f = fragmenter.fragment.WBOFragmenter(mol)
+    f._find_stereo()
+    frag = chemi.smiles_to_oemol(frag, add_atom_map=True)
+    fixed = f._fix_stereo(frag)
+    assert f._check_stereo(fixed) == True
+
