@@ -6,11 +6,10 @@ except ImportError:
     raise Warning("Need license for OpenEye!")
 
 import cmiles
-from .utils import logger, ANGSROM_2_BOHR, BOHR_2_ANGSTROM
+from .utils import logger, BOHR_2_ANGSTROM
 
 import os
 import numpy as np
-import signal
 import itertools
 import warnings
 import copy
@@ -1428,7 +1427,29 @@ class LabelMayerPsiBondOrder(oedepict.OEDisplayBondPropBase):
 
         return copy.__disown__()
 
-def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supress_h=True, color=None):
+def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, supress_h=True, color=None, names=None):
+    """
+    Generate PDF of list of oemols or SMILES
+
+    Parameters
+    ----------
+    molecules : list of OEMols or SMILES
+    fname : str
+        Name of PDF
+    rows : int
+        How many rows of molecules per page
+    cols : int
+        How many columns of molecule per page
+    bond_map_idx :
+    bo :
+    supress_h :
+    color :
+    names :
+
+    Returns
+    -------
+
+    """
     itf = oechem.OEInterface()
     PageByPage = True
 
@@ -1452,6 +1473,8 @@ def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
             m = oechem.OEMol()
             oechem.OESmilesToMol(m, mol)
             mol = m
+            if names is not None:
+                mol.SetTitle(names[i])
         mol_copy = oechem.OEMol(mol)
         oedepict.OEPrepareDepiction(mol_copy, False, supress_h)
         # if bo:
@@ -1521,4 +1544,4 @@ def to_pdf(molecules, oname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
         oedepict.OERenderMolecule(cell, disp)
         oedepict.OEDrawCurvedBorder(cell, oedepict.OELightGreyPen, 10.0)
 
-    oedepict.OEWriteReport(oname, report)
+    oedepict.OEWriteReport(fname, report)
