@@ -3,8 +3,6 @@ import sys
 import re
 import codecs
 import copy
-import numpy as np
-
 
 """
 ~~~~~~~~~~~~~~~~~~~

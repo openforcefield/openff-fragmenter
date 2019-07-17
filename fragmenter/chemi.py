@@ -721,7 +721,6 @@ def file_to_smiles_list(filename, return_titles=True, **kwargs):
 def standardize_molecule(molecule, title=''):
 
     if isinstance(molecule, oechem.OEMol):
-        mol = molecule
         return molecule
 
     if isinstance(molecule, str):
@@ -772,7 +771,7 @@ def mol_to_tagged_smiles_file(infile, outfile):
         oechem.OEThrow.Fatal("Output format must be SMILES")
 
     for mol in ifs.GetOEMols():
-        smiles = cmiles.utils.mol_to_smiles(mol, mapped=True, explicit_hydrogen=True, isomeric=True)
+        #smiles = cmiles.utils.mol_to_smiles(mol, mapped=True, explicit_hydrogen=True, isomeric=True)
         #ToDo:
         #  make sure this still works (probably doesn't because of copy of molecule. better to use list of molecule
         # with name if molecule has title
@@ -1148,7 +1147,7 @@ def highltigh_torsion_by_cluster(mapped_molecule, clustered_dihedrals, fname, wi
     aroColor = oechem.OEColor(oechem.OEBlack)
     oedepict.OEAddHighlighting(disp, aroColor, aroStyle,
                                oechem.OEIsAromaticAtom(), oechem.OEIsAromaticBond() )
-    hstyle = oedepict.OEHighlightStyle_BallAndStick
+   # hstyle = oedepict.OEHighlightStyle_BallAndStick
 
     # if color:
     #     highlight = oechem.OEColor(color)
@@ -1452,7 +1451,7 @@ def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
 
     """
     itf = oechem.OEInterface()
-    PageByPage = True
+    #PageByPage = True
 
     ropts = oedepict.OEReportOptions(rows, cols)
     ropts.SetHeaderHeight(25)

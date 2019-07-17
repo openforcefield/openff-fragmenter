@@ -4,7 +4,6 @@ try:
     import openeye.oechem as oechem
 except ImportError:
     pass
-import warnings
 import numpy as np
 import itertools
 from math import radians, degrees
@@ -12,7 +11,6 @@ import copy
 
 from . import utils, chemi
 from cmiles.utils import mol_to_smiles, has_atom_map, get_atom_map
-from .utils import BOHR_2_ANGSTROM, logger
 # warnings.simplefilter('always')
 
 
@@ -153,7 +151,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
         utils.logger().debug("Map Idxs: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
         utils.logger().debug("Atom Numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
         if tor[1].GetMapIdx() != best_tor[1].GetMapIdx() or tor[2].GetMapIdx() != best_tor[2].GetMapIdx():
-            new_tor = True
+            #new_tor = True
             if not first_pass:
                 utils.logger().debug("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
                 tors.append(best_tor)
@@ -389,7 +387,7 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
     coords = chemi.from_mapped_xyz_to_mol_idx_order(qc_molecule['geometry'], atom_map)
 
     # convert coord to Angstrom
-    coords = coords * BOHR_2_ANGSTROM
+    coords = coords * utils.BOHR_2_ANGSTROM
     conf = mol.GetConfs().next()
     conf.SetCoords(oechem.OEFloatArray(coords))
 
@@ -403,7 +401,7 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
     interval = radians(interval)
     max_rot = radians(maximum_rotation)
     for dihedral in dihedrals:
-        j = 0
+        #j = 0
         dih_idx = dihedrals[dihedral]
         tor = []
         for i in dih_idx:
@@ -413,7 +411,7 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
         for i, angle in enumerate(np.arange(dih_angle-max_rot, dih_angle+max_rot, interval)):
             newconf = mol.NewConf(coords_2)
             oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], angle)
-            new_angle = oechem.OEGetTorsion(newconf, tor[0], tor[1], tor[2], tor[3])
+            #new_angle = oechem.OEGetTorsion(newconf, tor[0], tor[1], tor[2], tor[3])
             # if new_angle == dih_angle:
             #     j += 1
             #     if j > 1:

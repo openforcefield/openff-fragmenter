@@ -3,7 +3,6 @@ import uuid
 import getpass
 import json
 import numpy as np
-import fragmenter
 from fragmenter import fragment, torsions, utils, chemi
 from cmiles import get_molecule_ids
 from cmiles.utils import mol_to_smiles, mol_to_map_ordered_qcschema, has_atom_map, to_canonical_label
@@ -482,7 +481,7 @@ class WorkFlow(object):
             dictionary with provenance and routine keywords.
 
         """
-
+        import fragmenter
         fragmenter_version = fragmenter.__version__
         provenance = {'creator': fragmenter.__package__,
                       'job_id': str(uuid.uuid4()),
