@@ -639,7 +639,7 @@ class CombinatorialFragmenter(Fragmenter):
                                     except ValueError:
                                         # fragment lost stereo information.
                                         logger().warning("Fragment lost stereo information or now has a new sterecenter. Expanding to 2 stereoisomers")
-                                        states = _expand_states(m, enumerate='stereoisoemrs', max_states=2)
+                                        states = _enumerate_stereoisomers(m, force_flip=False, max_states=2)
                                         smiles.extend(list(states))
                                         #smiles.append(mol_to_smiles(m, isomeric=False, mapped=False, explicit_hydrogen=True))
                             for sm in smiles:
