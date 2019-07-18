@@ -1,6 +1,5 @@
 import logging
 import sys
-import re
 
 """
 ~~~~~~~~~~~~~~~~~~~
@@ -11,6 +10,12 @@ BOHR_2_ANGSTROM = 0.529177210
 ANGSROM_2_BOHR = 1. / BOHR_2_ANGSTROM
 HARTREE_2_KJMOL = 2625.50
 KJMOL_2_HARTREE = 1. / HARTREE_2_KJMOL
+
+"""
+~~~~~~~
+Logger
+~~~~~~~
+"""
 
 
 def logger(name='fragmenter', pattern='%(asctime)s %(levelname)s %(name)s: %(message)s',
@@ -42,49 +47,6 @@ def log_level(verbose=verbose):
         return logging.DEBUG
     else:
         return logging.INFO
-
-
-def sort_nicely(l):
-    """
-
-    Parameters
-    ----------
-    l
-
-    Returns
-    -------
-
-    """
-    convert = lambda text: int(text) if text.isdigit() else text
-    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
-    l.sort(key=alphanum_key)
-
-
-def flatten(l, ltypes=(list, tuple)):
-    """
-    Flatten list of lists
-    Parameters
-    ----------
-    l: list to flatten
-    ltypes: tuple of types
-
-    Returns
-    -------
-    flattened list
-    """
-    ltype = type(l)
-    l = list(l)
-    i = 0
-    while i < len(l):
-        while isinstance(l[i], ltypes):
-            if not l[i]:
-                l.pop(i)
-                i -=1
-                break
-            else:
-                l[i:i + 1] = l[i]
-        i += 1
-    return ltype(l)
 
 
 """

@@ -5,6 +5,7 @@ import pytest
 import numpy as np
 from .utils import using_openeye
 import cmiles
+import tempfile
 
 @pytest.fixture
 def mapped_molecule():
@@ -69,21 +70,12 @@ def test_normalize_molecule():
 
 def test_smiles_to_smi():
     """Test writing out list of SMILES to smi file"""
-    pass
-
-def test_file_to_oemol():
-    """Test read file to oemol list"""
-    pass
-
-def test_oemols_to_smiles():
-    """Test write oemols to list of SMILES"""
-    pass
-
-def test_file_to_smiles_list():
-    """Test write out file to list SMILES"""
-    pass
-
-
+    smiles = ['CCCC', 'CCCCC']
+    filename = tempfile.mkdtemp()[1] + '.smi'
+    chemi.smiles_to_smi(smiles, filename)
+    # read file
+    smiles_2 = chemi.file_to_smiles_list(filename, return_titles=False, explicit_hydrogen=False, mapped=False)
+    assert smiles == smiles_2
 
 #@using_openeye
 def test_to_mapped_xyz():

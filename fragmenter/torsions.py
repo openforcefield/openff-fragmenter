@@ -11,7 +11,6 @@ import copy
 
 from . import utils, chemi
 from cmiles.utils import mol_to_smiles, has_atom_map, get_atom_map
-# warnings.simplefilter('always')
 
 
 def find_torsions(molecule, restricted=True, terminal=True):
@@ -211,6 +210,54 @@ def find_torsion_around_bond(molecule, bond):
 
     torsion = [i-1 for i in tor_idx[idx]]
     return torsion
+
+
+def find_equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
+    """
+    Final all torsions around a given central bond
+    Parameters
+    ----------
+    mapped_mol: oemol. Must contaion map indices
+    restricted: bool, optional, default False
+        If True, will also find restricted torsions
+    central_bonds: list of tuple of ints, optional, defualt None
+        If provides, only torsions around those central bonds will be given. If None, all torsions in molecule will be found
+
+    Returns
+    -------
+    eq_torsions: dict
+        maps central bond to all equivelant torisons
+    """
+    #ToDo check that mol has mapping
+
+    mol = oechem.OEMol(mapped_mol)
+    if not has_atom_map(mol):
+        raise ValueError("OEMol must have map indices")
+
+    terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
+    terminal_torsions = _find_torsions_from_smarts(mol, terminal_smarts)
+    mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(mapped_mol)]
+    all_torsions = terminal_torsions + mid_torsions
+    if restricted:
+        restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]'
+        restricted_torsions = _find_torsions_from_smarts(mol, restricted_smarts)
+        all_torsions = all_torsions + restricted_torsions
+
+    tor_idx = []
+    for tor in all_torsions:
+        tor_name = (tor[0].GetMapIdx()-1, tor[1].GetMapIdx()-1, tor[2].GetMapIdx()-1, tor[3].GetMapIdx()-1)
+        tor_idx.append(tor_name)
+
+    if central_bonds:
+        if not isinstance(central_bonds, list):
+            central_bonds = [central_bonds]
+    if not central_bonds:
+        central_bonds = set((tor[1], tor[2]) for tor in tor_idx)
+
+    eq_torsions = {cb : [tor for tor in tor_idx if cb == (tor[1], tor[2]) or  cb ==(tor[2], tor[1])] for cb in
+              central_bonds}
+
+    return eq_torsions
 
 
 def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=30, terminal_torsion_resolution=0,
@@ -468,95 +515,3 @@ def measure_dihedral_angle(dihedral, coords):
     phi = np.arctan2(t1, t2)
     degree = phi * 180 / np.pi
     return degree
-
-
-def find_equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
-    """
-    Final all torsions around a given central bond
-    Parameters
-    ----------
-    mapped_mol: oemol. Must contaion map indices
-    restricted: bool, optional, default False
-        If True, will also find restricted torsions
-    central_bonds: list of tuple of ints, optional, defualt None
-        If provides, only torsions around those central bonds will be given. If None, all torsions in molecule will be found
-
-    Returns
-    -------
-    eq_torsions: dict
-        maps central bond to all equivelant torisons
-    """
-    #ToDo check that mol has mapping
-
-    mol = oechem.OEMol(mapped_mol)
-    if not has_atom_map(mol):
-        raise ValueError("OEMol must have map indices")
-
-    terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
-    terminal_torsions = _find_torsions_from_smarts(mol, terminal_smarts)
-    mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(mapped_mol)]
-    all_torsions = terminal_torsions + mid_torsions
-    if restricted:
-        restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]'
-        restricted_torsions = _find_torsions_from_smarts(mol, restricted_smarts)
-        all_torsions = all_torsions + restricted_torsions
-
-    tor_idx = []
-    for tor in all_torsions:
-        tor_name = (tor[0].GetMapIdx()-1, tor[1].GetMapIdx()-1, tor[2].GetMapIdx()-1, tor[3].GetMapIdx()-1)
-        tor_idx.append(tor_name)
-
-    if central_bonds:
-        if not isinstance(central_bonds, list):
-            central_bonds = [central_bonds]
-    if not central_bonds:
-        central_bonds = set((tor[1], tor[2]) for tor in tor_idx)
-
-    eq_torsions = {cb : [tor for tor in tor_idx if cb == (tor[1], tor[2]) or  cb ==(tor[2], tor[1])] for cb in
-              central_bonds}
-
-    return eq_torsions
-
-
-def get_initial_crank_state(fragment):
-    """
-    Generate initial crank state JSON for each crank job in fragment
-    Parameters
-    ----------
-    fragment: dict
-        A fragment from JSON crank jobs
-
-    Returns
-    -------
-    crank_initial_states: dict
-        dictionary containing JSON specs for initial states for all crank jobs in a fragment.
-    """
-    crank_initial_states = {}
-    init_geometry = fragment['molecule']['geometry']
-    needed_torsions = fragment['needed_torsion_drives']
-    crank_jobs = fragment['crank_torsion_drives']
-    for i, job in enumerate(crank_jobs):
-        dihedrals = []
-        grid_spacing = []
-        needed_mid_torsions = needed_torsions['internal']
-        for mid_torsion in crank_jobs[job]['internal_torsions']:
-            # convert 1-based indexing to 0-based indexing
-            dihedrals.append([j-1 for j in needed_mid_torsions[mid_torsion]])
-            grid_spacing.append(crank_jobs[job]['internal_torsions'][mid_torsion])
-        needed_terminal_torsions = needed_torsions['terminal']
-        for terminal_torsion in crank_jobs[job]['terminal_torsions']:
-            # convert 1-based indexing to 0-based indexing
-            dihedrals.append([j-1 for j in needed_terminal_torsions[terminal_torsion]])
-            grid_spacing.append(crank_jobs[job]['terminal_torsions'][terminal_torsion])
-
-        crank_state = {}
-        crank_state['dihedrals'] = dihedrals
-        crank_state['grid_spacing'] = grid_spacing
-        crank_state['elements'] = fragment['molecule']['symbols']
-
-        #ToDo add ability to start with many geomotries
-        crank_state['init_coords'] = [init_geometry]
-        crank_state['grid_status'] = {}
-
-        crank_initial_states[job] = crank_state
-    return crank_initial_states
