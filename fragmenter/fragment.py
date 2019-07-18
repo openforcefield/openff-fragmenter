@@ -493,6 +493,8 @@ class Fragmenter(object):
         import socket
         import getpass
         fragmenter_version = fragmenter.__version__
+        # Restore map to parent
+        restore_atom_map(self.molecule)
         provenance = {'creator': fragmenter.__package__,
                       'job_id': str(uuid.uuid4()),
                       'hostname': socket.gethostname(),
