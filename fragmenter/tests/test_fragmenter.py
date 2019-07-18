@@ -7,9 +7,7 @@ import fragmenter
 from fragmenter import chemi
 from cmiles.utils import mol_to_smiles, remove_atom_map
 import sys
-from fragmenter.tests.utils import get_fn, has_openeye, using_openeye
-import pytest
-
+from fragmenter.tests.utils import using_openeye
 import pytest
 
 
@@ -23,7 +21,7 @@ def test_expand_tautomers():
     imidazol_smiles = 'CC1=CN=CN1'
     oemol = oechem.OEMol()
     oechem.OESmilesToMol(oemol, imidazol_smiles)
-    tautomers = fragmenter.fragment._expand_tautomers(oemol)
+    tautomers = fragmenter.fragment._enumerate_tautomers(oemol)
     assert len(tautomers) == 2
     for tau in tautomers:
         assert chemi.get_charge(tau) == 0
@@ -31,7 +29,7 @@ def test_expand_tautomers():
     salsalate = 'OC(=O)C1=CC=CC=C1OC(=O)C1=CC=CC=C1O'
     oemol = oechem.OEMol()
     oechem.OESmilesToMol(oemol, salsalate)
-    tautomers = fragmenter.fragment._expand_tautomers(oemol)
+    tautomers = fragmenter.fragment._enumerate_tautomers(oemol)
     assert len(tautomers) == 1
     assert chemi.get_charge(tautomers[0]) == -1
 
@@ -46,7 +44,7 @@ def test_expand_stereoisomers(smiles, forceflip, enum_n, output):
     from openeye import oechem
     oemol = oechem.OEMol()
     oechem.OESmilesToMol(oemol, smiles)
-    stereo = fragmenter.fragment._expand_stereoisomers(oemol, force_flip=forceflip, enum_nitrogen=enum_n, verbose=False)
+    stereo = fragmenter.fragment._enumerate_stereoisomers(oemol, force_flip=forceflip, enum_nitrogen=enum_n, verbose=False)
     assert len(stereo) == output
 
 @using_openeye
@@ -63,8 +61,8 @@ def test_expand_states(smiles, tautomers, stereoisomers, max_stereo_return, filt
     from openeye import oechem
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
-    states = fragmenter.fragment.expand_states(mol, tautomers=tautomers, stereoisomers=stereoisomers,
-                                               max_stereo_returns=max_stereo_return, filter_nitro=filter_nitro, verbose=False)
+    states = fragmenter.fragment.enumerate_states(mol, tautomers=tautomers, stereoisomers=stereoisomers,
+                                                  max_stereo_returns=max_stereo_return, filter_nitro=filter_nitro, verbose=False)
     assert len(states) == output
 
 @using_openeye
@@ -200,7 +198,7 @@ def test_atom_bond_set_to_mol():
     atoms = {17, 18, 19, 20, 22, 26, 33, 34, 66, 67}
     bonds = {(17, 19), (17, 33), (18, 20), (18, 33), (19, 34), (20, 34), (22, 26), (26, 34),  (26, 66), (26, 67)}
     atom_bond_set = f._to_atom_bond_set(atoms=atoms, bonds=bonds)
-    mol = f.atom_bond_set_to_mol(atom_bond_set)
+    mol = f._atom_bond_set_to_mol(atom_bond_set)
     for b in mol.GetBonds():
         a1 = b.GetBgn()
         a2 = b.GetEnd()
@@ -382,3 +380,12 @@ def tet_fix_stereo(smiles, frag):
     fixed = f._fix_stereo(frag)
     assert f._check_stereo(fixed) == True
 
+@pytest.mark.parametrize('engine', ['WBO', 'combinatorial'])
+def test_depict_fragments(engine):
+    mol = chemi.smiles_to_oemol('CCCCC')
+    if engine == 'WBO':
+        f = fragmenter.fragment.WBOFragmenter(mol)
+    if engine =='combinatorial':
+        f = fragmenter.fragment.CombinatorialFragmenter(mol)
+    f.fragment()
+    assert f.depict_fragments('test.pdf') == True

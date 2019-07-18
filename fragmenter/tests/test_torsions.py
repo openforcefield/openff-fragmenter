@@ -1,12 +1,10 @@
 """ Tests generating files for qm torsion scan """
 
 import unittest
-import json
 from fragmenter.tests.utils import get_fn, has_openeye, using_openeye
 import fragmenter.torsions as torsions
 from fragmenter import utils, chemi
-from cmiles.utils import mol_to_smiles, load_molecule, get_atom_map, has_atom_map
-import warnings
+from cmiles.utils import mol_to_smiles, load_molecule, get_atom_map
 import pytest
 
 class TestTorsions(unittest.TestCase):

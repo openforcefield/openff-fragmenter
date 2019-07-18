@@ -38,7 +38,7 @@ def test_to_mapped_xyz():
     assert xyz_1 == xyz_2
 
 #@using_openeye
-def teat_qcschema_to_xyz():
+def test_qcschema_to_xyz():
     smiles = 'HC(H)(C(H)(H)OH)OH'
     mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
     mol = cmiles.utils.load_molecule(smiles)

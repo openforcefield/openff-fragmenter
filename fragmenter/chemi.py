@@ -1,7 +1,7 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
 
 try:
-    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac, oeszybki
+    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac, oeszybki, oegrapheme
 except ImportError:
     raise Warning("Need license for OpenEye!")
 
@@ -1382,6 +1382,54 @@ def png_bond_idx(mol, fname, width=600, height=400):
     disp = oedepict.OE2DMolDisplay(mol, opts)
     return oedepict.OERenderMolecule(fname, disp)
 
+
+class ColorAtomByFragmentIndex(oegrapheme.OEAtomGlyphBase):
+    """
+    This class was taken from OpeneEye cookbook
+    https://docs.eyesopen.com/toolkits/cookbook/python/depiction/enumfrags.html
+    """
+    def __init__(self, colorlist, tag):
+        oegrapheme.OEAtomGlyphBase.__init__(self)
+        self.colorlist = colorlist
+        self.tag = tag
+
+    def RenderGlyph(self, disp, atom):
+
+        a_disp = disp.GetAtomDisplay(atom)
+        if a_disp is None or not a_disp.IsVisible():
+            return False
+
+        if not atom.HasData(self.tag):
+            return False
+
+        linewidth = disp.GetScale() / 1.5
+        color = self.colorlist[atom.GetData(self.tag)]
+        radius = disp.GetScale() / 4.8
+        pen = oedepict.OEPen(color, color, oedepict.OEFill_Off, linewidth)
+
+        layer = disp.GetLayer(oedepict.OELayerPosition_Below)
+        oegrapheme.OEDrawCircle(layer, oegrapheme.OECircleStyle_Default, a_disp.GetCoords(), radius, pen)
+
+        return True
+
+    def ColorAtomByFragmentIndex(self):
+        return ColorAtomByFragmentIndex(self.colorlist, self.tag).__disown__()
+
+
+class LabelFragBondOrder(oedepict.OEDisplayBondPropBase):
+    def __init__(self):
+        oedepict.OEDisplayBondPropBase.__init__(self)
+
+    def __call__(self, bond):
+        if 'WibergBondOrder_frag' in bond.GetData():
+            bondOrder = bond.GetData('WibergBondOrder_frag')
+            label = "{:.2f}".format(bondOrder)
+            return label
+        return ' '
+
+    def CreateCopy(self):
+        copy = LabelFragBondOrder()
+        return copy.__disown__()
 
 class LabelWibergBondOrder(oedepict.OEDisplayBondPropBase):
     def __init__(self):
