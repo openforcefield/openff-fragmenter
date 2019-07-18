@@ -8,8 +8,7 @@ Fragment molecules for quantum mechanics torison scans.
 
 # Add imports here
 
-from . import fragment, torsions, workflow_api, utils, chemi
-from .workflow_api import WorkFlow
+from . import fragment, torsions, utils, chemi
 
 # Handle versioneer
 from ._version import get_versions

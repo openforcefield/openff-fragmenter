@@ -4,7 +4,6 @@ try:
     import openeye.oechem as oechem
 except ImportError:
     pass
-import warnings
 import numpy as np
 import itertools
 from math import radians, degrees
@@ -12,7 +11,6 @@ import copy
 
 from . import utils, chemi
 from cmiles.utils import mol_to_smiles, has_atom_map, get_atom_map
-from .utils import BOHR_2_ANGSTROM, logger
 # warnings.simplefilter('always')
 
 
@@ -153,7 +151,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
         utils.logger().debug("Map Idxs: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
         utils.logger().debug("Atom Numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
         if tor[1].GetMapIdx() != best_tor[1].GetMapIdx() or tor[2].GetMapIdx() != best_tor[2].GetMapIdx():
-            new_tor = True
+            #new_tor = True
             if not first_pass:
                 utils.logger().debug("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
                 tors.append(best_tor)
@@ -170,12 +168,49 @@ def one_torsion_per_rotatable_bond(torsion_list):
     utils.logger().debug("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
     tors.append(best_tor)
 
-    utils.logger().info("List of torsion to drive:")
+    utils.logger().debug("List of torsion to drive:")
     for tor in tors:
-        utils.logger().info("Idx: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
-        utils.logger().info("Atom numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
+        utils.logger().debug("Idx: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
+        utils.logger().debug("Atom numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
 
     return tors
+
+def find_torsion_around_bond(molecule, bond):
+    """
+    Find the torsion around a given bond
+    Parameters
+    ----------
+    molecule : molecule with atom maps
+    bond : tuple of map idx of bond atoms
+
+    Returns
+    -------
+    list of 4 atom map idx (-1)
+
+    Note:
+    This returns the map indices of the torsion -1, not the atom indices.
+
+    """
+    if not has_atom_map(molecule):
+        raise ValueError("Molecule must have atom maps")
+    #torsions = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
+
+    terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
+    terminal_torsions = _find_torsions_from_smarts(molecule, terminal_smarts)
+    mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(molecule)]
+    all_torsions = terminal_torsions + mid_torsions
+
+    tors = one_torsion_per_rotatable_bond(all_torsions)
+
+    tor_idx = [tuple(i.GetMapIdx() for i in tor) for tor in tors]
+    central_bonds = [(tor[1], tor[2]) for tor in tor_idx]
+    try:
+        idx = central_bonds.index(bond)
+    except ValueError:
+        idx = central_bonds.index(tuple(reversed(bond)))
+
+    torsion = [i-1 for i in tor_idx[idx]]
+    return torsion
 
 
 def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=30, terminal_torsion_resolution=0,
@@ -352,7 +387,7 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
     coords = chemi.from_mapped_xyz_to_mol_idx_order(qc_molecule['geometry'], atom_map)
 
     # convert coord to Angstrom
-    coords = coords * BOHR_2_ANGSTROM
+    coords = coords * utils.BOHR_2_ANGSTROM
     conf = mol.GetConfs().next()
     conf.SetCoords(oechem.OEFloatArray(coords))
 
@@ -366,7 +401,7 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
     interval = radians(interval)
     max_rot = radians(maximum_rotation)
     for dihedral in dihedrals:
-        j = 0
+        #j = 0
         dih_idx = dihedrals[dihedral]
         tor = []
         for i in dih_idx:
@@ -376,7 +411,7 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
         for i, angle in enumerate(np.arange(dih_angle-max_rot, dih_angle+max_rot, interval)):
             newconf = mol.NewConf(coords_2)
             oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], angle)
-            new_angle = oechem.OEGetTorsion(newconf, tor[0], tor[1], tor[2], tor[3])
+            #new_angle = oechem.OEGetTorsion(newconf, tor[0], tor[1], tor[2], tor[3])
             # if new_angle == dih_angle:
             #     j += 1
             #     if j > 1:

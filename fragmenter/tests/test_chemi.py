@@ -1,7 +1,6 @@
 """Test chemi module"""
 
-from fragmenter import chemi
-from fragmenter.tests.utils import has_openeye
+from fragmenter import chemi, torsions
 import pytest
 import numpy as np
 from .utils import using_openeye
@@ -11,31 +10,80 @@ import cmiles
 def mapped_molecule():
     return chemi.smiles_to_oemol('[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]')
 
+@pytest.mark.parametrize('keep_confs, output', [(None, 1), (1, 1),  (2, 2),  (-1, 3),  (-2, 'error')])
+def test_get_charges(keep_confs, output):
+    mol = chemi.smiles_to_oemol('CCCCCCC')
+    if output == 'error':
+        with pytest.raises(ValueError):
+            chemi.get_charges(mol, keep_confs=keep_confs)
+    else:
+        charged = chemi.get_charges(mol, keep_confs=keep_confs)
+        for i, c in enumerate(charged.GetConfs()):
+            i +=1
+        assert i == output
 
-def test_connectivity_table(mapped_molecule):
-    """Test generate connectivity table"""
-    expected_table = np.array([[0, 2, 1],
-                        [1, 3, 1],
-                        [2, 3, 1],
-                        [0, 4, 1],
-                        [0, 5, 1],
-                        [0, 6, 1],
-                        [1, 7, 1],
-                        [1, 8, 1],
-                        [1, 9, 1],
-                        [2, 10, 1],
-                        [2, 11, 1],
-                        [3, 12, 1],
-                        [3, 13, 1]])
-    connectivity_table = chemi.get_mapped_connectivity_table(mapped_molecule)
+def test_generate_conformers():
+    mol = chemi.smiles_to_oemol('CCCCCCC')
+    confs = chemi.generate_conformers(mol, max_confs=1)
+    assert confs.GetMaxConfIdx() == 1
 
-    for bond in connectivity_table:
-        xi = np.isin(expected_table, bond[:2])
-        match = np.where(np.array([i[:2].sum() for i in xi]) == 2)[0]
-        # assert that a match was found and only one was found
-        assert len(match) == 1
-        # assert that bond order is the same
-        assert expected_table[match][0][-1] == bond[-1]
+    confs = chemi.generate_conformers(mol)
+    assert confs.GetMaxConfIdx() == 3
+
+def generate_grid_conformers():
+
+    mol = chemi.smiles_to_oemol('CCCC')
+    dihedrals = [(0, 2, 3, 1), (3, 2, 0, 4)]
+    intervals = [30, 90]
+    grid = chemi.generate_grid_conformers(mol, dihedrals=dihedrals, intervals=intervals)
+    assert grid.GetMaxConfIdx() == 48
+
+@pytest.mark.parametrize('smiles, charge', [('CCCC', 0),
+                                             ('CC(=O)([O-])', -1),
+                                             ('C[N+](C)(C)[H]', +1)])
+def test_get_charge(smiles, charge):
+    mol = chemi.smiles_to_oemol(smiles)
+    assert chemi.get_charge(mol) == charge
+
+def test_smiles_to_oemol():
+    from openeye import oechem
+    mol = chemi.smiles_to_oemol('CCCC')
+    assert isinstance(mol, oechem.OEMol)
+    assert oechem.OEMolToSmiles(mol) == 'CCCC'
+    assert mol.GetTitle() == 'butane'
+
+    mol = chemi.smiles_to_oemol('CCCC', normalize=False)
+    assert mol.GetTitle() == ''
+
+    mol = chemi.smiles_to_oemol('CCCC', add_atom_map=True)
+    assert oechem.OEMolToSmiles(mol) == '[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]'
+
+def test_normalize_molecule():
+    from openeye import oechem
+    mol = oechem.OEMol()
+    oechem.OESmilesToMol(mol, 'CCCC')
+    assert mol.GetTitle() == ''
+
+    normalized_mol = chemi.normalize_molecule(mol)
+    assert normalized_mol.GetTitle() == 'butane'
+
+def test_smiles_to_smi():
+    """Test writing out list of SMILES to smi file"""
+    pass
+
+def test_file_to_oemol():
+    """Test read file to oemol list"""
+    pass
+
+def test_oemols_to_smiles():
+    """Test write oemols to list of SMILES"""
+    pass
+
+def test_file_to_smiles_list():
+    """Test write out file to list SMILES"""
+    pass
+
+
 
 #@using_openeye
 def test_to_mapped_xyz():
@@ -64,18 +112,18 @@ def test_to_mapped_xyz():
     assert xyz_1 == xyz_2
 
 #@using_openeye
-def teat_qcschema_to_xyz():
-    smiles = 'HC(H)(C(H)(H)OH)OH'
-    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
-    mol = cmiles.utils.load_molecule(smiles)
-    mapped_mol = cmiles.utils.load_molecule(mapped_smiles)
-
-    dihedrals = [(2, 0, 1, 3), (0, 1, 3, 9), (1, 0, 2, 8)]
-    intervals = [90, 90, 90]
-    mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
-
-    # generate list of qcschema molecules
-    qcschema_molecules = [cmiles.utils.mol_to_map_ordered_qcschema(conf, mol_id) for conf in multi_conf.GetConfs()]
+# def test_qcschema_to_xyz():
+#     smiles = 'HC(H)(C(H)(H)OH)OH'
+#     mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
+#     mol = cmiles.utils.load_molecule(smiles)
+#     mapped_mol = cmiles.utils.load_molecule(mapped_smiles)
+#
+#     dihedrals = [(2, 0, 1, 3), (0, 1, 3, 9), (1, 0, 2, 8)]
+#     intervals = [90, 90, 90]
+#     mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
+#
+#     # generate list of qcschema molecules
+#     qcschema_molecules = [cmiles.utils.mol_to_map_ordered_qcschema(conf, mol_id) for conf in multi_conf.GetConfs()]
 
 
 @using_openeye

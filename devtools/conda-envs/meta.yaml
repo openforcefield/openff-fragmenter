@@ -12,6 +12,7 @@ dependencies:
   - openeye-toolkits
   - rdkit
   - pyyaml
+  - postgresql
 
     # Testing
   - pytest
