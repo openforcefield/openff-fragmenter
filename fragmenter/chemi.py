@@ -183,11 +183,18 @@ def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, c
     Parameters
     ----------
     molecule: OEMol
-    dihedrals: list of
-    intervals
+    dihedrals: list of tuples
+        list of dihedrals to rotate
+    intervals: list of ints
+        number in degree of dihedral intervals
+    max_rotation: int, optional, defalult 360
+        maximum rotation in degrees
+    copy_mol: bool, optional, default True
+        If True, return a copy of molecule and do not change incoming molecule
 
     Returns
     -------
+    conf_mol: OEMol that includes conformers
 
     """
     # molecule must be mapped
@@ -294,48 +301,6 @@ def remove_clash(multi_conformer, in_place=True):
     if not in_place:
         return multi_conformer
 
-
-def normalize_molecule(molecule, name='', add_atom_map=False):
-    """Normalize a copy of the molecule by checking aromaticity, adding explicit hydrogens and renaming by IUPAC name
-    or given title
-
-    Parameters
-    ----------
-    molecule: OEMol
-        The molecule to be normalized:
-    title: str
-        Name of molecule. If the string is empty, will use IUPAC name
-
-    Returns
-    -------
-    molcopy: OEMol
-        A (copied) version of the normalized molecule
-
-    """
-    molcopy = oechem.OEMol(molecule)
-
-    # Assign aromaticity.
-    oechem.OEAssignAromaticFlags(molcopy, oechem.OEAroModelOpenEye)
-
-    # Add hydrogens.
-    oechem.OEAddExplicitHydrogens(molcopy)
-
-    # Set title to IUPAC name.
-    title = name
-    if not title:
-        title = oeiupac.OECreateIUPACName(molcopy)
-    molcopy.SetTitle(title)
-
-    # Check for any missing atom names, if found reassign all of them.
-    if any([atom.GetName() == '' for atom in molcopy.GetAtoms()]):
-        oechem.OETriposAtomNames(molcopy)
-
-    # Add canonical ordered atom maps
-    if add_atom_map:
-        cmiles.utils.add_atom_map(molcopy)
-    return molcopy
-
-
 def has_conformer(molecule, check_two_dimension=False):
     """
     Check if conformer exists for molecule. Return True or False
@@ -379,6 +344,18 @@ def has_conformer(molecule, check_two_dimension=False):
 
 
 def get_charge(molecule):
+    """
+    Get total  charge of molecules
+
+    Parameters
+    ----------
+    molecule: OEMol
+
+    Returns
+    -------
+    charge: int
+        total charge of molecule
+    """
 
     charge = 0
     for atom in molecule.GetAtoms():
@@ -527,8 +504,68 @@ Functions to read and write molecules and SMILES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 """
 
+def smiles_to_oemol(smiles, normalize=True, **kwargs):
+    """Create a OEMolBuilder from a smiles string.
+    Parameters
+    ----------
+    smiles : str
+        SMILES representation of desired molecule.
+    Returns
+    -------
+    molecule : OEMol
+        A normalized molecule with desired smiles string.
+    """
 
-def to_smi(smiles, filename, return_fname=False):
+    molecule = oechem.OEMol()
+    if not oechem.OESmilesToMol(molecule, smiles):
+        raise ValueError("The supplied SMILES '%s' could not be parsed." % smiles)
+
+    if normalize:
+        molecule = normalize_molecule(molecule, **kwargs)
+
+    return molecule
+
+def normalize_molecule(molecule, name='', add_atom_map=False):
+    """Normalize a copy of the molecule by checking aromaticity, adding explicit hydrogens and renaming by IUPAC name
+    or given title
+
+    Parameters
+    ----------
+    molecule: OEMol
+        The molecule to be normalized:
+    title: str
+        Name of molecule. If the string is empty, will use IUPAC name
+
+    Returns
+    -------
+    molcopy: OEMol
+        A (copied) version of the normalized molecule
+
+    """
+    molcopy = oechem.OEMol(molecule)
+
+    # Assign aromaticity.
+    oechem.OEAssignAromaticFlags(molcopy, oechem.OEAroModelOpenEye)
+
+    # Add hydrogens.
+    oechem.OEAddExplicitHydrogens(molcopy)
+
+    # Set title to IUPAC name.
+    title = name
+    if not title:
+        title = oeiupac.OECreateIUPACName(molcopy)
+    molcopy.SetTitle(title)
+
+    # Check for any missing atom names, if found reassign all of them.
+    if any([atom.GetName() == '' for atom in molcopy.GetAtoms()]):
+        oechem.OETriposAtomNames(molcopy)
+
+    # Add canonical ordered atom maps
+    if add_atom_map:
+        cmiles.utils.add_atom_map(molcopy)
+    return molcopy
+
+def smiles_to_smi(smiles, filename, return_fname=False):
     """
     This function writes out an .smi file for a list of SMILES
     Parameters
@@ -549,25 +586,6 @@ def to_smi(smiles, filename, return_fname=False):
     if return_fname:
         filename = os.path.join(os.getcwd(), filename)
         return filename
-
-
-def new_output_stream(outname):
-    """
-    This function creates a new oechem.oemolostream.
-    Parameters
-    ----------
-    outname: str
-        name of outputfile.
-
-    Returns
-    -------
-    ofs: oechem.oemolostream
-
-    """
-    ofs = oechem.oemolostream()
-    if not ofs.open(outname):
-        oechem.OEThrow.Fatal("Unable to open {} for writing".format(outname))
-    return ofs
 
 
 def file_to_oemols(filename, title=True, verbose=False):
@@ -592,7 +610,6 @@ def file_to_oemols(filename, title=True, verbose=False):
         logger().info("Loading molecules from {}".format(filename))
 
     ifs = oechem.oemolistream(filename)
-    #moldb = oechem.OEMolDatabase(ifs)
     mollist = []
 
     molecule = oechem.OEMol()
@@ -607,10 +624,6 @@ def file_to_oemols(filename, title=True, verbose=False):
                 logger().info("Reading molecule {}".format(title))
 
         mollist.append(normalize_molecule(molecule_copy, title))
-
-    # if len(mollist) <= 1:
-    #     mollist = mollist[0]
-
     ifs.close()
 
     return mollist
@@ -659,29 +672,21 @@ def smifile_to_rdmols(filename):
     return rd_mols
 
 
-def smiles_to_oemol(smiles, normalize=True, **kwargs):
-    """Create a OEMolBuilder from a smiles string.
+def oemols_to_smiles_list(OEMols, strict_stereo=False, **kwargs):
+    """
+    Write oemols to SMILES list
     Parameters
     ----------
-    smiles : str
-        SMILES representation of desired molecule.
+    OEMols : list of OEMols
+    strict_stereo : bool, optional, False
+        If True, will raise ValueError is oemol is missing stereo
+    kwargs : arguments passed to `cmiles.utils.mol_to_smiles`
+
     Returns
     -------
-    molecule : OEMol
-        A normalized molecule with desired smiles string.
+    SMILES: list of SMILES
+
     """
-
-    molecule = oechem.OEMol()
-    if not oechem.OESmilesToMol(molecule, smiles):
-        raise ValueError("The supplied SMILES '%s' could not be parsed." % smiles)
-
-    if normalize:
-        molecule = normalize_molecule(molecule, **kwargs)
-
-    return molecule
-
-
-def oemols_to_smiles_list(OEMols, isomeric=True, strict=False):
 
     if not isinstance(OEMols, list):
         OEMols = [OEMols]
@@ -689,9 +694,9 @@ def oemols_to_smiles_list(OEMols, isomeric=True, strict=False):
     SMILES = []
     for mol in OEMols:
         try:
-            SMILES.append(cmiles.utils.mol_to_smiles(mol, mapped=False, explicit_hydrogen=False, isomeric=isomeric))
+            SMILES.append(cmiles.utils.mol_to_smiles(mol, **kwargs))
         except ValueError:
-            if strict:
+            if strict_stereo:
                 raise ValueError("SMILES does not have stereo defined")
             s = oechem.OEMolToSmiles(mol)
             SMILES.append(s)
@@ -701,6 +706,19 @@ def oemols_to_smiles_list(OEMols, isomeric=True, strict=False):
 
 
 def file_to_smiles_list(filename, return_titles=True, **kwargs):
+    """
+    Read file of molecule to list of SMILES
+    Parameters
+    ----------
+    filename: str
+        name of file to read. Any file format that OpenEye reads
+    return_titles: bool, optional, default True
+        If True, also return list of molecule names
+    **kwargs: parameters passed to `cmiles.utils.mol_to_smiles`
+    Returns
+    -------
+    list of SMILES
+    """
 
     oemols = file_to_oemols(filename)
     # Check if oemols have names
@@ -718,65 +736,12 @@ def file_to_smiles_list(filename, return_titles=True, **kwargs):
     return smiles_list
 
 
-def standardize_molecule(molecule, title=''):
-
-    if isinstance(molecule, oechem.OEMol):
-        return molecule
-
-    if isinstance(molecule, str):
-        mol = oechem.OEMol()
-        # First try reading as smiles
-        if not oechem.OESmilesToMol(mol, molecule):
-            # Try reading as input file
-            ifs = oechem.oemolistream()
-            if not ifs.open(molecule):
-                raise Warning('Could not parse molecule.')
-
-        # normalize molecule
-        mol = normalize_molecule(mol, title=title)
-
-    else:
-        raise TypeError("Wrong type of input for molecule. Can be SMILES, filename or OEMol")
-    return mol
-
-
-
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Functions to work with mapped SMILES
 These functions are used to keep the orders atoms consistent across different molecule graphs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 """
-
-
-def mol_to_tagged_smiles_file(infile, outfile):
-    """
-    Generate .smi from input mol with index-tagged explicit hydrogen SMILES
-    Parameters
-    ----------
-    infile: str
-        input molecule file
-    outfile: str
-        output smi file. Must be smi or ism
-
-    """
-    ifs = oechem.oemolistream()
-    if not ifs.open(infile):
-        oechem.OEThrow.Fatal("Unable to open {} for reading".format(infile))
-
-    ofs = oechem.oemolostream()
-    if not ofs.open(outfile):
-        oechem.OEThrow.Fatal("Unable to open {} for writing".format(outfile))
-    if ofs.GetFormat() not in [oechem.OEFormat_ISM, oechem.OEFormat_SMI]:
-        oechem.OEThrow.Fatal("Output format must be SMILES")
-
-    for mol in ifs.GetOEMols():
-        #smiles = cmiles.utils.mol_to_smiles(mol, mapped=True, explicit_hydrogen=True, isomeric=True)
-        #ToDo:
-        #  make sure this still works (probably doesn't because of copy of molecule. better to use list of molecule
-        # with name if molecule has title
-        oechem.OEWriteMolecule(ofs, mol)
-
 
 def to_mapped_xyz(molecule, atom_map=None, conformer=None, xyz_format=True, filename=None):
     """
