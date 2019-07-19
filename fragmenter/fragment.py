@@ -346,7 +346,68 @@ class Fragmenter(object):
             if self._check_stereo(mol):
                 return mol
         # Could not fix stereo because it is a new chiral center. Returning all stereoisomers around new stereocenter
-        return _enumerate_stereoisomers(fragment, force_flip=False)
+        stereoisomers = _enumerate_stereoisomers(fragment, force_flip=False, enum_nitrogen=True)
+        still_missing = False
+        for isomer in stereoisomers:
+            if not has_stereo_defined(isomer):
+                # For some reason, Nitrogen puckering is only enumerated if force_flip is also True. But that also
+                # means that many more stereoisomers than is needed are generated.
+                still_missing = True
+        if still_missing:
+            # Turn force_flip on but get rid of stereoisomers that flip stereo that is already defined. First save stereo info
+
+
+            # check what stereo in original fragment is and only return those where the defined stereo did not change
+            stereoisomers = self._fix_enum_nitrogen(fragment)
+
+        return stereoisomers
+
+    def _fix_enum_nitrogen(self, fragment):
+        """
+        This is a hack because OEFlipper will only numerate nitorgen flips if force_flip is on
+        Parameters
+        ----------
+        fragment :
+
+        Returns
+        -------
+
+        """
+        # First store original fragment's steroe
+        fragment_stereo = {}
+        for a in fragment.GetAtoms():
+            if a.IsChiral():
+                s = oechem.OEPerceiveCIPStereo(fragment, a)
+                if s == 0 or s ==3:
+                    continue
+                fragment_stereo[a.GetMapIdx()] = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
+        for bond in fragment.GetBonds():
+            if bond.IsChiral():
+                m1 = bond.GetBgn().GetMapIdx()
+                m2 = bond.GetEnd().GetMapIdx()
+                fragment_stereo[(m1, m2)] = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(fragment, bond)]
+        stereoisomers = _enumerate_stereoisomers(fragment, force_flip=True, enum_nitrogen=True)
+        to_return = []
+        for isomer in stereoisomers:
+            keep_isomer = True
+            for a in isomer.GetAtoms():
+                if a.IsChiral():
+                    if not a.GetMapIdx() in self.stereo:
+                        logger().warning('A new stereocenter formed at atom {} {}'.format(a.GetMapIdx(),
+                                                                                          oechem.OEGetAtomicSymbol(a.GetAtomicNum())))
+                        continue
+                    s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(isomer, a)]
+                    if not s == self.stereo[a.GetMapIdx()]:
+                        keep_isomer = False
+            for b in fragment.GetBonds():
+                if b.IsChiral():
+                    b_tuple = (b.GetBgn().GetMapIdx(), b.GetEnd().GetMapIdx())
+                    s = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(fragment, b)]
+                    if not s == self.stereo[b_tuple]:
+                        keep_isomer = False
+            if keep_isomer:
+                to_return.append(isomer)
+        return to_return
 
 
     def _tag_functional_groups(self, functional_groups):
