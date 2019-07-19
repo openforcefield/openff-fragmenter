@@ -303,14 +303,14 @@ class Fragmenter(object):
         """
         for a in fragment.GetAtoms():
             if a.IsChiral():
-                if use_parent:
-                    s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, a)]
-                else:
-                    s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
                 if not a.GetMapIdx() in self.stereo:
                     logger().warning('A new stereocenter formed at atom {} {}'.format(a.GetMapIdx(),
                                                                                       oechem.OEGetAtomicSymbol(a.GetAtomicNum())))
                     return False
+                if use_parent:
+                    s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, a)]
+                else:
+                    s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
                 if not s == self.stereo[a.GetMapIdx()]:
                     logger().warning('Stereochemistry for atom {} flipped from {} to {}'.format(a.GetMapIdx(), self.stereo[a.GetMapIdx()],
                                                                                             s))
