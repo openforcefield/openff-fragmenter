@@ -256,6 +256,9 @@ class Fragmenter(object):
         self._bond_stereo_map = {oechem.OECIPBondStereo_E: 'E', oechem.OECIPBondStereo_Z: 'Z'}
         self._find_stereo()
 
+        # keep track of fragments that form new stereocenters
+        self.new_stereo = []
+
         # For provenance
         self._options = {}
     @property
@@ -304,6 +307,10 @@ class Fragmenter(object):
                     s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, a)]
                 else:
                     s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
+                if not a.GetMapIdx() in self.stereo:
+                    logger().warning('A new stereocenter formed at atom {} {}'.format(a.GetMapIdx(),
+                                                                                      oechem.OEGetAtomicSymbol(a.GetAtomicNum())))
+                    return False
                 if not s == self.stereo[a.GetMapIdx()]:
                     logger().warning('Stereochemistry for atom {} flipped from {} to {}'.format(a.GetMapIdx(), self.stereo[a.GetMapIdx()],
                                                                                             s))
@@ -338,6 +345,9 @@ class Fragmenter(object):
         for mol in all_stereo:
             if self._check_stereo(mol):
                 return mol
+        # Could not fix stereo because it is a new chiral center. Returning all stereoisomers around new stereocenter
+        return _enumerate_stereoisomers(fragment, force_flip=False)
+
 
     def _tag_functional_groups(self, functional_groups):
         """
@@ -670,13 +680,16 @@ class CombinatorialFragmenter(Fragmenter):
                                     try:
                                         smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=False))
                                     except ValueError:
-                                        logger().warning("Fragment lost stereo information or now has a new sterecenter")
-                                        #self._lost_stereo.append(m)
-                                        m = self._fix_stereo(m)
-                                        # ToDo: Use fix stereo here and convert to SMILES
-                                        # fragment lost stereo information.
-                                        smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=False))
-                                        #smiles.append(mol_to_smiles(m, isomeric=False, mapped=False, explicit_hydrogen=True))
+                                        logger().warning("Fragment lost stereo information or now has a new stereocenter")
+                                        fixed_m = self._fix_stereo(m)
+                                        if isinstance(fixed_m, list):
+                                            logger().warning('Could not fix missing stereo. Adding all steroisomers')
+                                            for new_stereo in fixed_m:
+                                                smiles.append(mol_to_smiles(new_stereo, isomeric=True, mapped=False,
+                                                                            explicit_hydrogen=False))
+                                            self.new_stereo.append(oechem.OEMolToSmiles(m))
+                                        else:
+                                            smiles.append(mol_to_smiles(fixed_m, isomeric=True, mapped=False, explicit_hydrogen=False))
                             for sm in smiles:
                                 if sm not in self.fragments:
                                     self.fragments[sm] = []
