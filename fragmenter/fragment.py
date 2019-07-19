@@ -379,12 +379,17 @@ class Fragmenter(object):
             if a.IsChiral():
                 s = oechem.OEPerceiveCIPStereo(fragment, a)
                 if s == 0 or s ==3:
+                    # Atom is either not chiral or it is undefined
                     continue
                 fragment_stereo[a.GetMapIdx()] = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
         for bond in fragment.GetBonds():
             if bond.IsChiral():
                 m1 = bond.GetBgn().GetMapIdx()
                 m2 = bond.GetEnd().GetMapIdx()
+                s = oechem.OEPerceiveCIPStereo(fragment, bond)
+                if s == 0 or s == 3:
+                    # The bond is either not chiral or it is undefined
+                    continue
                 fragment_stereo[(m1, m2)] = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(fragment, bond)]
         stereoisomers = _enumerate_stereoisomers(fragment, force_flip=True, enum_nitrogen=True)
         to_return = []
@@ -392,18 +397,32 @@ class Fragmenter(object):
             keep_isomer = True
             for a in isomer.GetAtoms():
                 if a.IsChiral():
-                    if not a.GetMapIdx() in self.stereo:
+                    if not a.GetMapIdx() in fragment_stereo:
                         logger().warning('A new stereocenter formed at atom {} {}'.format(a.GetMapIdx(),
                                                                                           oechem.OEGetAtomicSymbol(a.GetAtomicNum())))
                         continue
                     s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(isomer, a)]
-                    if not s == self.stereo[a.GetMapIdx()]:
+                    if not s == fragment_stereo[a.GetMapIdx()]:
                         keep_isomer = False
             for b in fragment.GetBonds():
                 if b.IsChiral():
                     b_tuple = (b.GetBgn().GetMapIdx(), b.GetEnd().GetMapIdx())
-                    s = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(fragment, b)]
-                    if not s == self.stereo[b_tuple]:
+                    if not b_tuple in self.stereo:
+                        reverse_tuple = tuple(reversed(b_tuple))
+                        if reverse_tuple not in self.stereo:
+                            logger().warning('A new stereo bond was formed at bond tuple {}'.format(b_tuple))
+                            continue
+                    # Without round tripping, the bond stereo is not perceived properly.
+                    smiles = oechem.OEMolToSmiles(isomer)
+                    isomer_2 = oechem.OEMol()
+                    oechem.OESmilesToMol(isomer_2, smiles)
+                    a1 = isomer_2.GetAtom(oechem.OEHasMapIdx(b_tuple[0]))
+                    a2 = isomer_2.GetAtom(oechem.OEHasMapIdx(b_tuple[1]))
+                    b_2 = isomer_2.GetBond(a1, a2)
+                    s = oechem.OEPerceiveCIPStereo(isomer_2, b_2)
+                    s_letter = self._bond_stereo_map[s]
+                    if not s_letter == self.stereo[b_tuple]:
+                        # Only keep frags where stereo is same as parent
                         keep_isomer = False
             if keep_isomer:
                 to_return.append(isomer)
