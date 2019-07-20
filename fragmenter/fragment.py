@@ -252,7 +252,8 @@ class Fragmenter(object):
 
         # Keep track of stereo to make sure it does not flip
         self.stereo = {}
-        self._atom_stereo_map = {oechem.OECIPAtomStereo_S: 'S', oechem.OECIPAtomStereo_R: 'R'}
+        self._atom_stereo_map = {oechem.OECIPAtomStereo_S: 'S', oechem.OECIPAtomStereo_R: 'R',
+                                 oechem.OECIPAtomStereo_NotStereo: None, oechem.OECIPAtomStereo_UnspecStereo: 'unspecified'}
         self._bond_stereo_map = {oechem.OECIPBondStereo_E: 'E', oechem.OECIPBondStereo_Z: 'Z'}
         self._find_stereo()
 
@@ -282,12 +283,20 @@ class Fragmenter(object):
         """
         for a in self.molecule.GetAtoms():
             if a.IsChiral():
-                self.stereo[a.GetMapIdx()] = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, a)]
+                s = oechem.OEPerceiveCIPStereo(self.molecule, a)
+                if s == 0 or s == 3:
+                    # Stereo is either unspecified or this is not a real chiral center
+                    continue
+                self.stereo[a.GetMapIdx()] = self._atom_stereo_map[s]
         for bond in self.molecule.GetBonds():
             if bond.IsChiral():
+                s = oechem.OEPerceiveCIPStereo(self.molecule, bond)
+                if s == 0 or s == 3:
+                    # Stereo is either unspecified or this is not a real chiral center
+                    continue
                 m1 = bond.GetBgn().GetMapIdx()
                 m2 = bond.GetEnd().GetMapIdx()
-                self.stereo[(m1, m2)] = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, bond)]
+                self.stereo[(m1, m2)] = self._bond_stereo_map[s]
 
     def _check_stereo(self, fragment, use_parent=False):
         """
@@ -318,6 +327,10 @@ class Fragmenter(object):
         for b in fragment.GetBonds():
             if b.IsChiral():
                 b_tuple = (b.GetBgn().GetMapIdx(), b.GetEnd().GetMapIdx())
+                reversed_b_tuple = tuple(reversed(b_tuple))
+                if not b_tuple in self.stereo and reversed_b_tuple not in self.stereo:
+                    logger().warning("A new chiral bond formed at bond {}".format(b_tuple))
+                    return False
                 if use_parent:
                     s = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, b)]
                 else:
@@ -871,6 +884,7 @@ class CombinatorialFragmenter(Fragmenter):
         """
         json_dict = {}
         for frag_smiles in self.fragments:
+            print(frag_smiles)
             json_dict[frag_smiles] = {}
             identifiers = cmiles.get_molecule_ids(frag_smiles, strict=False)
             json_dict[frag_smiles]['cmiles_identifiers'] = identifiers
