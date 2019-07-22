@@ -25,7 +25,7 @@ python setup.py install
 ```
 
 # Dependencies
-Dependencies are in [`meta.yaml`](https://github.com/openforcefield/fragmenter/blob/master/devtools/conda-recipe/meta.yaml)
+Dependencies are in [`meta.yaml`](https://github.com/openforcefield/fragmenter/blob/master/devtools/conda-envs/meta.yaml)
 
 ### Copyright
 
