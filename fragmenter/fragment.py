@@ -243,16 +243,25 @@ class Fragmenter(object):
          # Add explicit hydrogen
         if not cmiles.utils.has_explicit_hydrogen(self.molecule):
             oechem.OEAddExplicitHydrogens(self.molecule)
-        # Check for atom maps - it is used for finding atoms to tag
-        if not has_atom_map(self.molecule):
-            cmiles.utils.add_atom_map(self.molecule)
+        # Add canonical atom map
+        cmiles.utils.add_atom_map(self.molecule)
+
+        if is_missing_atom_map(self.molecule):
+            warnings.warn("Some atoms are missing atom maps. This might cause a problem at several points during "
+                          "the fragmentation process. Make sure you know what you are doing. ")
 
         # Keep track of stereo to make sure it does not flip
         self.stereo = {}
-        self._atom_stereo_map = {oechem.OECIPAtomStereo_S: 'S', oechem.OECIPAtomStereo_R: 'R'}
+        self._atom_stereo_map = {oechem.OECIPAtomStereo_S: 'S', oechem.OECIPAtomStereo_R: 'R',
+                                 oechem.OECIPAtomStereo_NotStereo: None, oechem.OECIPAtomStereo_UnspecStereo: 'unspecified'}
         self._bond_stereo_map = {oechem.OECIPBondStereo_E: 'E', oechem.OECIPBondStereo_Z: 'Z'}
         self._find_stereo()
 
+        # keep track of fragments that form new stereocenters
+        self.new_stereo = []
+
+        # For provenance
+        self._options = {}
     @property
     def n_rotors(self):
         return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
@@ -274,12 +283,20 @@ class Fragmenter(object):
         """
         for a in self.molecule.GetAtoms():
             if a.IsChiral():
-                self.stereo[a.GetMapIdx()] = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, a)]
+                s = oechem.OEPerceiveCIPStereo(self.molecule, a)
+                if s == 0 or s == 3:
+                    # Stereo is either unspecified or this is not a real chiral center
+                    continue
+                self.stereo[a.GetMapIdx()] = self._atom_stereo_map[s]
         for bond in self.molecule.GetBonds():
             if bond.IsChiral():
+                s = oechem.OEPerceiveCIPStereo(self.molecule, bond)
+                if s == 0 or s == 3:
+                    # Stereo is either unspecified or this is not a real chiral center
+                    continue
                 m1 = bond.GetBgn().GetMapIdx()
                 m2 = bond.GetEnd().GetMapIdx()
-                self.stereo[(m1, m2)] = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, bond)]
+                self.stereo[(m1, m2)] = self._bond_stereo_map[s]
 
     def _check_stereo(self, fragment, use_parent=False):
         """
@@ -295,6 +312,10 @@ class Fragmenter(object):
         """
         for a in fragment.GetAtoms():
             if a.IsChiral():
+                if not a.GetMapIdx() in self.stereo:
+                    logger().warning('A new stereocenter formed at atom {} {}'.format(a.GetMapIdx(),
+                                                                                      oechem.OEGetAtomicSymbol(a.GetAtomicNum())))
+                    return False
                 if use_parent:
                     s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, a)]
                 else:
@@ -306,6 +327,10 @@ class Fragmenter(object):
         for b in fragment.GetBonds():
             if b.IsChiral():
                 b_tuple = (b.GetBgn().GetMapIdx(), b.GetEnd().GetMapIdx())
+                reversed_b_tuple = tuple(reversed(b_tuple))
+                if not b_tuple in self.stereo and reversed_b_tuple not in self.stereo:
+                    logger().warning("A new chiral bond formed at bond {}".format(b_tuple))
+                    return False
                 if use_parent:
                     s = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(self.molecule, b)]
                 else:
@@ -333,6 +358,89 @@ class Fragmenter(object):
         for mol in all_stereo:
             if self._check_stereo(mol):
                 return mol
+        # Could not fix stereo because it is a new chiral center. Returning all stereoisomers around new stereocenter
+        stereoisomers = _enumerate_stereoisomers(fragment, force_flip=False, enum_nitrogen=True)
+        still_missing = False
+        for isomer in stereoisomers:
+            if not has_stereo_defined(isomer):
+                # For some reason, Nitrogen puckering is only enumerated if force_flip is also True. But that also
+                # means that many more stereoisomers than is needed are generated.
+                still_missing = True
+        if still_missing:
+            # Turn force_flip on but get rid of stereoisomers that flip stereo that is already defined. First save stereo info
+
+
+            # check what stereo in original fragment is and only return those where the defined stereo did not change
+            stereoisomers = self._fix_enum_nitrogen(fragment)
+
+        return stereoisomers
+
+    def _fix_enum_nitrogen(self, fragment):
+        """
+        This is a hack because OEFlipper will only numerate nitorgen flips if force_flip is on
+        Parameters
+        ----------
+        fragment :
+
+        Returns
+        -------
+
+        """
+        # First store original fragment's steroe
+        fragment_stereo = {}
+        for a in fragment.GetAtoms():
+            if a.IsChiral():
+                s = oechem.OEPerceiveCIPStereo(fragment, a)
+                if s == 0 or s ==3:
+                    # Atom is either not chiral or it is undefined
+                    continue
+                fragment_stereo[a.GetMapIdx()] = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
+        for bond in fragment.GetBonds():
+            if bond.IsChiral():
+                m1 = bond.GetBgn().GetMapIdx()
+                m2 = bond.GetEnd().GetMapIdx()
+                s = oechem.OEPerceiveCIPStereo(fragment, bond)
+                if s == 0 or s == 3:
+                    # The bond is either not chiral or it is undefined
+                    continue
+                fragment_stereo[(m1, m2)] = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(fragment, bond)]
+        stereoisomers = _enumerate_stereoisomers(fragment, force_flip=True, enum_nitrogen=True)
+        to_return = []
+        for isomer in stereoisomers:
+            keep_isomer = True
+            for a in isomer.GetAtoms():
+                if a.IsChiral():
+                    if not a.GetMapIdx() in fragment_stereo:
+                        logger().warning('A new stereocenter formed at atom {} {}'.format(a.GetMapIdx(),
+                                                                                          oechem.OEGetAtomicSymbol(a.GetAtomicNum())))
+                        continue
+                    s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(isomer, a)]
+                    if not s == fragment_stereo[a.GetMapIdx()]:
+                        keep_isomer = False
+            for b in fragment.GetBonds():
+                if b.IsChiral():
+                    b_tuple = (b.GetBgn().GetMapIdx(), b.GetEnd().GetMapIdx())
+                    if not b_tuple in self.stereo:
+                        reverse_tuple = tuple(reversed(b_tuple))
+                        if reverse_tuple not in self.stereo:
+                            logger().warning('A new stereo bond was formed at bond tuple {}'.format(b_tuple))
+                            continue
+                    # Without round tripping, the bond stereo is not perceived properly.
+                    smiles = oechem.OEMolToSmiles(isomer)
+                    isomer_2 = oechem.OEMol()
+                    oechem.OESmilesToMol(isomer_2, smiles)
+                    a1 = isomer_2.GetAtom(oechem.OEHasMapIdx(b_tuple[0]))
+                    a2 = isomer_2.GetAtom(oechem.OEHasMapIdx(b_tuple[1]))
+                    b_2 = isomer_2.GetBond(a1, a2)
+                    s = oechem.OEPerceiveCIPStereo(isomer_2, b_2)
+                    s_letter = self._bond_stereo_map[s]
+                    if not s_letter == self.stereo[b_tuple]:
+                        # Only keep frags where stereo is same as parent
+                        keep_isomer = False
+            if keep_isomer:
+                to_return.append(isomer)
+        return to_return
+
 
     def _tag_functional_groups(self, functional_groups):
         """
@@ -348,15 +456,6 @@ class Fragmenter(object):
             If False, no functional groups will be tagged and they will all be fragmented.
 
         """
-        # Add explicit hydrogen
-        if not cmiles.utils.has_explicit_hydrogen(self.molecule):
-            oechem.OEAddExplicitHydrogens(self.molecule)
-        # Check for atom maps - it is used for finding atoms to tag
-        if not has_atom_map(self.molecule):
-            cmiles.utils.add_atom_map(self.molecule)
-        if is_missing_atom_map(self.molecule):
-            warnings.warn("Some atoms are missing atom maps. This might cause a problem at several points during "
-                          "the fragmentation process. Make sure you know what you are doing. ")
         if functional_groups:
             fgroups_smarts = functional_groups
         if functional_groups is None:
@@ -457,6 +556,10 @@ class Fragmenter(object):
         oechem.OEPerceiveChiral(fragment)
         oechem.OE3DToAtomStereo(fragment)
         oechem.OE3DToBondStereo(fragment)
+        if isinstance(self, CombinatorialFragmenter):
+            # I only saw chirality flip when calculating WBOs - skip the fix and check for combinatorial
+            # fragmentation because it can change the relative stereo
+            return fragment
         if has_stereo_defined(fragment):
             if not self._check_stereo(fragment):
                 fragment = self._fix_stereo(fragment)
@@ -481,6 +584,34 @@ class Fragmenter(object):
 
         return fragment
 
+    def get_provenance(self):
+        """
+        Get version of fragmenter and options used
+        Returns
+        -------
+
+        """
+        import fragmenter
+        import uuid
+        import socket
+        import getpass
+        fragmenter_version = fragmenter.__version__
+        # Restore map to parent
+        restore_atom_map(self.molecule)
+        provenance = {'creator': fragmenter.__package__,
+                      'job_id': str(uuid.uuid4()),
+                      'hostname': socket.gethostname(),
+                      'username': getpass.getuser(),
+                      'routine': {'fragment_molecule': {
+                          'version': fragmenter_version,
+                          'options': self._options,
+                          'parent_molecule': cmiles.utils.mol_to_smiles(self.molecule, mapped=False,
+                                                                        explicit_hydrogen=False),
+                          'parent_name': self.molecule.GetTitle(),
+                          'mapped_parent_smiles': oechem.OEMolToSmiles(self.molecule)
+                      }}}
+        return provenance
+
 
 class CombinatorialFragmenter(Fragmenter):
     """
@@ -496,6 +627,7 @@ class CombinatorialFragmenter(Fragmenter):
             fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts_comb.yml'))
             with open(fn, 'r') as f:
                 functional_groups = yaml.safe_load(f)
+        self._options['functional_groups'] = functional_groups
         self._tag_functional_groups(functional_groups)
         self._nx_graph = self._mol_to_graph()
         self._fragments = list()  # all possible fragments without breaking rings
@@ -517,12 +649,16 @@ class CombinatorialFragmenter(Fragmenter):
             minimum number of heavy atoms in the resulting fragments
 
         """
+        # Store options
+        self._options['min_rotors'] = min_rotors
+        self._options['min_heavy_atoms'] = min_heavy_atoms
         # Remove atom map and store it in data. This is needed to keep track of the fragments
         if has_atom_map(self.molecule):
             remove_atom_map(self.molecule, keep_map_data=True)
         self.fragment_all_bonds_not_in_ring_systems()
         if max_rotors is None:
             max_rotors = self.n_rotors + 1
+        self._options['max_rotors'] = max_rotors
         self.combine_fragments(min_rotors=min_rotors, max_rotors=max_rotors, min_heavy_atoms=min_heavy_atoms)
 
     def _mol_to_graph(self):
@@ -635,13 +771,18 @@ class CombinatorialFragmenter(Fragmenter):
                                     unique_mols.add(mapped_smiles)
                                     new_mols.append(m)
                                     try:
-                                        smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=True))
+                                        smiles.append(mol_to_smiles(m, isomeric=True, mapped=False, explicit_hydrogen=False))
                                     except ValueError:
-                                        # fragment lost stereo information.
-                                        logger().warning("Fragment lost stereo information or now has a new sterecenter. Expanding to 2 stereoisomers")
-                                        states = _enumerate_stereoisomers(m, force_flip=False, max_states=2)
-                                        smiles.extend(list(states))
-                                        #smiles.append(mol_to_smiles(m, isomeric=False, mapped=False, explicit_hydrogen=True))
+                                        logger().warning("Fragment lost stereo information or now has a new stereocenter")
+                                        fixed_m = self._fix_stereo(m)
+                                        if isinstance(fixed_m, list):
+                                            logger().warning('Could not fix missing stereo. Adding all steroisomers')
+                                            for new_stereo in fixed_m:
+                                                smiles.append(mol_to_smiles(new_stereo, isomeric=True, mapped=False,
+                                                                            explicit_hydrogen=False))
+                                            self.new_stereo.append(oechem.OEMolToSmiles(m))
+                                        else:
+                                            smiles.append(mol_to_smiles(fixed_m, isomeric=True, mapped=False, explicit_hydrogen=False))
                             for sm in smiles:
                                 if sm not in self.fragments:
                                     self.fragments[sm] = []
@@ -734,6 +875,27 @@ class CombinatorialFragmenter(Fragmenter):
 
         return combined
 
+    def to_json(self):
+        """
+        Write out fragments to JSON with provenance
+        Returns
+        -------
+
+        """
+        json_dict = {}
+        for frag_smiles in self.fragments:
+            print(frag_smiles)
+            json_dict[frag_smiles] = {}
+            identifiers = cmiles.get_molecule_ids(frag_smiles, strict=False)
+            json_dict[frag_smiles]['cmiles_identifiers'] = identifiers
+            json_dict[frag_smiles]['provenance'] = self.get_provenance()
+            json_dict[frag_smiles]['provenance']['routine']['fragment_molecule']['map_to_parent'] = []
+            for mol in self.fragments[frag_smiles]:
+                json_dict[frag_smiles]['provenance']['routine']['fragment_molecule']['map_to_parent'].append(oechem.OEMolToSmiles(mol))
+
+        return json_dict
+
+
     def depict_fragments(self, fname, line_width=0.75):
         """
         Generate PDF of all combinatorial fragments with individual fragments color coded
@@ -824,15 +986,13 @@ class WBOFragmenter(Fragmenter):
             fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts.yml'))
             with open(fn, 'r') as f:
                 functional_groups = yaml.safe_load(f)
+        self._options['functional_groups'] = functional_groups
         self._tag_functional_groups(functional_groups)
 
         self.rotors_wbo = {}
         self.ring_systems = {}
         self.fragments = {} # Fragments from fragmentation scheme for each rotatable bond
         self._fragments = {} # Used internally for depiction
-
-        # For provenance
-        self._options = {'functional_groups': functional_groups}
 
 
     def fragment(self,  threshold=0.01, keep_non_rotor_ring_substituents=True, **kwargs):
@@ -1351,30 +1511,6 @@ class WBOFragmenter(Fragmenter):
                                                               'grid': [15],
                                                               'provenance': self.get_provenance()})
         return torsiondrive_json_dict
-
-    def get_provenance(self):
-        """
-        Get version of fragmenter and options used
-        Returns
-        -------
-
-        """
-        import fragmenter
-        import uuid
-        import socket
-        import getpass
-        fragmenter_version = fragmenter.__version__
-        provenance = {'creator': fragmenter.__package__,
-                      'job_id': str(uuid.uuid4()),
-                      'hostname': socket.gethostname(),
-                      'username': getpass.getuser(),
-                      'routine': {'fragment_molecule': {
-                          'version': fragmenter_version,
-                          'options': self._options,
-                          'parent_molecule': cmiles.utils.mol_to_smiles(self.molecule, mapped=False,
-                                                                        explicit_hydrogen=False)
-                      }}}
-        return provenance
 
 
     def depict_fragments(self, fname):

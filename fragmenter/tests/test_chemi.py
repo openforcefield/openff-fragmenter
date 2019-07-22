@@ -5,6 +5,7 @@ import pytest
 import numpy as np
 from .utils import using_openeye
 import cmiles
+import tempfile
 
 @pytest.fixture
 def mapped_molecule():
@@ -69,21 +70,12 @@ def test_normalize_molecule():
 
 def test_smiles_to_smi():
     """Test writing out list of SMILES to smi file"""
-    pass
-
-def test_file_to_oemol():
-    """Test read file to oemol list"""
-    pass
-
-def test_oemols_to_smiles():
-    """Test write oemols to list of SMILES"""
-    pass
-
-def test_file_to_smiles_list():
-    """Test write out file to list SMILES"""
-    pass
-
-
+    smiles = ['CCCC', 'CCCCC']
+    filename = tempfile.mkdtemp()[1] + '.smi'
+    chemi.smiles_to_smi(smiles, filename)
+    # read file
+    smiles_2 = chemi.file_to_smiles_list(filename, return_titles=False, explicit_hydrogen=False, mapped=False)
+    assert smiles == smiles_2
 
 #@using_openeye
 def test_to_mapped_xyz():
@@ -110,21 +102,6 @@ def test_to_mapped_xyz():
     xyz_1 = sorted(xyz_1.split('\n')[2:-1])
     xyz_2 = sorted(xyz_2.split('\n')[2:-1])
     assert xyz_1 == xyz_2
-
-#@using_openeye
-# def test_qcschema_to_xyz():
-#     smiles = 'HC(H)(C(H)(H)OH)OH'
-#     mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
-#     mol = cmiles.utils.load_molecule(smiles)
-#     mapped_mol = cmiles.utils.load_molecule(mapped_smiles)
-#
-#     dihedrals = [(2, 0, 1, 3), (0, 1, 3, 9), (1, 0, 2, 8)]
-#     intervals = [90, 90, 90]
-#     mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
-#
-#     # generate list of qcschema molecules
-#     qcschema_molecules = [cmiles.utils.mol_to_map_ordered_qcschema(conf, mol_id) for conf in multi_conf.GetConfs()]
-
 
 @using_openeye
 def test_grid_multi_conformers():

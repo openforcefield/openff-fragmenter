@@ -77,9 +77,9 @@ def test_filter_nitro(smiles, output):
 @using_openeye
 def test_keep_track_of_map():
     from openeye import oechem
-    mapped_smiles = '[H:45][c:8]1[cH:18][c:10]([c:19]([cH:17][c:7]1[H:44])[N:35]([H:67])[c:21]2[n:32][cH:20][c:9]([c:12]([n:31]2)[H:49])[H:46])[H:47]'
+    smiles = 'c1ccc(cc1)Nc2ncccn2'
     mapped_mol = oechem.OEMol()
-    oechem.OESmilesToMol(mapped_mol, mapped_smiles)
+    oechem.OESmilesToMol(mapped_mol, smiles)
 
     frags = fragmenter.fragment.CombinatorialFragmenter(mapped_mol)
     frags.fragment()
@@ -87,8 +87,8 @@ def test_keep_track_of_map():
     #frags.combine_fragments(min_rotors=1, max_rotors=frags.n_rotors+1, restore_maps=True)
 
     keys = list(frags.fragments.keys())
-    assert oechem.OEMolToSmiles(frags.fragments[keys[0]][0]) == '[H:45][c:8]1[cH:18][c:10]([c:19]([cH:17][c:7]1[H:44])[NH:35][H:67])[H:47]'
-    assert oechem.OEMolToSmiles(frags.fragments[keys[1]][0]) == '[H:46][c:9]1[cH:20][n:32][c:21]([n:31][c:12]1[H:49])[NH:35][H:67]'
+    assert oechem.OEMolToSmiles(frags.fragments[keys[0]][0]) == '[H:14][c:1]1[c:2]([c:4]([c:9]([c:5]([c:3]1[H:16])[H:18])[NH:13][H:22])[H:17])[H:15]'
+    assert oechem.OEMolToSmiles(frags.fragments[keys[1]][0]) == '[H:19][c:6]1[c:7]([n:11][c:10]([n:12][c:8]1[H:21])[NH:13][H:22])[H:20]'
 
 
 @using_openeye
@@ -269,7 +269,7 @@ def test_find_rotatable_bonds():
     f = fragmenter.fragment.WBOFragmenter(mol)
     rot_bonds = f._find_rotatable_bonds()
     assert len(rot_bonds) == 7
-    expected_rot_bonds = [(14, 35), (8, 25), (25, 33), (34, 26), (35, 16), (13, 7), (32, 27)]
+    expected_rot_bonds = [(14, 35), (8, 25), (25, 33), (26, 34), (16, 35), (7, 13), (27, 32)]
     for bond in rot_bonds:
         assert bond in expected_rot_bonds
 
