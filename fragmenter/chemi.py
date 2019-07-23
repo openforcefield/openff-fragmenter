@@ -1,7 +1,7 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
 
 try:
-    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac, oeszybki, oegrapheme
+    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac, oeszybki, oegrapheme, oegraphsim
 except ImportError:
     raise Warning("Need license for OpenEye!")
 
@@ -1449,7 +1449,7 @@ class LabelMayerPsiBondOrder(oedepict.OEDisplayBondPropBase):
 
         return copy.__disown__()
 
-def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, supress_h=True, color=None, names=None):
+def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, align=False, supress_h=True, color=None, names=None):
     """
     Generate PDF of list of oemols or SMILES
 
@@ -1485,9 +1485,15 @@ def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
     cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
     opts = oedepict.OE2DMolDisplayOptions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
     oedepict.OESetup2DMolDisplayOptions(opts, itf)
-    #if bo:
-        #b.SetData('WibergBondOrder', bo)
-    #    opts.SetBondPropertyFunctor(LabelWibergBondOrder())
+
+    if align:
+        if isinstance(align, str):
+            ref_mol = oechem.OEGraphMol()
+            oechem.OESmilesToMol(ref_mol, align)
+        elif isinstance(align, (oechem.OEMol, oechem.OEMolBase, oechem.OEGraphMol)):
+            ref_mol = align
+        oedepict.OEPrepareDepiction(ref_mol)
+
     b = None
     for i, mol in enumerate(molecules):
         cell = report.NewCell()
@@ -1509,16 +1515,20 @@ def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
             a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[1]))
             b = mol_copy.GetBond(a1, a2)
             if bo:
+                print(bo[i])
                 b.SetData('WibergBondOrder', bo[i])
                 opts.SetBondPropertyFunctor(LabelWibergBondOrder())
             atom_bond_set.AddAtom(a1)
             atom_bond_set.AddAtom(a2)
             atom_bond_set.AddBond(b)
             hstyle = oedepict.OEHighlightStyle_BallAndStick
-            if color:
-                hcolor = color
+            if color is not None:
+                hcolor = oechem.OEColor(color)
             else:
                 hcolor = oechem.OEColor(oechem.OELightBlue)
+            if align:
+                overlaps = oegraphsim.OEGetFPOverlap(ref_mol, mol_copy, oegraphsim.OEGetFPType(oegraphsim.OEFPType_Tree))
+                oedepict.OEPrepareMultiAlignedDepiction(mol_copy, ref_mol, overlaps)
             disp = oedepict.OE2DMolDisplay(mol_copy, opts)
             oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
         elif isinstance(bond_map_idx, tuple) and len(bond_map_idx) != 2:
@@ -1533,10 +1543,13 @@ def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
                 if b:
                     atom_bond_set.AddBond(b)
             hstyle = oedepict.OEHighlightStyle_BallAndStick
-            if color:
-                hcolor = color
+            if color is not None:
+                hcolor = oechem.OEColor(color)
             else:
                 hcolor = oechem.OEColor(oechem.OELightBlue)
+            if align:
+                overlaps = oegraphsim.OEGetFPOverlap(ref_mol, mol_copy, oegraphsim.OEGetFPType(oegraphsim.OEFPType_Tree))
+                oedepict.OEPrepareMultiAlignedDepiction(mol_copy, ref_mol, overlaps)
             disp = oedepict.OE2DMolDisplay(mol_copy, opts)
             oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
 
@@ -1545,18 +1558,32 @@ def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, supres
             a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[i][0]))
             a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[i][1]))
             b = mol_copy.GetBond(a1, a2)
+            if bo:
+                b.SetData('WibergBondOrder', bo[i])
+                opts.SetBondPropertyFunctor(LabelWibergBondOrder())
             atom_bond_set.AddAtom(a1)
             atom_bond_set.AddAtom(a2)
             atom_bond_set.AddBond(b)
             hstyle = oedepict.OEHighlightStyle_BallAndStick
-            if color:
-                hcolor = color
+            if color is not None:
+                hcolor = oechem.OEColor(color)
             else:
                 hcolor = oechem.OEColor(oechem.OELightBlue)
+            if align:
+                overlaps = oegraphsim.OEGetFPOverlap(ref_mol, mol_copy, oegraphsim.OEGetFPType(oegraphsim.OEFPType_Tree))
+                oedepict.OEPrepareMultiAlignedDepiction(mol_copy, ref_mol, overlaps)
+                # if not align_res:
+                #     print('Could not align')
             disp = oedepict.OE2DMolDisplay(mol_copy, opts)
             oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
         else:
+            if align:
+                overlaps = oegraphsim.OEGetFPOverlap(ref_mol, mol_copy, oegraphsim.OEGetFPType(oegraphsim.OEFPType_Tree))
+                oedepict.OEPrepareMultiAlignedDepiction(mol_copy, ref_mol, overlaps)
             disp = oedepict.OE2DMolDisplay(mol_copy, opts)
+
+        #if align:
+        #    if align_res.IsValid()
 
         if not b and bond_map_idx:
             warnings.warn("{} is not connected in molecule".format(bond_map_idx))
