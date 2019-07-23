@@ -1,12 +1,10 @@
 """ Tests generating files for qm torsion scan """
 
 import unittest
-import json
 from fragmenter.tests.utils import get_fn, has_openeye, using_openeye
 import fragmenter.torsions as torsions
 from fragmenter import utils, chemi
-from cmiles.utils import mol_to_smiles, load_molecule
-import warnings
+from cmiles.utils import mol_to_smiles, load_molecule, get_atom_map
 import pytest
 
 class TestTorsions(unittest.TestCase):
@@ -40,41 +38,6 @@ class TestTorsions(unittest.TestCase):
         # Tags should always be the same as mol2 molecule ordering
         self.assertEqual(tagged_smiles, '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]')
 
-    @unittest.skipUnless(has_openeye, "Cannot test without OpneEye")
-    def test_atom_map(self):
-        """Test get atom map"""
-        from openeye import oechem
-        tagged_smiles = '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]'
-        mol_1 = chemi.smiles_to_oemol('CC[N+]#C')
-        inf = get_fn('ethylmethylidyneamonium.mol2')
-        ifs = oechem.oemolistream(inf)
-        mol_2 = oechem.OEMol()
-        oechem.OEReadMolecule(ifs, mol_2)
-
-        mol_1, atom_map = chemi.get_atom_map(tagged_smiles, mol_1)
-
-        for i, mapping in enumerate(atom_map):
-            atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
-            atom_1.SetAtomicNum(i+1)
-            atom_2 = mol_2.GetAtom(oechem.OEHasAtomIdx(mapping-1))
-            atom_2.SetAtomicNum(i+1)
-            self.assertEqual(oechem.OECreateCanSmiString(mol_1), oechem.OECreateCanSmiString(mol_2))
-
-        # Test aromatic molecule
-        tagged_smiles = '[H:10][c:4]1[c:3]([c:2]([c:1]([c:6]([c:5]1[H:11])[H:12])[C:7]([H:13])([H:14])[H:15])[H:8])[H:9]'
-        mol_1 = chemi.smiles_to_oemol('Cc1ccccc1')
-        inf = get_fn('toluene.mol2')
-        ifs = oechem.oemolistream(inf)
-        mol_2 = oechem.OEMol()
-        oechem.OEReadMolecule(ifs, mol_2)
-
-        mol_1, atom_map = chemi.get_atom_map(tagged_smiles, mol_1)
-        for i, mapping in enumerate(atom_map):
-            atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
-            atom_1.SetAtomicNum(i+1)
-            atom_2 = mol_2.GetAtom(oechem.OEHasAtomIdx(mapping-1))
-            atom_2.SetAtomicNum(i+1)
-            self.assertEqual(oechem.OECreateCanSmiString(mol_1), oechem.OECreateCanSmiString(mol_2))
 
     @unittest.skipUnless(has_openeye, "Cannot test without OpenEye")
     def test_atom_map_order(self):
@@ -82,7 +45,7 @@ class TestTorsions(unittest.TestCase):
         from openeye import oechem
         tagged_smiles = '[H:5][C:1]#[N+:4][C:3]([H:9])([H:10])[C:2]([H:6])([H:7])[H:8]'
         mol_from_tagged_smiles = chemi.smiles_to_oemol(tagged_smiles)
-        mol_1, atom_map = chemi.get_atom_map(tagged_smiles, mol_from_tagged_smiles)
+        atom_map = get_atom_map(mol_from_tagged_smiles, tagged_smiles)
 
         # Compare atom map to tag
         for i in range(1, len(atom_map) +1):
@@ -100,17 +63,18 @@ class TestTorsions(unittest.TestCase):
         mol_2 = oechem.OEMol()
         oechem.OEReadMolecule(ifs, mol_2)
 
-        mol_1, atom_map = chemi.get_atom_map(tagged_smiles, mol_1)
+        mol_1 = chemi.generate_conformers(mol_1, max_confs=1)
+        atom_map = get_atom_map(mol_1, tagged_smiles)
         for i, mapping in enumerate(atom_map):
             atom_1 = mol_1.GetAtom(oechem.OEHasAtomIdx(atom_map[mapping]))
             atom_1.SetAtomicNum(i+1)
             atom_2 = mol_2.GetAtom(oechem.OEHasAtomIdx(mapping-1))
             atom_2.SetAtomicNum(i+1)
 
-        xyz_1 = chemi.to_mapped_xyz(mol_1, atom_map)
+        xyz_1 = chemi.to_mapped_xyz(mol_1, atom_map, xyz_format=False)
         # molecule generated from mol2 should be in the right order.
         atom_map_mol2 = {1:0, 2:1, 3:2, 4:3, 5:4, 6:5, 7:6, 8:7, 9:8, 10:9, 11:10, 12:11, 13:12, 14:13, 15:14}
-        xyz_2 = chemi.to_mapped_xyz(mol_2, atom_map_mol2)
+        xyz_2 = chemi.to_mapped_xyz(mol_2, atom_map_mol2, xyz_format=False)
 
         for ele1, ele2 in zip(xyz_1.split('\n')[:-1], xyz_2.split('\n')[:-1]):
             self.assertEqual(ele1.split(' ')[2], ele2.split(' ')[2])
@@ -141,7 +105,8 @@ class TestTorsions(unittest.TestCase):
 
         crank_job = torsions.define_torsiondrive_jobs(test_crank['needed_torsion_drives'], terminal_torsion_resolution=60)
         self.assertEqual(crank_job['crank_job_0']['grid_spacing'], [30])
-        self.assertEqual(crank_job['crank_job_1']['grid_spacing'], [60, 60])
+        # Terminal torsions are now only in 1D if not combined with internal torsions
+        self.assertEqual(crank_job['crank_job_1']['grid_spacing'], [60])
 
 @using_openeye
 @pytest.mark.parametrize('central_bond', [(0, 1), (0, 2), (1, 3)])
@@ -179,3 +144,9 @@ def test_all_equivelant_torsions():
                 (0, 2): [(4, 0, 2, 8), (5, 0, 2, 8), (1, 0, 2, 8)]}
     eq_torsions = torsions.find_equivelant_torsions(oemol)
     assert eq_torsions == expected
+
+@using_openeye
+def test_find_torsion_around_bond():
+    mol = chemi.smiles_to_oemol('CCCC', add_atom_map=True)
+    dihedral = torsions.find_torsion_around_bond(mol, (3, 4))
+    assert dihedral == [0, 2, 3, 1]

@@ -2,6 +2,7 @@ fragmenter
 ==============================
 [![Travis Build Status](https://travis-ci.org/openforcefield/fragmenter.svg?branch=master)](https://travis-ci.org/openforcefield/fragmenter)
 [![codecov](https://codecov.io/gh/openforcefield/fragmenter/branch/master/graph/badge.svg)](https://codecov.io/gh/openforcefield/fragmenter/branch/master)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/openforcefield/fragmenter.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/openforcefield/fragmenter/context:python)
 
 Fragment molecules for quantum mechanics torsion scans.
 
@@ -24,7 +25,7 @@ python setup.py install
 ```
 
 # Dependencies
-Dependencies are in [`meta.yaml`](https://github.com/openforcefield/fragmenter/blob/master/devtools/conda-recipe/meta.yaml)
+Dependencies are in [`meta.yaml`](https://github.com/openforcefield/fragmenter/blob/master/devtools/conda-envs/meta.yaml)
 
 ### Copyright
 

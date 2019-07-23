@@ -2,6 +2,8 @@ name: test
 channels:
   - openeye
   - rdkit
+  - conda-forge
+
 dependencies:
 
     # Base Depends
@@ -10,37 +12,18 @@ dependencies:
   - openeye-toolkits
   - rdkit
   - pyyaml
+  - postgresql
 
     # Testing
   - pytest
   - pytest-cov
 
-    # Dask testing environment
-  - dask
-  - distributed
-
-    # QCFractal depends, bad form as we are snapshotting github
-  - numpy
-  - pandas
-  - mongodb
-  - pymongo
-  - tornado
-  - requests
-  - jsonschema
-  - bcrypt
-  - cryptography
+  # QCFractal and friends
+  - qcfractal
+  - geometric
+  - torsiondrive
 
     # Pip depends
   - pip:
     - codecov
-    - git+git://github.com/openforcefield/cmiles.git@v0.1.2#egg=cmiles
-
-      # Fractal depends
-    - git+git://github.com/MolSSI/QCFractal@v0.4.0a#egg=qcfractal
-    - git+git://github.com/MolSSI/QCEngine@v0.4.0#egg=qcengine
-    - mongoengine
-    - pydantic
-
-      # OpenFF Flows
-    - git+git://github.com/lpwgroup/torsiondrive.git@v0.9.1#egg=torsiondrive
-    - git+git://github.com/leeping/geomeTRIC@0.9.1#egg=geometric
+    - git+git://github.com/openforcefield/cmiles.git@v0.1.5#egg=cmiles

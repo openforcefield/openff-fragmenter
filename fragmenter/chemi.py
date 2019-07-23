@@ -1,19 +1,19 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
 
 try:
-    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac
+    from openeye import oechem, oeomega, oeiupac, oedepict, oequacpac, oeszybki, oegrapheme
 except ImportError:
     raise Warning("Need license for OpenEye!")
-from rdkit import Chem
 
 import cmiles
-from .utils import logger, ANGSROM_2_BOHR, BOHR_2_ANGSTROM
-from fragmenter import chemi
+from .utils import logger, BOHR_2_ANGSTROM
 
 import os
 import numpy as np
-import time
 import itertools
+import warnings
+import copy
+from math import radians
 
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -24,7 +24,7 @@ manipulate OpenEye molecules
 
 
 def get_charges(molecule, max_confs=800, strict_stereo=True,
-                normalize=True, keep_confs=None, legacy=True):
+                normalize=True, keep_confs=None, legacy=True, **kwargs):
     """Generate charges for an OpenEye OEMol molecule.
     Parameters
     ----------
@@ -68,11 +68,11 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     if not oequacpac.OEQuacPacIsLicensed(): raise(ImportError("Need License for oequacpac!"))
 
     if normalize:
-        molecule = normalize_molecule(molecule)
+        molecule = normalize_molecule(molecule, molecule.GetTitle())
     else:
         molecule = oechem.OEMol(molecule)
 
-    charged_copy = generate_conformers(molecule, max_confs=max_confs, strict_stereo=strict_stereo)  # Generate up to max_confs conformers
+    charged_copy = generate_conformers(molecule, max_confs=max_confs, strict_stereo=strict_stereo, **kwargs)  # Generate up to max_confs conformers
 
     if not legacy:
         # 2017.2.1 OEToolkits new charging function
@@ -82,8 +82,6 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
         # AM1BCCSym recommended by Chris Bayly to KAB+JDC, Oct. 20 2014.
         status = oequacpac.OEAssignPartialCharges(charged_copy, oequacpac.OECharges_AM1BCCSym)
         if not status: raise(RuntimeError("OEAssignPartialCharges returned error code %d" % status))
-
-
 
     #Determine conformations to return
     if keep_confs == None:
@@ -112,8 +110,8 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     return charged_copy
 
 
-def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
-                        can_order=True, copy=True):
+def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
+                        can_order=True, copy=True, timeout=100):
     """Generate conformations for the supplied molecule
     Parameters
     ----------
@@ -139,7 +137,17 @@ def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.
         molcopy = oechem.OEMol(molecule)
     else:
         molcopy = molecule
-    omega = oeomega.OEOmega()
+
+    if dense:
+        omega_opts = oeomega.OEOmegaOptions(oeomega.OEOmegaSampling_Dense)
+        omega = oeomega.OEOmega(omega_opts)
+    else:
+        omega = oeomega.OEOmega()
+
+    atom_map = False
+    if cmiles.utils.has_atom_map(molcopy):
+        atom_map = True
+        cmiles.utils.remove_atom_map(molcopy)
 
     # These parameters were chosen to match http://docs.eyesopen.com/toolkits/cookbook/python/modeling/am1-bcc.html
     omega.SetMaxConfs(max_confs)
@@ -154,6 +162,7 @@ def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.
     omega.SetStrictAtomTypes(strict_types)
 
     omega.SetIncludeInput(False)  # don't include input
+    omega.SetMaxSearchTime(timeout)
     if max_confs is not None:
         omega.SetMaxConfs(max_confs)
 
@@ -161,45 +170,136 @@ def generate_conformers(molecule, max_confs=800, strict_stereo=True, ewindow=15.
     if not status:
         raise(RuntimeError("omega returned error code %d" % status))
 
+    if atom_map:
+        cmiles.utils.restore_atom_map(molcopy)
+
     return molcopy
 
 
-def normalize_molecule(molecule, title=''):
-    """Normalize a copy of the molecule by checking aromaticity, adding explicit hydrogens and renaming by IUPAC name
-    or given title
+def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, copy_mol=True):
+    """
+    Generate conformers using torsion angle grids.
 
     Parameters
     ----------
     molecule: OEMol
-        The molecule to be normalized:
-    title: str
-        Name of molecule. If the string is empty, will use IUPAC name
+    dihedrals: list of tuples
+        list of dihedrals to rotate
+    intervals: list of ints
+        number in degree of dihedral intervals
+    max_rotation: int, optional, defalult 360
+        maximum rotation in degrees
+    copy_mol: bool, optional, default True
+        If True, return a copy of molecule and do not change incoming molecule
 
     Returns
     -------
-    molcopy: OEMol
-        A (copied) version of the normalized molecule
+    conf_mol: OEMol that includes conformers
 
     """
-    molcopy = oechem.OEMol(molecule)
+    # molecule must be mapped
+    if copy_mol:
+        molecule = copy.deepcopy(molecule)
+    if cmiles.utils.is_missing_atom_map(molecule):
+        raise ValueError("Molecule must have atom indices")
 
-    # Assign aromaticity.
-    oechem.OEAssignAromaticFlags(molcopy, oechem.OEAroModelOpenEye)
+    # Check length of dihedrals match length of intervals
 
-    # Add hydrogens.
-    oechem.OEAddExplicitHydrogens(molcopy)
+    conf_mol = generate_conformers(molecule, max_confs=1)
+    conf = conf_mol.GetConfs().next()
+    coords = oechem.OEFloatArray(conf.GetMaxAtomIdx()*3)
+    conf.GetCoords(coords)
 
-    # Set title to IUPAC name.
-    name = title
-    if not name:
-        name = oeiupac.OECreateIUPACName(molcopy)
-    molcopy.SetTitle(name)
+    torsions = [[conf_mol.GetAtom(oechem.OEHasMapIdx(i+1)) for i in dih] for dih in dihedrals]
 
-    # Check for any missing atom names, if found reassign all of them.
-    if any([atom.GetName() == '' for atom in molcopy.GetAtoms()]):
-        oechem.OETriposAtomNames(molcopy)
-    return molcopy
+    for i, tor in enumerate(torsions):
+        copy_conf_mol = copy.deepcopy(conf_mol)
+        conf_mol.DeleteConfs()
+        for conf in copy_conf_mol.GetConfs():
+            coords = oechem.OEFloatArray(conf.GetMaxAtomIdx()*3)
+            conf.GetCoords(coords)
+            for angle in range(5, max_rotation+5, intervals[i]):
+                newconf = conf_mol.NewConf(coords)
+                oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], radians(angle))
 
+    cmiles.utils.restore_atom_map(conf_mol)
+    return conf_mol
+
+
+def resolve_clashes(mol):
+    """
+    Taken from quanformer (https://github.com/MobleyLab/quanformer/blob/master/quanformer/initialize_confs.py#L54
+    Minimize conformers with severe steric interaction.
+    Parameters
+    ----------
+    mol : single OEChem molecule (single conformer)
+    clashfile : string
+        name of file to write output
+    Returns
+    -------
+    boolean
+        True if completed successfully, False otherwise.
+    """
+
+    # set general energy options along with the single-point specification
+    spSzybki = oeszybki.OESzybkiOptions()
+    spSzybki.SetForceFieldType(oeszybki.OEForceFieldType_MMFF94S)
+    spSzybki.SetSolventModel(oeszybki.OESolventModel_Sheffield)
+    spSzybki.SetRunType(oeszybki.OERunType_SinglePoint)
+
+    # generate the szybki MMFF94 engine for single points
+    szSP = oeszybki.OESzybki(spSzybki)
+
+    # construct minimiz options from single-points options to get general optns
+    optSzybki = oeszybki.OESzybkiOptions(spSzybki)
+
+    # now reset the option for minimization
+    optSzybki.SetRunType(oeszybki.OERunType_CartesiansOpt)
+
+    # generate szybki MMFF94 engine for minimization
+    szOpt = oeszybki.OESzybki(optSzybki)
+    # add strong harmonic restraints to nonHs
+
+    szOpt.SetHarmonicConstraints(10.0)
+    # construct a results object to contain the results of a szybki calculation
+
+    szResults = oeszybki.OESzybkiResults()
+    # work on a copy of the molecule
+    tmpmol = oechem.OEMol(mol)
+    if not szSP(tmpmol, szResults):
+        print('szybki run failed for %s' % tmpmol.GetTitle())
+        return False
+    Etotsp = szResults.GetTotalEnergy()
+    Evdwsp = szResults.GetEnergyTerm(oeszybki.OEPotentialTerms_MMFFVdW)
+    if Evdwsp > 35:
+        if not szOpt(tmpmol, szResults):
+            print('szybki run failed for %s' % tmpmol.GetTitle())
+            return False
+        Etot = szResults.GetTotalEnergy()
+        Evdw = szResults.GetEnergyTerm(oeszybki.OEPotentialTerms_MMFFVdW)
+        # wfile = open(clashfile, 'a')
+        # wfile.write(
+        #     '%s resolved bad clash: initial vdW: %.4f ; '
+        #     'resolved EvdW: %.4f\n' % (tmpmol.GetTitle(), Evdwsp, Evdw))
+        # wfile.close()
+        mol.SetCoords(tmpmol.GetCoords())
+    oechem.OESetSDData(mol, oechem.OESDDataPair('MM Szybki Single Point Energy', "%.12f" % szResults.GetTotalEnergy()))
+    return True
+
+
+def remove_clash(multi_conformer, in_place=True):
+    # resolve clashes
+    if not in_place:
+        multi_conformer = copy.deepcopy(multi_conformer)
+    confs_to_remove = []
+    for conf in multi_conformer.GetConfs():
+        if not resolve_clashes(conf):
+            confs_to_remove.append(conf)
+    for i in confs_to_remove:
+        multi_conformer.DeleteConf(i)
+
+    if not in_place:
+        return multi_conformer
 
 def has_conformer(molecule, check_two_dimension=False):
     """
@@ -243,20 +343,19 @@ def has_conformer(molecule, check_two_dimension=False):
     return conformer_bool
 
 
-# def mol_to_graph(molecule):
-#     """
-#     Generate networkx graph from oe molecule
-#     """
-#     import networkx as nx
-#     G = nx.Graph()
-#     for atom in molecule.GetAtoms():
-#         G.add_node(atom.GetIdx(), element=atom.GetElement())
-#     for bond in molecule.GetBonds():
-#         G.add_edge(bond.GetBgnIdx(), bond.GetEndIdx(), index=bond.GetIdx())
-#     return G
-
-
 def get_charge(molecule):
+    """
+    Get total  charge of molecules
+
+    Parameters
+    ----------
+    molecule: OEMol
+
+    Returns
+    -------
+    charge: int
+        total charge of molecule
+    """
 
     charge = 0
     for atom in molecule.GetAtoms():
@@ -405,8 +504,68 @@ Functions to read and write molecules and SMILES
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 """
 
+def smiles_to_oemol(smiles, normalize=True, **kwargs):
+    """Create a OEMolBuilder from a smiles string.
+    Parameters
+    ----------
+    smiles : str
+        SMILES representation of desired molecule.
+    Returns
+    -------
+    molecule : OEMol
+        A normalized molecule with desired smiles string.
+    """
 
-def to_smi(smiles, filename, return_fname=False):
+    molecule = oechem.OEMol()
+    if not oechem.OESmilesToMol(molecule, smiles):
+        raise ValueError("The supplied SMILES '%s' could not be parsed." % smiles)
+
+    if normalize:
+        molecule = normalize_molecule(molecule, **kwargs)
+
+    return molecule
+
+def normalize_molecule(molecule, name='', add_atom_map=False):
+    """Normalize a copy of the molecule by checking aromaticity, adding explicit hydrogens and renaming by IUPAC name
+    or given title
+
+    Parameters
+    ----------
+    molecule: OEMol
+        The molecule to be normalized:
+    title: str
+        Name of molecule. If the string is empty, will use IUPAC name
+
+    Returns
+    -------
+    molcopy: OEMol
+        A (copied) version of the normalized molecule
+
+    """
+    molcopy = oechem.OEMol(molecule)
+
+    # Assign aromaticity.
+    oechem.OEAssignAromaticFlags(molcopy, oechem.OEAroModelOpenEye)
+
+    # Add hydrogens.
+    oechem.OEAddExplicitHydrogens(molcopy)
+
+    # Set title to IUPAC name.
+    title = name
+    if not title:
+        title = oeiupac.OECreateIUPACName(molcopy)
+    molcopy.SetTitle(title)
+
+    # Check for any missing atom names, if found reassign all of them.
+    if any([atom.GetName() == '' for atom in molcopy.GetAtoms()]):
+        oechem.OETriposAtomNames(molcopy)
+
+    # Add canonical ordered atom maps
+    if add_atom_map:
+        cmiles.utils.add_atom_map(molcopy)
+    return molcopy
+
+def smiles_to_smi(smiles, filename, return_fname=False):
     """
     This function writes out an .smi file for a list of SMILES
     Parameters
@@ -427,25 +586,6 @@ def to_smi(smiles, filename, return_fname=False):
     if return_fname:
         filename = os.path.join(os.getcwd(), filename)
         return filename
-
-
-def new_output_stream(outname):
-    """
-    This function creates a new oechem.oemolostream.
-    Parameters
-    ----------
-    outname: str
-        name of outputfile.
-
-    Returns
-    -------
-    ofs: oechem.oemolostream
-
-    """
-    ofs = oechem.oemolostream()
-    if not ofs.open(outname):
-        oechem.OEThrow.Fatal("Unable to open {} for writing".format(outname))
-    return ofs
 
 
 def file_to_oemols(filename, title=True, verbose=False):
@@ -470,22 +610,20 @@ def file_to_oemols(filename, title=True, verbose=False):
         logger().info("Loading molecules from {}".format(filename))
 
     ifs = oechem.oemolistream(filename)
-    #moldb = oechem.OEMolDatabase(ifs)
     mollist = []
 
-    molecule = oechem.OECreateOEGraphMol()
+    molecule = oechem.OEMol()
     while oechem.OEReadMolecule(ifs, molecule):
         molecule_copy = oechem.OEMol(molecule)
+        oechem.OEPerceiveChiral(molecule)
+        oechem.OE3DToAtomStereo(molecule)
+        oechem.OE3DToBondStereo(molecule)
         if title:
             title = molecule_copy.GetTitle()
             if verbose:
                 logger().info("Reading molecule {}".format(title))
 
         mollist.append(normalize_molecule(molecule_copy, title))
-
-    # if len(mollist) <= 1:
-    #     mollist = mollist[0]
-
     ifs.close()
 
     return mollist
@@ -505,6 +643,7 @@ def smifile_to_rdmols(filename):
         list of RDKit molecules
 
     """
+    from rdkit import Chem
     smiles_txt = open(filename, 'r').read()
     # Check first line
     first_line = smiles_txt.split('\n')[0]
@@ -523,7 +662,6 @@ def smifile_to_rdmols(filename):
     if len(nones) > 0:
         # Find SMILES that did not parse
         smiles_list = smiles_txt.split('\n')[1:]
-        print(nones)
         missing_mols = [smiles_list[none] for none in nones]
         lines = [int(none) + 1 for none in nones]
         error = RuntimeError("Not all SMILES were parsed properly. {} indices are None in the rd_mols list. The corresponding"
@@ -534,41 +672,53 @@ def smifile_to_rdmols(filename):
     return rd_mols
 
 
-def smiles_to_oemol(smiles, name='', normalize=True):
-    """Create a OEMolBuilder from a smiles string.
+def oemols_to_smiles_list(OEMols, strict_stereo=False, **kwargs):
+    """
+    Write oemols to SMILES list
     Parameters
     ----------
-    smiles : str
-        SMILES representation of desired molecule.
+    OEMols : list of OEMols
+    strict_stereo : bool, optional, False
+        If True, will raise ValueError is oemol is missing stereo
+    kwargs : arguments passed to `cmiles.utils.mol_to_smiles`
+
     Returns
     -------
-    molecule : OEMol
-        A normalized molecule with desired smiles string.
+    SMILES: list of SMILES
+
     """
-
-    molecule = oechem.OEMol()
-    if not oechem.OEParseSmiles(molecule, smiles):
-        raise ValueError("The supplied SMILES '%s' could not be parsed." % smiles)
-
-    if normalize:
-        molecule = normalize_molecule(molecule, name)
-
-    return molecule
-
-
-def oemols_to_smiles_list(OEMols, isomeric=True):
 
     if not isinstance(OEMols, list):
         OEMols = [OEMols]
 
     SMILES = []
     for mol in OEMols:
-        SMILES.append(cmiles.to_canonical_smiles_oe(mol, mapped=False, explicit_hydrogen=False, isomeric=isomeric))
+        try:
+            SMILES.append(cmiles.utils.mol_to_smiles(mol, **kwargs))
+        except ValueError:
+            if strict_stereo:
+                raise ValueError("SMILES does not have stereo defined")
+            s = oechem.OEMolToSmiles(mol)
+            SMILES.append(s)
+            warnings.warn("SMILES will be missing steroe. {}".format(s))
 
     return SMILES
 
 
-def file_to_smiles_list(filename, return_titles=True, isomeric=True):
+def file_to_smiles_list(filename, return_titles=True, **kwargs):
+    """
+    Read file of molecule to list of SMILES
+    Parameters
+    ----------
+    filename: str
+        name of file to read. Any file format that OpenEye reads
+    return_titles: bool, optional, default True
+        If True, also return list of molecule names
+    **kwargs: parameters passed to `cmiles.utils.mol_to_smiles`
+    Returns
+    -------
+    list of SMILES
+    """
 
     oemols = file_to_oemols(filename)
     # Check if oemols have names
@@ -579,34 +729,13 @@ def file_to_smiles_list(filename, return_titles=True, isomeric=True):
             if not title:
                 logger().warning("an oemol does not have a name. Adding an empty str to the titles list")
             names.append(title)
-    smiles_list = oemols_to_smiles_list(oemols, isomeric=isomeric)
+    smiles_list = oemols_to_smiles_list(oemols, **kwargs)
 
     if return_titles:
         return smiles_list, names
     return smiles_list
 
 
-def standardize_molecule(molecule, title=''):
-
-    if isinstance(molecule, oechem.OEMol):
-        mol = molecule
-        return molecule
-
-    if isinstance(molecule, str):
-        mol = oechem.OEMol()
-        # First try reading as smiles
-        if not oechem.OESmilesToMol(mol, molecule):
-            # Try reading as input file
-            ifs = oechem.oemolistream()
-            if not ifs.open(molecule):
-                raise Warning('Could not parse molecule.')
-
-        # normalize molecule
-        mol = normalize_molecule(mol, title=title)
-
-    else:
-        raise TypeError("Wrong type of input for molecule. Can be SMILES, filename or OEMol")
-    return mol
 """
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Functions to work with mapped SMILES
@@ -614,133 +743,7 @@ These functions are used to keep the orders atoms consistent across different mo
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 """
 
-
-def is_mapped(molecule):
-    """
-    Check if atoms are mapped. If any atom is missing a tag, this will return False
-    Parameters
-    ----------
-    molecule: OEMol
-
-    Returns
-    -------
-    Bool: True if mapped. False otherwise
-    """
-    IS_MAPPED = True
-    for atom in molecule.GetAtoms():
-        if atom.GetMapIdx() == 0:
-            IS_MAPPED = False
-    return IS_MAPPED
-
-
-def get_atom_map(tagged_smiles, molecule=None, strict_stereo=True, verbose=False, generate_conformer=True):
-    """
-    Returns a dictionary that maps tag on SMILES to atom index in molecule.
-    Parameters
-    ----------
-    tagged_smiles: str
-        index-tagged explicit hydrogen SMILES string
-    molecule: OEMol
-        molecule to generate map for. If None, a new OEMol will be generated from the tagged SMILES, the map will map to
-        this molecule and it will be returned.
-    is_mapped: bool
-        Default: False
-        When an OEMol is generated from SMART string with tags, the tag will be stored in atom.GetMapIdx(). The index-tagged
-        explicit-hydrogen SMILES are tagges SMARTS. Therefore, if a molecule was generated with the tagged SMILES, there is
-        no reason to do a substructure search to get the right order of the atoms. If is_mapped is True, the atom map will be
-        generated from atom.GetMapIdx().
-
-
-    Returns
-    -------
-    molecule: OEMol
-        The molecule for the atom_map. If a molecule was provided, it's that molecule.
-    atom_map: dict
-        a dictionary that maps tag to atom index {tag:idx}
-    """
-    if molecule is None:
-        molecule = smiles_to_oemol(tagged_smiles)
-        # Since the molecule was generated from the tagged smiles, the mapping is already in the molecule.
-
-    # Check if conformer was generated. The atom indices can get reordered when generating conformers and then the atom
-    # map won't be correct
-    if not has_conformer(molecule) and generate_conformer:
-    # if molecule.GetMaxConfIdx() <= 1:
-    #     for conf in molecule.GetConfs():
-    #         values = np.asarray([conf.GetCoords().__getitem__(i) == (0.0, 0.0, 0.0) for i in
-    #                             range(conf.GetCoords().__len__())])
-    #     if values.all():
-        # Generate an Omega conformer
-        try:
-            molecule = generate_conformers(molecule, max_confs=1, strict_stereo=strict_stereo, strict_types=False, copy=False)
-            # Omega can change the ordering so whatever map existed is not there anymore
-        except RuntimeError:
-            logger().warning("Omega failed to generate a conformer for {}. Mapping can change when a new conformer is "
-                          "generated".format(molecule.GetTitle()))
-
-    # Check if molecule is mapped
-    mapped = is_mapped(molecule)
-    if mapped:
-        atom_map = {}
-        for atom in molecule.GetAtoms():
-            atom_map[atom.GetMapIdx()] = atom.GetIdx()
-        return molecule, atom_map
-
-    ss = oechem.OESubSearch(tagged_smiles)
-    oechem.OEPrepareSearch(molecule, ss)
-    ss.SetMaxMatches(1)
-
-    atom_map = {}
-    t1 = time.time()
-    matches = [m for m in ss.Match(molecule)]
-    t2 = time.time()
-    seconds = t2-t1
-    logger().debug("Substructure search took {} seconds".format(seconds))
-    if not matches:
-        logger().info("MCSS failed for {}, smiles: {}".format(molecule.GetTitle(), tagged_smiles))
-        return False
-    for match in matches:
-        for ma in match.GetAtoms():
-            atom_map[ma.pattern.GetMapIdx()] = ma.target.GetIdx()
-
-    # sanity check
-    mol = oechem.OEGraphMol()
-    oechem.OESubsetMol(mol, match, True)
-    logger().debug("Match SMILES: {}".format(oechem.OEMolToSmiles(mol)))
-
-    return molecule, atom_map
-
-
-def mol_to_tagged_smiles(infile, outfile):
-    """
-    Generate .smi from input mol with index-tagged explicit hydrogen SMILES
-    Parameters
-    ----------
-    infile: str
-        input molecule file
-    outfile: str
-        output smi file. Must be smi or ism
-
-    """
-    ifs = oechem.oemolistream()
-    if not ifs.open(infile):
-        oechem.OEThrow.Fatal("Unable to open {} for reading".format(infile))
-
-    ofs = oechem.oemolostream()
-    if not ofs.open(outfile):
-        oechem.OEThrow.Fatal("Unable to open {} for writing".format(outfile))
-    if ofs.GetFormat() not in [oechem.OEFormat_ISM, oechem.OEFormat_SMI]:
-        oechem.OEThrow.Fatal("Output format must be SMILES")
-
-    for mol in ifs.GetOEMols():
-        smiles = cmiles.to_canonical_smiles_oe(mol, mapped=True, explicit_hydrogen=True, isomeric=True)
-        #ToDo:
-        #  make sure this still works (probably doesn't because of copy of molecule. better to use list of molecule
-        # with name if molecule has title
-        oechem.OEWriteMolecule(ofs, mol)
-
-
-def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename=None):
+def to_mapped_xyz(molecule, atom_map=None, conformer=None, xyz_format=True, filename=None):
     """
     Generate xyz coordinates for molecule in the order given by the atom_map. atom_map is a dictionary that maps the
     tag on the SMILES to the atom idex in OEMol.
@@ -761,6 +764,10 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
     str: elements and xyz coordinates (in angstroms) in order of tagged SMILES
 
     """
+    if not atom_map and not cmiles.utils.has_atom_map(molecule):
+        raise ValueError("If molecule does not have atom map, you must provide an atom map")
+    if not has_conformer(molecule, check_two_dimension=True):
+        raise ValueError("Molecule must have conformers")
     xyz = ""
     for k, mol in enumerate(molecule.GetConfs()):
         if k == conformer or conformer is None:
@@ -771,9 +778,14 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
             mol.GetCoords(coords)
             if k != 0 and not xyz_format:
                     xyz += "*"
-            for mapping in range(1, len(atom_map)+1):
-                idx = atom_map[mapping]
-                atom = mol.GetAtom(oechem.OEHasAtomIdx(idx))
+
+            for mapping in range(1, molecule.NumAtoms()+1):
+                if not atom_map:
+                    atom = molecule.GetAtom(oechem.OEHasMapIdx(mapping))
+                    idx = atom.GetIdx()
+                else:
+                    idx = atom_map[mapping]
+                    atom = mol.GetAtom(oechem.OEHasAtomIdx(idx))
                 syb = oechem.OEGetAtomicSymbol(atom.GetAtomicNum())
                 xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(syb,
                                                                            coords[idx * 3],
@@ -784,43 +796,13 @@ def to_mapped_xyz(molecule, atom_map, conformer=None, xyz_format=False, filename
         file = open("{}.xyz".format(filename), 'w')
         file.write(xyz)
         file.close()
-    return xyz
-
-
-def get_mapped_connectivity_table(molecule, atom_map=None):
-    """
-    generate a connectivity table with map indices
-
-    Parameters
-    ----------
-    mapped_molecule: oemol or string
-        A mapped molecule or a mapped SMILES
-    Returns
-    -------
-    connectivity_table: list
-        list of list of map indices of bond and order [[map_idx_1, map_idx_2, bond_order] ...]
-    """
-    # Should I allow mapped SMILES too?
-    if isinstance(molecule, str):
-        # Input is a SMILES
-        molecule = smiles_to_oemol(molecule)
-    if isinstance(molecule, oechem.OEMol):
-        if not is_mapped(molecule) and atom_map is None:
-            raise TypeError("Molecule must contain map indices. You can get this by generating a molecule from a mapped SMILES")
-
-    if atom_map is None:
-        connectivity_table = [[bond.GetBgn().GetMapIdx()-1, bond.GetEnd().GetMapIdx()-1, bond.GetOrder()]
-                              for bond in molecule.GetBonds()]
     else:
-        # First convert mapping from map:idx to idx:map
-        inv_map = dict(zip(atom_map.values(), atom_map.keys()))
-        connectivity_table = [[inv_map[bond.GetBgnIdx()]-1, inv_map[bond.GetEndIdx()]-1, bond.GetOrder()]
-                              for bond in molecule.GetBonds()]
-    return connectivity_table
+        return xyz
 
 
 def from_mapped_xyz_to_mol_idx_order(mapped_coords, atom_map):
     """
+    Reorder xyz coordinates from the mapped order to the order in the molecule atom map is from
     """
     # reshape
     mapped_coords = np.array(mapped_coords, dtype=float).reshape(int(len(mapped_coords)/3), 3)
@@ -851,21 +833,25 @@ def qcschema_to_xyz_format(qcschema, name=None, filename=None):
         qcschema molecule in xyz format
 
     """
+    if not isinstance(qcschema, list):
+        qcschema = [qcschema]
     xyz = ""
-    symbols = qcschema['symbols']
-    coords = qcschema['geometry']
-    coords = np.asarray(coords)*BOHR_2_ANGSTROM
-    xyz += "{}\n".format(len(symbols))
-    xyz += "{}\n".format(name)
-    for i, s in enumerate(symbols):
-        xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(s,
-                                                                  coords[i * 3],
-                                                                  coords[i * 3 + 1],
-                                                                  coords[i * 3 + 2])
+    for qcmol in qcschema:
+        symbols = qcmol['symbols']
+        coords = qcmol['geometry']
+        coords = np.asarray(coords)*BOHR_2_ANGSTROM
+        xyz += "{}\n".format(len(symbols))
+        xyz += "{}\n".format(name)
+        for i, s in enumerate(symbols):
+            xyz += "  {}      {:05.3f}   {:05.3f}   {:05.3f}\n".format(s,
+                                                                      coords[i * 3],
+                                                                      coords[i * 3 + 1],
+                                                                      coords[i * 3 + 2])
     if filename:
         with open(filename, 'w') as f:
-            f.write(filename)
-    return xyz
+            f.write(xyz)
+    else:
+        return xyz
 
 
 def qcschema_to_xyz_traj(final_molecule_grid, filename=None):
@@ -944,7 +930,78 @@ def tag_conjugated_bond(mol, tautomers=None, tag=None, threshold=1.05):
     return atom_indices
 
 
-def highlight_bonds(mol_copy, fname, conjugation=True, rotor=False, width=600, height=400, label=None):
+def highlight_bond_by_map_idx(mol, fname, bond_map_idx=None, width=600, height=400, wbo=None, map_idx=False, label_scale=2.0, scale_bondwidth=True,
+                              color=None):
+    """
+
+    Parameters
+    ----------
+    mol
+    bonds: list of tuples
+        tuples should be map idx of atoms in bond
+    fname
+
+    Returns
+    -------
+
+    """
+    mol = cmiles.utils.load_molecule(mol, toolkit='openeye')
+    # make copy
+    mol = oechem.OEMol(mol)
+    # make sure mol has atom map
+    if not cmiles.utils.has_atom_map(mol):
+        raise ValueError("molecule needs atom map")
+    atom_bond_sets = []
+    #atom_bond_set = oechem.OEAtomBondSet()
+    if not isinstance(bond_map_idx, list):
+        bond_map_idx = [bond_map_idx]
+    b = None
+    for bond in bond_map_idx:
+        if not bond:
+            break
+        atom_bond_set = oechem.OEAtomBondSet()
+        a1 = mol.GetAtom(oechem.OEHasMapIdx(bond[0]))
+        a2 = mol.GetAtom(oechem.OEHasMapIdx(bond[1]))
+        b = mol.GetBond(a1, a2)
+        if wbo:
+            b.SetData('WibergBondOrder', wbo)
+        if not b:
+            raise RuntimeError("{} is not connected in molecule".format(bond))
+        atom_bond_set.AddAtom(a1)
+        atom_bond_set.AddAtom(a2)
+        atom_bond_set.AddBond(b)
+        atom_bond_sets.append(atom_bond_set)
+
+    dopt = oedepict.OEPrepareDepictionOptions()
+    dopt.SetSuppressHydrogens(True)
+    oedepict.OEPrepareDepiction(mol, dopt)
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+
+    if wbo is not None:
+        opts.SetBondPropertyFunctor(LabelWibergBondOrder())
+    if map_idx:
+        opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
+        opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEBlack))
+        opts.SetAtomPropLabelFontScale(label_scale)
+        opts.SetBondWidthScaling(scale_bondwidth)
+
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+    if color:
+
+        hstyle = oedepict.OEHighlightStyle_BallAndStick
+        hcolor = oechem.OEColor(color)
+        oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+    else:
+        highlight = oedepict.OEHighlightOverlayByBallAndStick(oechem.OEGetContrastColors())
+        oedepict.OEAddHighlightOverlay(disp, highlight, atom_bond_sets)
+
+    return oedepict.OERenderMolecule(fname, disp)
+
+
+def highlight_bonds_with_label(mol_copy, fname, conjugation=True, rotor=False, width=600, height=400, label=None):
     """
     Generate image of molecule with highlighted bonds. The bonds can either be highlighted with a conjugation tag
     or if it is rotatable.
@@ -1006,6 +1063,72 @@ def highlight_bonds(mol_copy, fname, conjugation=True, rotor=False, width=600, h
     hstyle = oedepict.OEHighlightStyle_BallAndStick
     hcolor = oechem.OEColor(oechem.OELightBlue)
     oedepict.OEAddHighlighting(disp, hcolor, hstyle, atomBondSet)
+
+    return oedepict.OERenderMolecule(fname, disp)
+
+
+def highltigh_torsion_by_cluster(mapped_molecule, clustered_dihedrals, fname, width=600, height=400):
+    """
+    Highlight torsion by cluster. This is used to visualize clustering output.
+
+    Parameters
+    ----------
+    mapped_molecule: oemol with map indices
+    clustered_dihedrals
+    fname
+    width
+    height
+
+    Returns
+    -------
+
+    """
+    mol = oechem.OEMol(mapped_molecule)
+    atom_bond_sets = []
+
+    for cluster in clustered_dihedrals:
+        atom_bond_set = oechem.OEAtomBondSet()
+        for dihedral in clustered_dihedrals[cluster]:
+            a = mol.GetAtom(oechem.OEHasMapIdx(dihedral[0]+1))
+            atom_bond_set.AddAtom(a)
+            for idx in dihedral[1:]:
+                a2 = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
+                atom_bond_set.AddAtom(a2)
+                bond = mol.GetBond(a, a2)
+                atom_bond_set.AddBond(bond)
+                a=a2
+        atom_bond_sets.append(atom_bond_set)
+
+    dopt = oedepict.OEPrepareDepictionOptions()
+    dopt.SetSuppressHydrogens(False)
+    oedepict.OEPrepareDepiction(mol, dopt)
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+
+    aroStyle = oedepict.OEHighlightStyle_Color
+    aroColor = oechem.OEColor(oechem.OEBlack)
+    oedepict.OEAddHighlighting(disp, aroColor, aroStyle,
+                               oechem.OEIsAromaticAtom(), oechem.OEIsAromaticBond() )
+   # hstyle = oedepict.OEHighlightStyle_BallAndStick
+
+    # if color:
+    #     highlight = oechem.OEColor(color)
+    #     # combine all atom_bond_sets
+    #     atom_bond_set = oechem.OEAtomBondSet()
+    #     for ab_set in atom_bond_sets:
+    #         for a in ab_set.GetAtoms():
+    #             atom_bond_set.AddAtom(a)
+    #         for b in ab_set.GetBonds():
+    #             atom_bond_set.AddBond(b)
+    #     oedepict.OEAddHighlighting(disp, highlight, hstyle, atom_bond_set)
+    # else:
+    highlight = oedepict.OEHighlightOverlayByBallAndStick(oechem.OEGetContrastColors())
+    oedepict.OEAddHighlightOverlay(disp, highlight, atom_bond_sets)
+    #hcolor = oechem.OEColor(oechem.OELightBlue)
+    #oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_sets)
 
     return oedepict.OERenderMolecule(fname, disp)
 
@@ -1082,72 +1205,6 @@ def highlight_torsion(mapped_molecule, dihedrals, fname, width=600, height=400, 
     return oedepict.OERenderMolecule(fname, disp)
 
 
-def highltigh_torsion_by_cluster(mapped_molecule, clustered_dihedrals, fname, width=600, height=400):
-    """
-    Highlight torsion by cluster. This is used to visualize clustering output.
-
-    Parameters
-    ----------
-    mapped_molecule: oemol with map indices
-    clustered_dihedrals
-    fname
-    width
-    height
-
-    Returns
-    -------
-
-    """
-    mol = oechem.OEMol(mapped_molecule)
-    atom_bond_sets = []
-
-    for cluster in clustered_dihedrals:
-        atom_bond_set = oechem.OEAtomBondSet()
-        for dihedral in clustered_dihedrals[cluster]:
-            a = mol.GetAtom(oechem.OEHasMapIdx(dihedral[0]+1))
-            atom_bond_set.AddAtom(a)
-            for idx in dihedral[1:]:
-                a2 = mol.GetAtom(oechem.OEHasMapIdx(idx+1))
-                atom_bond_set.AddAtom(a2)
-                bond = mol.GetBond(a, a2)
-                atom_bond_set.AddBond(bond)
-                a=a2
-        atom_bond_sets.append(atom_bond_set)
-
-    dopt = oedepict.OEPrepareDepictionOptions()
-    dopt.SetSuppressHydrogens(False)
-    oedepict.OEPrepareDepiction(mol, dopt)
-
-    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
-    opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
-
-    disp = oedepict.OE2DMolDisplay(mol, opts)
-
-    aroStyle = oedepict.OEHighlightStyle_Color
-    aroColor = oechem.OEColor(oechem.OEBlack)
-    oedepict.OEAddHighlighting(disp, aroColor, aroStyle,
-                               oechem.OEIsAromaticAtom(), oechem.OEIsAromaticBond() )
-    hstyle = oedepict.OEHighlightStyle_BallAndStick
-
-    # if color:
-    #     highlight = oechem.OEColor(color)
-    #     # combine all atom_bond_sets
-    #     atom_bond_set = oechem.OEAtomBondSet()
-    #     for ab_set in atom_bond_sets:
-    #         for a in ab_set.GetAtoms():
-    #             atom_bond_set.AddAtom(a)
-    #         for b in ab_set.GetBonds():
-    #             atom_bond_set.AddBond(b)
-    #     oedepict.OEAddHighlighting(disp, highlight, hstyle, atom_bond_set)
-    # else:
-    highlight = oedepict.OEHighlightOverlayByBallAndStick(oechem.OEGetContrastColors())
-    oedepict.OEAddHighlightOverlay(disp, highlight, atom_bond_sets)
-    #hcolor = oechem.OEColor(oechem.OELightBlue)
-    #oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_sets)
-
-    return oedepict.OERenderMolecule(fname, disp)
-
-
 def bond_order_tag(molecule, atom_map, bond_order_array):
     """
     Add psi bond order to bond in molecule. This function adds a tag to the GetData dictionary
@@ -1191,7 +1248,8 @@ def mol_to_image(mol, fname, width=600, height=400, scale_bondwidth=True):
     return oedepict.OERenderMolecule(fname, disp)
 
 
-def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
+def mol_to_image_atoms_label(mol, fname, map_idx=True, width=600, height=400, label_scale=2.0, scale_bondwidth=True):
+
     """Write out png file of molecule with atoms labeled with their map index.
 
     Parameters
@@ -1204,9 +1262,11 @@ def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_
         If True, lable atoms with map index instead of atom index. If set to True, input SMILES must have map indices.
 
     """
+    if not isinstance(mol, oechem.OEMol) and isinstance(mol, str):
+        # Try converting smiles to mol
+        mol = cmiles.utils.load_molecule(mol, toolkit='openeye')
 
-    mol = oechem.OEGraphMol()
-    oechem.OESmilesToMol(mol, smiles)
+    mol = oechem.OEMol(mol)
     oedepict.OEPrepareDepiction(mol)
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
 
@@ -1219,7 +1279,6 @@ def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_
     if not map_idx:
         opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
 
-    opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomMapIdx())
     opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
     opts.SetAtomPropLabelFontScale(label_scale)
     opts.SetBondWidthScaling(scale_bondwidth)
@@ -1228,7 +1287,45 @@ def png_atoms_labeled(smiles, fname, map_idx=True, width=600, height=400, label_
     return oedepict.OERenderMolecule(fname, disp)
 
 
-def png_bond_labels(mol, fname, width=600, height=400, label='WibergBondOrder'):
+def mol_to_image_bond_labels(mol, fname, width=600, height=400, label='WibergBondOrder', supress_h=False):
+    """
+    Generate png figure of molecule. Bonds should include bond order defined in label
+
+    Parameters
+    ----------
+    mol: OpenEye OEMol
+    fname: str
+        filename for png
+    width: int
+    height: int
+    label: str
+        Which label to print. Options are WibergBondOrder, Wiberg_psi4 and Mayer_psi4
+
+    Returns
+    -------
+    bool:
+    """
+    # copy mole
+    mol = oechem.OEMol(mol)
+    oedepict.OEPrepareDepiction(mol, False, supress_h)
+
+
+    opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
+    opts.SetHydrogenStyle(oedepict.OEHydrogenStyle_ExplicitAll|oedepict.OEHydrogenStyle_ExplicitHetero)
+    # opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
+    # opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
+    for b in mol.GetBonds():
+        if not label in b.GetData():
+            raise KeyError("Missing BO")
+    bond_label = {'WibergBondOrder': LabelWibergBondOrder, 'Wiberg_psi4': LabelWibergPsiBondOrder,
+                  'Mayer_psi4': LabelMayerPsiBondOrder}
+    bondlabel = bond_label[label]
+    opts.SetBondPropertyFunctor(bondlabel())
+
+    disp = oedepict.OE2DMolDisplay(mol, opts)
+    return oedepict.OERenderMolecule(fname, disp)
+
+def png_bond_idx(mol, fname, width=600, height=400):
     """
     Generate png figure of molecule. Bonds should include bond order defined in label
 
@@ -1253,23 +1350,71 @@ def png_bond_labels(mol, fname, width=600, height=400, label='WibergBondOrder'):
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
     # opts.SetAtomPropertyFunctor(oedepict.OEDisplayAtomIdx())
     # opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEDarkGreen))
-    bond_label = {'WibergBondOrder': LabelWibergBondOrder, 'Wiberg_psi4': LabelWibergPsiBondOrder,
-                  'Mayer_psi4': LabelMayerPsiBondOrder}
-    bondlabel = bond_label[label]
-    opts.SetBondPropertyFunctor(bondlabel())
+
+    opts.SetBondPropertyFunctor(oedepict.OEDisplayBondIdx())
 
     disp = oedepict.OE2DMolDisplay(mol, opts)
     return oedepict.OERenderMolecule(fname, disp)
 
+
+class ColorAtomByFragmentIndex(oegrapheme.OEAtomGlyphBase):
+    """
+    This class was taken from OpeneEye cookbook
+    https://docs.eyesopen.com/toolkits/cookbook/python/depiction/enumfrags.html
+    """
+    def __init__(self, colorlist, tag):
+        oegrapheme.OEAtomGlyphBase.__init__(self)
+        self.colorlist = colorlist
+        self.tag = tag
+
+    def RenderGlyph(self, disp, atom):
+
+        a_disp = disp.GetAtomDisplay(atom)
+        if a_disp is None or not a_disp.IsVisible():
+            return False
+
+        if not atom.HasData(self.tag):
+            return False
+
+        linewidth = disp.GetScale() / 1.5
+        color = self.colorlist[atom.GetData(self.tag)]
+        radius = disp.GetScale() / 4.8
+        pen = oedepict.OEPen(color, color, oedepict.OEFill_Off, linewidth)
+
+        layer = disp.GetLayer(oedepict.OELayerPosition_Below)
+        oegrapheme.OEDrawCircle(layer, oegrapheme.OECircleStyle_Default, a_disp.GetCoords(), radius, pen)
+
+        return True
+
+    def ColorAtomByFragmentIndex(self):
+        return ColorAtomByFragmentIndex(self.colorlist, self.tag).__disown__()
+
+
+class LabelFragBondOrder(oedepict.OEDisplayBondPropBase):
+    def __init__(self):
+        oedepict.OEDisplayBondPropBase.__init__(self)
+
+    def __call__(self, bond):
+        if 'WibergBondOrder_frag' in bond.GetData():
+            bondOrder = bond.GetData('WibergBondOrder_frag')
+            label = "{:.2f}".format(bondOrder)
+            return label
+        return ' '
+
+    def CreateCopy(self):
+        copy = LabelFragBondOrder()
+        return copy.__disown__()
 
 class LabelWibergBondOrder(oedepict.OEDisplayBondPropBase):
     def __init__(self):
         oedepict.OEDisplayBondPropBase.__init__(self)
 
     def __call__(self, bond):
-        bondOrder = bond.GetData('WibergBondOrder')
-        label = "{:.2f}".format(bondOrder)
-        return label
+        if 'WibergBondOrder' in bond.GetData():
+            bondOrder = bond.GetData('WibergBondOrder')
+            label = "{:.2f}".format(bondOrder)
+            return label
+        return ' '
 
     def CreateCopy(self):
         copy = LabelWibergBondOrder()
@@ -1304,9 +1449,31 @@ class LabelMayerPsiBondOrder(oedepict.OEDisplayBondPropBase):
 
         return copy.__disown__()
 
-def to_pdf(molecules, oname, rows=5, cols=3):
+def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, supress_h=True, color=None, names=None):
+    """
+    Generate PDF of list of oemols or SMILES
+
+    Parameters
+    ----------
+    molecules : list of OEMols or SMILES
+    fname : str
+        Name of PDF
+    rows : int
+        How many rows of molecules per page
+    cols : int
+        How many columns of molecule per page
+    bond_map_idx :
+    bo :
+    supress_h :
+    color :
+    names :
+
+    Returns
+    -------
+
+    """
     itf = oechem.OEInterface()
-    PageByPage = True
+    #PageByPage = True
 
     ropts = oedepict.OEReportOptions(rows, cols)
     ropts.SetHeaderHeight(25)
@@ -1318,12 +1485,85 @@ def to_pdf(molecules, oname, rows=5, cols=3):
     cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
     opts = oedepict.OE2DMolDisplayOptions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
     oedepict.OESetup2DMolDisplayOptions(opts, itf)
-
-    for mol in molecules:
+    #if bo:
+        #b.SetData('WibergBondOrder', bo)
+    #    opts.SetBondPropertyFunctor(LabelWibergBondOrder())
+    b = None
+    for i, mol in enumerate(molecules):
         cell = report.NewCell()
-        oedepict.OEPrepareDepiction(mol)
-        disp = oedepict.OE2DMolDisplay(mol, opts)
+        if isinstance(mol, str):
+            m = oechem.OEMol()
+            oechem.OESmilesToMol(m, mol)
+            mol = m
+            if names is not None:
+                mol.SetTitle(names[i])
+        mol_copy = oechem.OEMol(mol)
+        oedepict.OEPrepareDepiction(mol_copy, False, supress_h)
+        # if bo:
+        #     b.SetData('WibergBondOrder', bo[i])
+        #     opts.SetBondPropertyFunctor(LabelWibergBondOrder())
+
+        if isinstance(bond_map_idx, tuple) and len(bond_map_idx) == 2:
+            atom_bond_set = oechem.OEAtomBondSet()
+            a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[0]))
+            a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[1]))
+            b = mol_copy.GetBond(a1, a2)
+            if bo:
+                b.SetData('WibergBondOrder', bo[i])
+                opts.SetBondPropertyFunctor(LabelWibergBondOrder())
+            atom_bond_set.AddAtom(a1)
+            atom_bond_set.AddAtom(a2)
+            atom_bond_set.AddBond(b)
+            hstyle = oedepict.OEHighlightStyle_BallAndStick
+            if color:
+                hcolor = color
+            else:
+                hcolor = oechem.OEColor(oechem.OELightBlue)
+            disp = oedepict.OE2DMolDisplay(mol_copy, opts)
+            oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+        elif isinstance(bond_map_idx, tuple) and len(bond_map_idx) != 2:
+            atom_bond_set = oechem.OEAtomBondSet()
+            # Find all atoms and bonds between them
+            for m1, m2 in itertools.combinations(bond_map_idx, 2):
+                a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(m1))
+                a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(m2))
+                atom_bond_set.AddAtom(a1)
+                atom_bond_set.AddAtom(a2)
+                b = mol_copy.GetBond(a1, a2)
+                if b:
+                    atom_bond_set.AddBond(b)
+            hstyle = oedepict.OEHighlightStyle_BallAndStick
+            if color:
+                hcolor = color
+            else:
+                hcolor = oechem.OEColor(oechem.OELightBlue)
+            disp = oedepict.OE2DMolDisplay(mol_copy, opts)
+            oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+
+        elif isinstance(bond_map_idx, list):
+            atom_bond_set = oechem.OEAtomBondSet()
+            a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[i][0]))
+            a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[i][1]))
+            b = mol_copy.GetBond(a1, a2)
+            atom_bond_set.AddAtom(a1)
+            atom_bond_set.AddAtom(a2)
+            atom_bond_set.AddBond(b)
+            hstyle = oedepict.OEHighlightStyle_BallAndStick
+            if color:
+                hcolor = color
+            else:
+                hcolor = oechem.OEColor(oechem.OELightBlue)
+            disp = oedepict.OE2DMolDisplay(mol_copy, opts)
+            oedepict.OEAddHighlighting(disp, hcolor, hstyle, atom_bond_set)
+        else:
+            disp = oedepict.OE2DMolDisplay(mol_copy, opts)
+
+        if not b and bond_map_idx:
+            warnings.warn("{} is not connected in molecule".format(bond_map_idx))
+            #raise RuntimeError("{} is not connected in molecule".format(bond_map_idx))
+
+
         oedepict.OERenderMolecule(cell, disp)
         oedepict.OEDrawCurvedBorder(cell, oedepict.OELightGreyPen, 10.0)
 
-    oedepict.OEWriteReport(oname, report)
+    oedepict.OEWriteReport(fname, report)

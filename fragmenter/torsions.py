@@ -4,19 +4,17 @@ try:
     import openeye.oechem as oechem
 except ImportError:
     pass
-import warnings
 import numpy as np
 import itertools
 from math import radians, degrees
 import copy
 
 from . import utils, chemi
-from cmiles.utils import mol_to_smiles, has_atom_map
-from .utils import BOHR_2_ANGSTROM, logger
-# warnings.simplefilter('always')
+from cmiles.utils import mol_to_smiles, has_atom_map, get_atom_map
 
 
 def find_torsions(molecule, restricted=True, terminal=True):
+    #ToDo: Get rid of equivalent torsions. Ex H-C-C-C and C-C-C-H.
     """
     This function takes an OEMol (atoms must be tagged with index map) and finds the map indices for torsion that need
     to be driven.
@@ -37,7 +35,7 @@ def find_torsions(molecule, restricted=True, terminal=True):
 
     """
     # Check if molecule has map
-    is_mapped = chemi.is_mapped(molecule)
+    is_mapped = has_atom_map(molecule)
     if not is_mapped:
         utils.logger().warning('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
         tagged_smiles = mol_to_smiles(molecule, isomeric=True, mapped=True, explicit_hydrogen=True)
@@ -152,7 +150,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
         utils.logger().debug("Map Idxs: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
         utils.logger().debug("Atom Numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
         if tor[1].GetMapIdx() != best_tor[1].GetMapIdx() or tor[2].GetMapIdx() != best_tor[2].GetMapIdx():
-            new_tor = True
+            #new_tor = True
             if not first_pass:
                 utils.logger().debug("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
                 tors.append(best_tor)
@@ -169,12 +167,97 @@ def one_torsion_per_rotatable_bond(torsion_list):
     utils.logger().debug("Adding to list: {} {} {} {}".format(best_tor[0].GetMapIdx(), best_tor[1].GetMapIdx(), best_tor[2].GetMapIdx(), best_tor[3].GetMapIdx()))
     tors.append(best_tor)
 
-    utils.logger().info("List of torsion to drive:")
+    utils.logger().debug("List of torsion to drive:")
     for tor in tors:
-        utils.logger().info("Idx: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
-        utils.logger().info("Atom numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
+        utils.logger().debug("Idx: {} {} {} {}".format(tor[0].GetMapIdx(), tor[1].GetMapIdx(), tor[2].GetMapIdx(), tor[3].GetMapIdx()))
+        utils.logger().debug("Atom numbers: {} {} {} {}".format(tor[0].GetAtomicNum(), tor[1].GetAtomicNum(), tor[2].GetAtomicNum(), tor[3].GetAtomicNum()))
 
     return tors
+
+def find_torsion_around_bond(molecule, bond):
+    """
+    Find the torsion around a given bond
+    Parameters
+    ----------
+    molecule : molecule with atom maps
+    bond : tuple of map idx of bond atoms
+
+    Returns
+    -------
+    list of 4 atom map idx (-1)
+
+    Note:
+    This returns the map indices of the torsion -1, not the atom indices.
+
+    """
+    if not has_atom_map(molecule):
+        raise ValueError("Molecule must have atom maps")
+    #torsions = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
+
+    terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
+    terminal_torsions = _find_torsions_from_smarts(molecule, terminal_smarts)
+    mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(molecule)]
+    all_torsions = terminal_torsions + mid_torsions
+
+    tors = one_torsion_per_rotatable_bond(all_torsions)
+
+    tor_idx = [tuple(i.GetMapIdx() for i in tor) for tor in tors]
+    central_bonds = [(tor[1], tor[2]) for tor in tor_idx]
+    try:
+        idx = central_bonds.index(bond)
+    except ValueError:
+        idx = central_bonds.index(tuple(reversed(bond)))
+
+    torsion = [i-1 for i in tor_idx[idx]]
+    return torsion
+
+
+def find_equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
+    """
+    Final all torsions around a given central bond
+    Parameters
+    ----------
+    mapped_mol: oemol. Must contaion map indices
+    restricted: bool, optional, default False
+        If True, will also find restricted torsions
+    central_bonds: list of tuple of ints, optional, defualt None
+        If provides, only torsions around those central bonds will be given. If None, all torsions in molecule will be found
+
+    Returns
+    -------
+    eq_torsions: dict
+        maps central bond to all equivelant torisons
+    """
+    #ToDo check that mol has mapping
+
+    mol = oechem.OEMol(mapped_mol)
+    if not has_atom_map(mol):
+        raise ValueError("OEMol must have map indices")
+
+    terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
+    terminal_torsions = _find_torsions_from_smarts(mol, terminal_smarts)
+    mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(mapped_mol)]
+    all_torsions = terminal_torsions + mid_torsions
+    if restricted:
+        restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]'
+        restricted_torsions = _find_torsions_from_smarts(mol, restricted_smarts)
+        all_torsions = all_torsions + restricted_torsions
+
+    tor_idx = []
+    for tor in all_torsions:
+        tor_name = (tor[0].GetMapIdx()-1, tor[1].GetMapIdx()-1, tor[2].GetMapIdx()-1, tor[3].GetMapIdx()-1)
+        tor_idx.append(tor_name)
+
+    if central_bonds:
+        if not isinstance(central_bonds, list):
+            central_bonds = [central_bonds]
+    if not central_bonds:
+        central_bonds = set((tor[1], tor[2]) for tor in tor_idx)
+
+    eq_torsions = {cb : [tor for tor in tor_idx if cb == (tor[1], tor[2]) or  cb ==(tor[2], tor[1])] for cb in
+              central_bonds}
+
+    return eq_torsions
 
 
 def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=30, terminal_torsion_resolution=0,
@@ -237,16 +320,22 @@ def define_torsiondrive_jobs(needed_torsion_drives, internal_torsion_resolution=
                 crank_job +=1
 
         if terminal_torsion_resolution:
-            for comb in itertools.combinations(terminal_torsions, scan_dimension):
-                dihedrals = [terminal_torsions[torsion] for torsion in comb]
-                grid = [terminal_torsion_resolution]*scan_dimension
+            # If scanning terminal torsions separately, only do 1D torsion scans
+            for torsion in terminal_torsions:
+                dihedrals = [terminal_torsions[torsion]]
+                grid = [terminal_torsion_resolution]
                 crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
                 crank_job +=1
-            if terminal_dimension < scan_dimension and terminal_dimension > 0:
-                dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
-                grid = [terminal_torsion_resolution]*len(dihedrals)
-                crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
-                crank_job +=1
+            # for comb in itertools.combinations(terminal_torsions, scan_dimension):
+            #     dihedrals = [terminal_torsions[torsion] for torsion in comb]
+            #     grid = [terminal_torsion_resolution]*scan_dimension
+            #     crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
+            #     crank_job +=1
+            # if terminal_dimension < scan_dimension and terminal_dimension > 0:
+            #     dihedrals = [terminal_torsions[torsion] for torsion in terminal_torsions]
+            #     grid = [terminal_torsion_resolution]*len(dihedrals)
+            #     crank_jobs['crank_job_{}'.format(crank_job)] = {'dihedrals': dihedrals, 'grid_spacing': grid}
+            #     crank_job +=1
     else:
         # combine both internal and terminal torsions
         all_torsion_idx = np.arange(0, torsion_dimension)
@@ -338,12 +427,14 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
 
     optimization_jobs = {}
     tagged_smiles = qc_molecule['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
-    mol, atom_map = chemi.get_atom_map(tagged_smiles, generate_conformer=False)
+    mol = oechem.OEMol()
+    oechem.OESmilesToMol(mol, tagged_smiles)
+    atom_map = get_atom_map(mol, tagged_smiles)
 
     coords = chemi.from_mapped_xyz_to_mol_idx_order(qc_molecule['geometry'], atom_map)
 
     # convert coord to Angstrom
-    coords = coords * BOHR_2_ANGSTROM
+    coords = coords * utils.BOHR_2_ANGSTROM
     conf = mol.GetConfs().next()
     conf.SetCoords(oechem.OEFloatArray(coords))
 
@@ -357,7 +448,7 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
     interval = radians(interval)
     max_rot = radians(maximum_rotation)
     for dihedral in dihedrals:
-        j = 0
+        #j = 0
         dih_idx = dihedrals[dihedral]
         tor = []
         for i in dih_idx:
@@ -367,7 +458,7 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
         for i, angle in enumerate(np.arange(dih_angle-max_rot, dih_angle+max_rot, interval)):
             newconf = mol.NewConf(coords_2)
             oechem.OESetTorsion(newconf, tor[0], tor[1], tor[2], tor[3], angle)
-            new_angle = oechem.OEGetTorsion(newconf, tor[0], tor[1], tor[2], tor[3])
+            #new_angle = oechem.OEGetTorsion(newconf, tor[0], tor[1], tor[2], tor[3])
             # if new_angle == dih_angle:
             #     j += 1
             #     if j > 1:
@@ -424,91 +515,3 @@ def measure_dihedral_angle(dihedral, coords):
     phi = np.arctan2(t1, t2)
     degree = phi * 180 / np.pi
     return degree
-
-
-def find_equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
-    """
-    Final all torsions around a given central bond
-    Parameters
-    ----------
-    mapped_mol: oemol. Must contaion map indices
-    restricted: bool, optional, default False
-        If True, will also find restricted torsions
-    central_bonds: list of tuple of ints, optional, defualt None
-        If provides, only torsions around those central bonds will be given. If None, all torsions in molecule will be found
-
-    Returns
-    -------
-    eq_torsions: dict
-        maps central bond to all equivelant torisons
-    """
-    #ToDo check that mol has mapping
-
-    mol = oechem.OEMol(mapped_mol)
-    if not has_atom_map(mol):
-        raise ValueError("OEMol must have map indices")
-    terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
-    terminal_torsions = _find_torsions_from_smarts(mol, terminal_smarts)
-    mid_torsions = [[tor.a, tor.b, tor.c, tor.d] for tor in oechem.OEGetTorsions(mapped_mol)]
-    all_torsions = terminal_torsions + mid_torsions
-    if restricted:
-        restricted_smarts = '[*]~[C,c]=,@[C,c]~[*]'
-        restricted_torsions = _find_torsions_from_smarts(mol, restricted_smarts)
-        all_torsions = all_torsions + restricted_torsions
-    tor_idx = []
-    for tor in all_torsions:
-        tor_name = (tor[0].GetMapIdx()-1, tor[1].GetMapIdx()-1, tor[2].GetMapIdx()-1, tor[3].GetMapIdx()-1)
-        tor_idx.append(tor_name)
-    if central_bonds:
-        if not isinstance(central_bonds, list):
-            central_bonds = [central_bonds]
-    if not central_bonds:
-        central_bonds = set((tor[1], tor[2]) for tor in tor_idx)
-
-    eq_torsions = {cb : [tor for tor in tor_idx if cb == (tor[1], tor[2]) or  cb ==(tor[2], tor[1])] for cb in
-              central_bonds}
-    return eq_torsions
-
-
-def get_initial_crank_state(fragment):
-    """
-    Generate initial crank state JSON for each crank job in fragment
-    Parameters
-    ----------
-    fragment: dict
-        A fragment from JSON crank jobs
-
-    Returns
-    -------
-    crank_initial_states: dict
-        dictionary containing JSON specs for initial states for all crank jobs in a fragment.
-    """
-    crank_initial_states = {}
-    init_geometry = fragment['molecule']['geometry']
-    needed_torsions = fragment['needed_torsion_drives']
-    crank_jobs = fragment['crank_torsion_drives']
-    for i, job in enumerate(crank_jobs):
-        dihedrals = []
-        grid_spacing = []
-        needed_mid_torsions = needed_torsions['internal']
-        for mid_torsion in crank_jobs[job]['internal_torsions']:
-            # convert 1-based indexing to 0-based indexing
-            dihedrals.append([j-1 for j in needed_mid_torsions[mid_torsion]])
-            grid_spacing.append(crank_jobs[job]['internal_torsions'][mid_torsion])
-        needed_terminal_torsions = needed_torsions['terminal']
-        for terminal_torsion in crank_jobs[job]['terminal_torsions']:
-            # convert 1-based indexing to 0-based indexing
-            dihedrals.append([j-1 for j in needed_terminal_torsions[terminal_torsion]])
-            grid_spacing.append(crank_jobs[job]['terminal_torsions'][terminal_torsion])
-
-        crank_state = {}
-        crank_state['dihedrals'] = dihedrals
-        crank_state['grid_spacing'] = grid_spacing
-        crank_state['elements'] = fragment['molecule']['symbols']
-
-        #ToDo add ability to start with many geomotries
-        crank_state['init_coords'] = [init_geometry]
-        crank_state['grid_status'] = {}
-
-        crank_initial_states[job] = crank_state
-    return crank_initial_states
