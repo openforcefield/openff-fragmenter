@@ -1,5 +1,6 @@
 import logging
 import sys
+import json
 
 """
 ~~~~~~~~~~~~~~~~~~~
@@ -102,3 +103,36 @@ def make_movie(files, fps=15, filename='movie'):
 
     im = mpy.ImageSequenceClip(files, fps=fps)
     im.write_videofile('{}.mp4'.format(filename), fps=fps)
+
+def serialize_bond(key):
+    """
+    Serialize bond tuple for JSON
+    Parameters
+    ----------
+    key : tuple of ints
+
+    Returns
+    -------
+    serialized tuple
+
+    """
+    if isinstance(key, (int, float)):
+        key = (int(key), )
+
+        return json.dumps(key)
+
+def deserialize_bond(key):
+    """
+    Convert string tuple to tuple
+    Parameters
+    ----------
+    key :
+
+    Returns
+    -------
+
+    """
+    return tuple(int(x) for x in key.split('[')[-1].split(']')[0].split(','))
+
+
+
