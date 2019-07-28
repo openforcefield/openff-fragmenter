@@ -1465,7 +1465,9 @@ def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, align=
     bond_map_idx :
     bo :
     supress_h :
-    color :
+    color : tuple or list of ints, optional, default None
+        If tuple of ints all bonds selected will be highlighted with that color
+        If list of OEColors, the list needs to be the same length as the incoming molecules
     names :
 
     Returns
@@ -1515,14 +1517,15 @@ def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, align=
             a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[1]))
             b = mol_copy.GetBond(a1, a2)
             if bo:
-                print(bo[i])
                 b.SetData('WibergBondOrder', bo[i])
                 opts.SetBondPropertyFunctor(LabelWibergBondOrder())
             atom_bond_set.AddAtom(a1)
             atom_bond_set.AddAtom(a2)
             atom_bond_set.AddBond(b)
             hstyle = oedepict.OEHighlightStyle_BallAndStick
-            if color is not None:
+            if isinstance(color, list):
+                hcolor = oechem.OEColor(color[i])
+            elif color is not None:
                 hcolor = oechem.OEColor(color)
             else:
                 hcolor = oechem.OEColor(oechem.OELightBlue)

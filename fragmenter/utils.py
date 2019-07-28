@@ -119,7 +119,7 @@ def serialize_bond(key):
     if isinstance(key, (int, float)):
         key = (int(key), )
 
-        return json.dumps(key)
+    return json.dumps(key)
 
 def deserialize_bond(key):
     """
