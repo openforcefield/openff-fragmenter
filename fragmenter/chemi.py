@@ -1558,15 +1558,25 @@ def to_pdf(molecules, fname, rows=5, cols=3, bond_map_idx=None, bo=False, align=
 
         elif isinstance(bond_map_idx, list):
             atom_bond_set = oechem.OEAtomBondSet()
-            a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[i][0]))
-            a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[i][1]))
-            b = mol_copy.GetBond(a1, a2)
-            if bo:
-                b.SetData('WibergBondOrder', bo[i])
-                opts.SetBondPropertyFunctor(LabelWibergBondOrder())
-            atom_bond_set.AddAtom(a1)
-            atom_bond_set.AddAtom(a2)
-            atom_bond_set.AddBond(b)
+            if any(isinstance(el,list) for el in bond_map_idx):
+                # More than one bond is being highlighted
+                for bm_idx in bond_map_idx[i]:
+                    a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(bm_idx[0]))
+                    a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bm_idx[1]))
+                    b = mol_copy.GetBond(a1, a2)
+                    atom_bond_set.AddAtom(a1)
+                    atom_bond_set.AddAtom(a2)
+                    atom_bond_set.AddBond(b)
+            else:
+                a1 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[i][0]))
+                a2 = mol_copy.GetAtom(oechem.OEHasMapIdx(bond_map_idx[i][1]))
+                b = mol_copy.GetBond(a1, a2)
+                if bo:
+                    b.SetData('WibergBondOrder', bo[i])
+                    opts.SetBondPropertyFunctor(LabelWibergBondOrder())
+                atom_bond_set.AddAtom(a1)
+                atom_bond_set.AddAtom(a2)
+                atom_bond_set.AddBond(b)
             hstyle = oedepict.OEHighlightStyle_BallAndStick
             if color is not None:
                 hcolor = oechem.OEColor(color)
