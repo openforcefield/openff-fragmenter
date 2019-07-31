@@ -457,6 +457,7 @@ class Fragmenter(object):
 
         """
         if functional_groups:
+            print(functional_groups)
             fgroups_smarts = functional_groups
         if functional_groups is None:
             # Load yaml file
@@ -886,8 +887,11 @@ class CombinatorialFragmenter(Fragmenter):
         for frag_smiles in self.fragments:
             print(frag_smiles)
             json_dict[frag_smiles] = {}
-            identifiers = cmiles.get_molecule_ids(frag_smiles, strict=False)
-            json_dict[frag_smiles]['cmiles_identifiers'] = identifiers
+            try:
+                identifiers = cmiles.get_molecule_ids(frag_smiles, strict=False)
+                json_dict[frag_smiles]['cmiles_identifiers'] = identifiers
+            except ValueError:
+                json_dict[frag_smiles]['cmiles_identifiers'] = {}
             json_dict[frag_smiles]['provenance'] = self.get_provenance()
             json_dict[frag_smiles]['provenance']['routine']['fragment_molecule']['map_to_parent'] = []
             for mol in self.fragments[frag_smiles]:
@@ -1421,10 +1425,18 @@ class WBOFragmenter(Fragmenter):
         """
         json_dict = {}
         for bond in self.fragments:
-            can_iso_smiles = cmiles.utils.mol_to_smiles(self.fragments[bond], mapped=False)
-            identifiers = cmiles.get_molecule_ids(can_iso_smiles)
-            can_iso_smiles = identifiers['canonical_isomeric_smiles']
-            json_dict[can_iso_smiles] = {'cmiles_identifiers': identifiers}
+            try:
+                can_iso_smiles = cmiles.utils.mol_to_smiles(self.fragments[bond], mapped=False, explicit_hydrogen=False)
+            except ValueError:
+                cmiles.utils.remove_atom_map(self.fragments[bond])
+                can_iso_smiles = oechem.OEMolToSmiles(self.fragments[bond])
+                cmiles.utils.restore_atom_map(self.fragments[bond])
+            try:
+                identifiers = cmiles.get_molecule_ids(can_iso_smiles)
+                can_iso_smiles = identifiers['canonical_isomeric_smiles']
+                json_dict[can_iso_smiles] = {'cmiles_identifiers': identifiers}
+            except ValueError:
+                json_dict[can_iso_smiles] = {'cmiles_identifiers': {}}
             json_dict[can_iso_smiles]['provenance'] = self.get_provenance()
         return json_dict
 
