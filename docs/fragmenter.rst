@@ -4,6 +4,14 @@ fragmenter package
  Submodules
 ----------
 
+ fragmenter.states module
+-----------------------
+
+ .. automodule:: fragmenter.states
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
  fragmenter.fragment module
 -----------------------
 
