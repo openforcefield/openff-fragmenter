@@ -13,4 +13,6 @@ dependencies:
   - rdkit
   - pyyaml
   - postgresql
-  - cmiles
+
+  - pip:
+    - git+git://github.com/openforcefield/cmiles.git@v0.1.5#egg=cmiles
