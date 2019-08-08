@@ -1,0 +1,29 @@
+name: fragmenter
+channels:
+  - openeye
+  - rdkit
+  - conda-forge
+
+dependencies:
+
+    # Base Depends
+  - python
+  - setuptools
+  - openeye-toolkits
+  - rdkit
+  - pyyaml
+  - postgresql
+
+    # Testing
+  - pytest
+  - pytest-cov
+
+  # QCFractal and friends
+  - qcfractal
+  - geometric
+  - torsiondrive
+
+    # Pip depends
+  - pip:
+    - codecov
+    - git+git://github.com/openforcefield/cmiles.git@v0.1.5#egg=cmiles
