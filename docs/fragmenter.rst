@@ -1,13 +1,6 @@
 fragmenter package
 ==============
 
- Subpackages
------------
-
- .. toctree::
-
-     cmiles.tests
-
  Submodules
 ----------
 
