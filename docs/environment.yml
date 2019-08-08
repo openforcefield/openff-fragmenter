@@ -1,3 +1,4 @@
+name: fragmenter
 channels:
   - openeye
   - rdkit
@@ -12,6 +13,4 @@ dependencies:
   - rdkit
   - pyyaml
   - postgresql
-  - pip
-  - pip:
-    - git+git://github.com/openforcefield/cmiles.git@v0.1.5#egg=cmiles
+  - cmiles
