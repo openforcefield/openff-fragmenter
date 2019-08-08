@@ -20,7 +20,7 @@ sys.setrecursionlimit(1500)
 
 # -- Project information -----------------------------------------------------
 
-project = 'Fragment molecules for quantum mechanics torison scans.'
+project = 'fragmenter'
 copyright = "2018, Chaya D. Stern"
 author = 'Chaya D. Stern'
 
@@ -153,7 +153,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
     (master_doc, 'fragmenter', 'fragmenter Documentation',
-     author, 'fragmenter', 'Fragment molecules for quantum mechanics torison scans.',
+     author, 'fragmenter', 'Fragment molecules for quantum mechanics torsion scans.',
      'Miscellaneous'),
 ]
 
