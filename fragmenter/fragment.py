@@ -15,219 +15,9 @@ import time
 from .utils import logger
 from .chemi import get_charges, generate_conformers, LabelWibergBondOrder, LabelFragBondOrder, ColorAtomByFragmentIndex
 from .torsions import find_torsion_around_bond
-
+from .states import  _enumerate_stereoisomers
 
 OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
-
-
-
-def enumerate_states(molecule, tautomers=True, stereoisomers=True, verbose=False, return_mols=False,
-                     explicit_h=True, return_names=False, max_stereo_returns=1, filter_nitro=True, **kwargs):
-    """
-    Expand tautomeric state and stereoisomers for molecule.
-
-    Parameters
-    ----------
-    molecule : OEMol
-    tautomers : bool, optional, default True
-        If False, will not generate tautomers
-    stereoisomers : bool, optional, default True
-        If False, will not generate all stereoisomers.
-    verbose : bool, optional, default False
-    return_mols : bool, optional, default False
-        If True, will return oemols instead of SMILES. Some molecules might be duplicate states
-    explicit_h : bool, optional, default True
-        If True, SMILES of states will have explicit hydrogen
-    return_names : bool, optional, default True
-        If True, will return names of molecules with SMILES
-    max_stereo_returns : int, optional, default 1
-        If stereoisomers is set to False, and the incoming molecule is missing stereo information, OEFlipper will
-        generate stereoisomers for missing stereo center. max_stereo_returns controls how many of those will be returned
-    ** max_states: int, optional, default 200
-        This gets passed to `_enumerate_tautomers` and `_enumerate_stereoisomers`
-        max number of states `_enumerate_tautomers` and `_enumerate_stereoisomers` generate
-    ** pka_norm: bool, optional, default True
-        This gets passed to `_enumerate_tautomers`. If True, ionization state of each tautomer will be assigned to a predominate
-        state at pH ~7.4
-    ** warts: bool, optional, default True
-        This gets passed to `_enumerate_tautomers` and _enumerate_stereoisomers`
-        If True, adds a wart to each new state. A 'wart' is a systematic
-    ** force_flip: bool, optional, default True
-        This gets passed to `_enumerate_stereoisomers`
-        Force flipping all stereocenters. If False, will only generate stereoisomers for stereocenters that are undefined
-    ** enum_nitorgen: bool, optional, default True
-        This gets passed to `_enumerate_stereoisomers`
-        If true, invert non-planer nitrogens
-
-    Returns
-    -------
-    states: list
-        list of oemols or SMILES of states generated for molecule
-
-    """
-
-    # If incoming molecule has nitro in form ([NX3](=O)=O), do not filter out later
-    if _check_nitro(molecule):
-        filter_nitro = False
-    title = molecule.GetTitle()
-    states = []
-    if return_names:
-        names = []
-
-    if verbose:
-        logger().info("Enumerating states for {}".format(title))
-
-    if stereoisomers:
-        if verbose:
-            logger().info("Enumerating stereoisomers for {}".format(title))
-        stereo_mols = (_enumerate_stereoisomers(molecule, **kwargs))
-        if verbose:
-            logger().info('Enumerated {} stereoisomers'.format(len(stereo_mols)))
-
-    if tautomers:
-        if not stereoisomers:
-            stereo_mols = [molecule]
-        tau_mols = []
-        if verbose:
-            logger().info("Enumerating tautomers states for {}".format(title))
-        for mol in stereo_mols:
-            tau_mols.extend(_enumerate_tautomers(mol, **kwargs))
-        if verbose:
-            logger().info('Enumerated {} tautomers'.format(len(tau_mols)))
-
-        # check for nitro in ([NX3](=O)=O) form
-        if filter_nitro:
-            tau_mols[:] = [mol for mol in tau_mols if not _check_nitro(mol)]
-
-    if stereoisomers and tautomers:
-        all_mols = stereo_mols + tau_mols
-    elif stereoisomers and not tautomers:
-        all_mols = stereo_mols
-    elif not stereoisomers and tautomers:
-        all_mols = tau_mols
-        all_mols.append(molecule)
-    else:
-        all_mols = [molecule]
-
-    if return_mols:
-        return all_mols
-
-    for mol in all_mols:
-        try:
-            smiles = mol_to_smiles(mol, isomeric=True, mapped=False, explicit_hydrogen=explicit_h)
-            if smiles not in states:
-                states.append(smiles)
-                if return_names:
-                    names.append(mol.GetTitle())
-
-        except ValueError:
-            # Stereo is not fully defined. Use flipper with force_flip set to False
-            stereo_states = _enumerate_stereoisomers(mol, force_flip=False, enum_nitrogen=True, warts=True)
-            if len(stereo_states) > max_stereo_returns:
-                stereo_states = stereo_states[:max_stereo_returns]
-
-            for state in stereo_states:
-                try:
-                    smiles = mol_to_smiles(state, isomeric=True, mapped=False, explicit_hydrogen=explicit_h)
-                except ValueError:
-                    stereo_states_forced = _enumerate_stereoisomers(mol, force_flip=True, enum_nitrogen=True, warts=True)
-                    if len(stereo_states_forced) > max_stereo_returns:
-                        stereo_states_forced = stereo_states_forced[:max_stereo_returns]
-                    for state_forced in stereo_states_forced:
-                        smiles = mol_to_smiles(state_forced, isomeric=True, mapped=False, explicit_hydrogen=explicit_h)
-                        if smiles not in states:
-                            states.append(smiles)
-                            if return_names:
-                                names.append(state.GetTitle())
-                if smiles not in states:
-                    states.append(smiles)
-                    if return_names:
-                        names.append(state.GetTitle())
-
-    if verbose:
-        logger().info("{} states were generated for {}".format(len(states), oechem.OEMolToSmiles(molecule)))
-
-    if return_names:
-        return states, names
-
-    return states
-
-def _enumerate_tautomers(molecule, max_states=200, pka_norm=True, warts=True):
-    """
-    Expand reasonable tautomer states. This function generates tautomers (which might be different ionization states
-    than parent) that are normalized to the predominant state at pH ~7.4
-    Parameters
-    ----------
-    molecule : OEMol to expand states
-    max_states : int
-        max number of states
-    pka_norm: bool, optional, default True
-    warts: bool, optional default True
-
-    Returns
-    -------
-    tautomers: list of oemols
-
-    """
-    tautomers = []
-    tautomer_options = oequacpac.OETautomerOptions()
-    tautomer_options.SetApplyWarts(warts)
-    tautomer_options.SetMaxTautomersGenerated(max_states)
-    i = 0
-    for tautomer in oequacpac.OEGetReasonableTautomers(molecule, tautomer_options, pka_norm):
-        i += 1
-        tautomers.append(tautomer)
-    return tautomers
-
-def _enumerate_stereoisomers(molecule, max_states=200, force_flip=True, enum_nitrogen=True, warts=True, verbose=True):
-    """
-    Enumerate stereoisomers
-    Parameters
-    ----------
-    molecule : OEMol
-    max_states : int, optional, default 200
-        max number of states to enumerate
-    force_flip : bool, optional, default True
-        If True, will flip all steocenters. If False, will only flip centers that are undefined
-    enum_nitrogen : bool, optional, default True
-        Invert non-planar nitrogen
-    warts : bool, optional, default True
-        If True, add int to molecule name
-    verbose : bool, optional, default True
-
-    Returns
-    -------
-    stereoisomers: list of oemols
-
-    """
-    stereoisomers = []
-    if verbose:
-        logger().debug("Enumerating stereoisomers...")
-    i = 0
-    for enantiomer in oeomega.OEFlipper(molecule, max_states, force_flip, enum_nitrogen, warts):
-        i += 1
-        enantiomer = oechem.OEMol(enantiomer)
-        stereoisomers.append(enantiomer)
-    return stereoisomers
-
-def _check_nitro(molecule):
-    """
-    Filter out nitro that is in ([NX3](=O)=O) form. OEGetReasonableTautomers generates this form.
-    Parameters
-    ----------
-    molecule :
-
-    Returns
-    -------
-
-    """
-    qmol = oechem.OEQMol()
-    if not oechem.OEParseSmarts(qmol, '([NX3](=O)=O)'):
-        print('OEParseSmarts failed')
-    ss = oechem.OESubSearch(qmol)
-    oechem.OEPrepareSearch(molecule, ss)
-    matches = [m for m in ss.Match(molecule)]
-    return bool(matches)
 
 
 class Fragmenter(object):
@@ -262,8 +52,12 @@ class Fragmenter(object):
 
         # For provenance
         self._options = {}
+
     @property
     def n_rotors(self):
+        """
+        Returns number of rotatable bonds in molecule
+        """
         return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
 
     @staticmethod
@@ -457,7 +251,6 @@ class Fragmenter(object):
 
         """
         if functional_groups:
-            print(functional_groups)
             fgroups_smarts = functional_groups
         if functional_groups is None:
             # Load yaml file
@@ -588,8 +381,6 @@ class Fragmenter(object):
     def get_provenance(self):
         """
         Get version of fragmenter and options used
-        Returns
-        -------
 
         """
         import fragmenter
@@ -620,8 +411,30 @@ class CombinatorialFragmenter(Fragmenter):
     groups. Then it will generate all possible connected fragment.
     This class should only be used to generate validation sets. It is not recommended for general
     fragmentation because it generates a lot more fragments than is needed.
+
+    Parameters
+    ----------
+    molecule : OEMol
+        Molecule to fragment.
+    functional_groups : dict, optional, default None
+        `{f_group: SMARTS}`. Dictionary that maps the name of a functional group to its SMARTS pattern.
+        These functional groups, if they exist in the molecule, will be tagged so they are not fragmented.
+        If None, will use internal list of functional group. If False, will not tag any functional groups.
+
     """
     def __init__(self, molecule, functional_groups=None):
+        """
+
+        Parameters
+        ----------
+        molecule : OEMol
+            Molecule to fragment.
+        functional_groups : dict, optional, default None
+            {f_group: SMARTS}. Dictionary that maps the name of a functional group to its SMARTS pattern.
+            These functional groups, if they exist in the molecule, will be tagged so they are not fragmented.
+            If None, will use internal list of functional group. If False, will not tag any functional groups.
+
+        """
         super().__init__(molecule)
 
         if functional_groups is None:
@@ -639,6 +452,7 @@ class CombinatorialFragmenter(Fragmenter):
         """
         combinatorial fragmentation. Fragment along every bond that is not in a ring or specified
         functional group.
+
         Parameters:
         ----------
         min_rotor: int, optional, default 1
@@ -656,11 +470,11 @@ class CombinatorialFragmenter(Fragmenter):
         # Remove atom map and store it in data. This is needed to keep track of the fragments
         if has_atom_map(self.molecule):
             remove_atom_map(self.molecule, keep_map_data=True)
-        self.fragment_all_bonds_not_in_ring_systems()
+        self._fragment_all_bonds_not_in_ring_systems()
         if max_rotors is None:
             max_rotors = self.n_rotors + 1
         self._options['max_rotors'] = max_rotors
-        self.combine_fragments(min_rotors=min_rotors, max_rotors=max_rotors, min_heavy_atoms=min_heavy_atoms)
+        self._combine_fragments(min_rotors=min_rotors, max_rotors=max_rotors, min_heavy_atoms=min_heavy_atoms)
 
     def _mol_to_graph(self):
         """
@@ -724,7 +538,7 @@ class CombinatorialFragmenter(Fragmenter):
                 atom_bond_set.AddBond(bond)
             self._fragments.append(atom_bond_set)
 
-    def fragment_all_bonds_not_in_ring_systems(self):
+    def _fragment_all_bonds_not_in_ring_systems(self):
         """
 
         Returns
@@ -734,7 +548,7 @@ class CombinatorialFragmenter(Fragmenter):
         subgraphs = self._fragment_graph()
         self._subgraphs_to_atom_bond_sets(subgraphs)
 
-    def combine_fragments(self, max_rotors=3, min_rotors=1, min_heavy_atoms=5, **kwargs):
+    def _combine_fragments(self, max_rotors=3, min_rotors=1, min_heavy_atoms=5, **kwargs):
         """
 
         Parameters
@@ -879,9 +693,11 @@ class CombinatorialFragmenter(Fragmenter):
     def to_json(self):
         """
         Write out fragments to JSON with provenance
+
         Returns
         -------
-
+        json_dict: dict
+            JSON dictionary of the fragments to their CMILES identifiers. Keys are canonical SMILES
         """
         json_dict = {}
         for frag_smiles in self.fragments:
@@ -903,6 +719,7 @@ class CombinatorialFragmenter(Fragmenter):
     def depict_fragments(self, fname, line_width=0.75):
         """
         Generate PDF of all combinatorial fragments with individual fragments color coded
+
         Parameters
         ----------
         fname : str
@@ -980,6 +797,16 @@ class CombinatorialFragmenter(Fragmenter):
 class WBOFragmenter(Fragmenter):
     """
     Fragment engine for fragmenting molecules using Wiberg Bond Order
+
+    Parameters
+    ----------
+    molecule : OEMol
+        Molecule to fragment.
+    functional_groups : dict, optional, default None
+        `{f_group: SMARTS}`. Dictionary that maps the name of a functional group to its SMARTS pattern.
+        These functional groups, if they exist in the molecule, will be tagged so they are not fragmented.
+        If None, will use internal list of functional group. If False, will not tag any functional groups.
+
     """
     def __init__(self, molecule, functional_groups=None, verbose=False):
         super().__init__(molecule)
@@ -1032,12 +859,13 @@ class WBOFragmenter(Fragmenter):
 
         # Build fragments
         for bond in self.rotors_wbo:
-            self.build_fragment(bond,  **kwargs)
+            self._build_fragment(bond, **kwargs)
 
 
     def calculate_wbo(self, fragment=None, **kwargs):
         """
         Calculate WBO
+
         Parameters
         ----------
         fragment : oechem.OEMol
@@ -1221,7 +1049,7 @@ class WBOFragmenter(Fragmenter):
         return ortho_atoms, ortho_bonds
 
 
-    def compare_wbo(self, fragment, bond_tuple, **kwargs):
+    def _compare_wbo(self, fragment, bond_tuple, **kwargs):
         """
         Compare Wiberg Bond order of rotatable bond in fragment to parent
 
@@ -1266,7 +1094,8 @@ class WBOFragmenter(Fragmenter):
 
         Returns
         -------
-        oechem.OEBondBase
+        bond: oechem.OEBondBase
+            The bond in the molecule given by the bond tuple
 
         """
         if is_missing_atom_map(self.molecule):
@@ -1278,7 +1107,7 @@ class WBOFragmenter(Fragmenter):
             raise ValueError("({}) atoms are not connected".format(bond_tuple))
         return bond
 
-    def build_fragment(self, bond_tuple, heuristic='path_length', **kwargs):
+    def _build_fragment(self, bond_tuple, heuristic='path_length', **kwargs):
         """
         Build fragment around bond
         Parameters
@@ -1329,7 +1158,7 @@ class WBOFragmenter(Fragmenter):
         atom_bond_set = self._to_atom_bond_set(atom_map_idx, bond_tuples)
         fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
         # #return fragment_mol
-        diff = self.compare_wbo(fragment_mol, bond_tuple, **kwargs)
+        diff = self._compare_wbo(fragment_mol, bond_tuple, **kwargs)
         if diff <= self.threshold:
             self._fragments[bond_tuple] = atom_bond_set
         if diff > self.threshold:
@@ -1409,7 +1238,7 @@ class WBOFragmenter(Fragmenter):
             # Check new WBO
             atom_bond_set = self._to_atom_bond_set(atoms, bonds)
             fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
-            if self.compare_wbo(fragment_mol, target_bond, **kwargs) < self.threshold:
+            if self._compare_wbo(fragment_mol, target_bond, **kwargs) < self.threshold:
                 self._fragments[target_bond] = atom_bond_set
                 return fragment_mol
             else:
@@ -1419,8 +1248,11 @@ class WBOFragmenter(Fragmenter):
     def to_json(self):
         """
         Write out fragments to JSON with provenance
+
         Returns
         -------
+        json_dict: dict
+            maps fragment SMILES to CMILES identifiers
 
         """
         json_dict = {}
@@ -1445,11 +1277,12 @@ class WBOFragmenter(Fragmenter):
 
         Parameters
         ----------
-        molecule :
+        molecule : OEMol
         kwargs :
 
         Returns
         -------
+        qcschema initial molecules, cmiles identifiers and provenance
 
         """
         self._options.update(kwargs)
@@ -1468,13 +1301,16 @@ class WBOFragmenter(Fragmenter):
 
     def to_qcschema_mols(self, **kwargs):
         """
+        Writes fragments to a list of qcschema molecules for input to QCArchive computations
 
         Parameters
         ----------
-        kwargs :
+        kwargs : parameters for ``chemi.generate_conformers``
 
         Returns
         -------
+        qcschema_fragments: list
+            list of qcschema molecules
 
         """
         qcschema_fragments = []
@@ -1491,9 +1327,12 @@ class WBOFragmenter(Fragmenter):
 
     def to_torsiondrive_json(self, **kwargs):
         """
+        Generates torsiondrive input JSON for QCArchive
 
         Returns
         -------
+        torsiondrive_json_dict: dict
+            dictionary with the QCArchive job label as keys that maps to the torsiondrive input for each fragment
 
         """
         # capture options
@@ -1527,13 +1366,12 @@ class WBOFragmenter(Fragmenter):
 
     def depict_fragments(self, fname):
         """
+        Generate PDF of fragments for the molecule with the rotatable bond highlighted and annotated with its WBO
 
         Parameters
         ----------
-        fname :
-
-        Returns
-        -------
+        fname : str
+            Filename to write out PDF
 
         """
         itf = oechem.OEInterface()

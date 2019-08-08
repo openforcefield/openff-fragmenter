@@ -1,7 +1,7 @@
 """Test util functions"""
 import unittest
 from fragmenter.tests.utils import get_fn
-from fragmenter import chemi
+from fragmenter import chemi, states
 from openeye import oechem
 
 class TesTorsions(unittest.TestCase):
@@ -39,9 +39,9 @@ class TesTorsions(unittest.TestCase):
 
     def test_2D_conformation(self):
         """Test checking for 2D conformation"""
-        from fragmenter import fragment, chemi
+        from fragmenter import chemi, states
         mol = chemi.smiles_to_oemol('CCCC')
-        states = fragment.enumerate_states(mol, return_mols=True)
+        states = states.enumerate_states(mol, return_mols=True)
         for state in states:
             self.assertFalse(chemi.has_conformer(state, check_two_dimension=True))
 

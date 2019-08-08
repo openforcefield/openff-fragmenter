@@ -21,7 +21,7 @@ def test_expand_tautomers():
     imidazol_smiles = 'CC1=CN=CN1'
     oemol = oechem.OEMol()
     oechem.OESmilesToMol(oemol, imidazol_smiles)
-    tautomers = fragmenter.fragment._enumerate_tautomers(oemol)
+    tautomers = fragmenter.states._enumerate_tautomers(oemol)
     assert len(tautomers) == 2
     for tau in tautomers:
         assert chemi.get_charge(tau) == 0
@@ -29,7 +29,7 @@ def test_expand_tautomers():
     salsalate = 'OC(=O)C1=CC=CC=C1OC(=O)C1=CC=CC=C1O'
     oemol = oechem.OEMol()
     oechem.OESmilesToMol(oemol, salsalate)
-    tautomers = fragmenter.fragment._enumerate_tautomers(oemol)
+    tautomers = fragmenter.states._enumerate_tautomers(oemol)
     assert len(tautomers) == 1
     assert chemi.get_charge(tautomers[0]) == -1
 
@@ -44,7 +44,7 @@ def test_expand_stereoisomers(smiles, forceflip, enum_n, output):
     from openeye import oechem
     oemol = oechem.OEMol()
     oechem.OESmilesToMol(oemol, smiles)
-    stereo = fragmenter.fragment._enumerate_stereoisomers(oemol, force_flip=forceflip, enum_nitrogen=enum_n, verbose=False)
+    stereo = fragmenter.states._enumerate_stereoisomers(oemol, force_flip=forceflip, enum_nitrogen=enum_n, verbose=False)
     assert len(stereo) == output
 
 @using_openeye
@@ -61,7 +61,7 @@ def test_expand_states(smiles, tautomers, stereoisomers, max_stereo_return, filt
     from openeye import oechem
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
-    states = fragmenter.fragment.enumerate_states(mol, tautomers=tautomers, stereoisomers=stereoisomers,
+    states = fragmenter.states.enumerate_states(mol, tautomers=tautomers, stereoisomers=stereoisomers,
                                                   max_stereo_returns=max_stereo_return, filter_nitro=filter_nitro, verbose=False)
     assert len(states) == output
 
@@ -72,7 +72,7 @@ def test_filter_nitro(smiles, output):
     from openeye import oechem
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
-    assert fragmenter.fragment._check_nitro(mol) == output
+    assert fragmenter.states._check_nitro(mol) == output
 
 @using_openeye
 def test_keep_track_of_map():
@@ -83,8 +83,8 @@ def test_keep_track_of_map():
 
     frags = fragmenter.fragment.CombinatorialFragmenter(mapped_mol)
     frags.fragment()
-    #frags.fragment_all_bonds_not_in_ring_systems()
-    #frags.combine_fragments(min_rotors=1, max_rotors=frags.n_rotors+1, restore_maps=True)
+    #frags._fragment_all_bonds_not_in_ring_systems()
+    #frags._combine_fragments(min_rotors=1, max_rotors=frags.n_rotors+1, restore_maps=True)
 
     keys = list(frags.fragments.keys())
     assert oechem.OEMolToSmiles(frags.fragments[keys[0]][0]) == '[H:14][c:1]1[c:2]([c:4]([c:9]([c:5]([c:3]1[H:16])[H:18])[NH:13][H:22])[H:17])[H:15]'
@@ -151,7 +151,7 @@ def test_build_fragment():
     f._get_rotor_wbo()
     setattr(f, 'threshold', 0.05)
     for bond in f.rotors_wbo:
-        f.build_fragment(bond)
+        f._build_fragment(bond)
     assert len(f.fragments) == 3
     for bond in f.fragments:
         remove_atom_map(f.fragments[bond])
@@ -227,7 +227,7 @@ def test_compare_wbo():
     f = fragmenter.fragment.WBOFragmenter(mol)
     f.calculate_wbo()
     f._get_rotor_wbo()
-    assert f.compare_wbo(fragment=mol, bond_tuple=(3, 4)) == 0.0
+    assert f._compare_wbo(fragment=mol, bond_tuple=(3, 4)) == 0.0
 
 @pytest.mark.parametrize('input, output', [('CCCC', 0),
                                            ('c1ccccc1', 1),
@@ -389,3 +389,6 @@ def test_depict_fragments(engine):
         f = fragmenter.fragment.CombinatorialFragmenter(mol)
     f.fragment()
     assert f.depict_fragments('test.pdf') == True
+
+def test_new_stereo_center():
+    pass

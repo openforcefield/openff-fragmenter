@@ -2,6 +2,7 @@ import os
 import unittest
 from pkg_resources import resource_filename
 import pytest
+import json
 
 try:
     import openeye.oechem
@@ -70,6 +71,3 @@ def get_fn(filename, written=False):
     #    raise ValueError('%s does not exist. If you just added it you will have to re install' % fn)
 
     return fn
-
-
-

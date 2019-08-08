@@ -1,6 +1,7 @@
 """
 fragmenter
-Fragment molecules for quantum mechanics torison scans.
+
+Fragment molecules for quantum mechanics torsion scans.
 """
 
 # Make Python 2 and 3 imports work the same
