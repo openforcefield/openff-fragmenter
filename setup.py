@@ -1,6 +1,7 @@
 """
 fragmenter
-Fragment molecules for quantum mechanics torison scans.
+
+Fragment molecules for quantum mechanics torsion scans.
 """
 from setuptools import setup
 import versioneer
@@ -19,6 +20,9 @@ setup(
     # Optional include package data to ship with your package
     package_data={'fragmenter': [] + ["data/*.yml"]
                   },
+    extras_require={
+        'docs': ['numpydoc']
+    }
     # Additional entries you may want simply uncomment the lines you want and fill in the data
     # author_email='me@place.org',      # Author email
     # url='http://www.my_package.com',  # Website
