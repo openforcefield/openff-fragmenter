@@ -1,6 +1,4 @@
 from itertools import combinations
-import openeye as oe
-from openeye import oechem, oedepict, oegrapheme, oequacpac, oeomega
 import cmiles.utils
 from cmiles.utils import mol_to_smiles, has_stereo_defined, has_atom_map, is_missing_atom_map, remove_atom_map, restore_atom_map
 
@@ -17,8 +15,6 @@ from .chemi import get_charges, generate_conformers, LabelWibergBondOrder, Label
 from .torsions import find_torsion_around_bond
 from .states import  _enumerate_stereoisomers
 
-OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
-
 
 class Fragmenter(object):
     """
@@ -27,6 +23,8 @@ class Fragmenter(object):
     """
 
     def __init__(self, molecule):
+        from openeye import oechem
+
         self.molecule = molecule
         self.functional_groups = {}
 
@@ -75,6 +73,8 @@ class Fragmenter(object):
         is a bug
 
         """
+        from openeye import oechem
+
         for a in self.molecule.GetAtoms():
             if a.IsChiral():
                 s = oechem.OEPerceiveCIPStereo(self.molecule, a)
@@ -104,6 +104,8 @@ class Fragmenter(object):
             When checking if an AtomBondSet has the same stereo, the parent molecule needs to be used.
 
         """
+        from openeye import oechem
+
         for a in fragment.GetAtoms():
             if a.IsChiral():
                 if not a.GetMapIdx() in self.stereo:
@@ -180,6 +182,8 @@ class Fragmenter(object):
         -------
 
         """
+        from openeye import oechem
+
         # First store original fragment's steroe
         fragment_stereo = {}
         for a in fragment.GetAtoms():
@@ -250,6 +254,8 @@ class Fragmenter(object):
             If False, no functional groups will be tagged and they will all be fragmented.
 
         """
+        from openeye import oechem
+
         if functional_groups:
             fgroups_smarts = functional_groups
         if functional_groups is None:
@@ -301,6 +307,8 @@ class Fragmenter(object):
         atom_bond_set: OEAtomBondSet with atoms and bonds specified in atoms bonds set
 
         """
+        from openeye import oechem
+
         atom_bond_set = oechem.OEAtomBondSet()
         for a_mdx in atoms:
             atom = self.molecule.GetAtom(oechem.OEHasMapIdx(a_mdx))
@@ -328,6 +336,7 @@ class Fragmenter(object):
         -------
         fragment: OEMol
         """
+        from openeye import oechem
         fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
         fragbondpred = oechem.OEIsBondMember(frag.GetBonds())
 
@@ -387,6 +396,8 @@ class Fragmenter(object):
         import uuid
         import socket
         import getpass
+        from openeye import oechem
+
         fragmenter_version = fragmenter.__version__
         # Restore map to parent
         restore_atom_map(self.molecule)
@@ -482,6 +493,7 @@ class CombinatorialFragmenter(Fragmenter):
         Nodes are the atoms, edges are the bonds.
 
         """
+        from openeye import oechem
 
         G = nx.Graph()
         for atom in self.molecule.GetAtoms():
@@ -526,6 +538,7 @@ class CombinatorialFragmenter(Fragmenter):
         subgraph: NetworkX subgraph
 
         """
+        from openeye import oechem
         # Build openeye atombondset from subgraphs
         for subgraph in subgraphs:
             atom_bond_set = oechem.OEAtomBondSet()
@@ -562,6 +575,8 @@ class CombinatorialFragmenter(Fragmenter):
         -------
 
         """
+        from openeye import oechem
+
         #Only keep unique molecules
         unique_mols = set()
         nrfrags = len(self._fragments)
@@ -664,6 +679,8 @@ class CombinatorialFragmenter(Fragmenter):
         https://docs.eyesopen.com/toolkits/cookbook/python/cheminfo/enumfrags.html
         """
 
+        from openeye import oechem
+
         # combine atom and bond sets
 
         combined = oechem.OEAtomBondSet()
@@ -727,6 +744,7 @@ class CombinatorialFragmenter(Fragmenter):
         line_width : float
             width of drawn molecule lines
         """
+        from openeye import oechem, oedepict, oegrapheme
 
         itf = oechem.OEInterface()
         oedepict.OEConfigure2DMolDisplayOptions(itf)
@@ -905,6 +923,8 @@ class WBOFragmenter(Fragmenter):
             list of rotatable bonds map indices [(m1, m2),...]
 
         """
+        from openeye import oechem
+
         rotatable_bonds = []
         smarts = '[!$(*#*)&!D1]-,=;!@[!$(*#*)&!D1]'
         # Suppress H to avoid finding terminal bonds
@@ -953,6 +973,8 @@ class WBOFragmenter(Fragmenter):
             maps ringsystem index to ring atom and bond indices
 
         """
+        from openeye import oechem
+
         nringsystems, parts = oechem.OEDetermineRingSystems(self.molecule)
         for ringidx in range(1, nringsystems +1):
             ringidx_atoms = set()
@@ -1014,6 +1036,8 @@ class WBOFragmenter(Fragmenter):
             set of bond tuples in ortho group
 
         """
+        from openeye import oechem
+
         # Get the ring atom
         ring_atom = None
         for m in rot_bond:
@@ -1063,6 +1087,7 @@ class WBOFragmenter(Fragmenter):
         -------
 
         """
+        from openeye import oechem
 
         restore_atom_map(fragment)
         try:
@@ -1098,6 +1123,7 @@ class WBOFragmenter(Fragmenter):
             The bond in the molecule given by the bond tuple
 
         """
+        from openeye import oechem
         if is_missing_atom_map(self.molecule):
             restore_atom_map(self.molecule)
         a1 = self.molecule.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
@@ -1183,6 +1209,8 @@ class WBOFragmenter(Fragmenter):
         -------
 
         """
+        from openeye import oechem
+
         bond_atom_1 = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[0]))
         bond_atom_2 = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[1]))
         atoms_to_add = []
@@ -1255,6 +1283,8 @@ class WBOFragmenter(Fragmenter):
             maps fragment SMILES to CMILES identifiers
 
         """
+        from openeye import oechem
+
         json_dict = {}
         for bond in self.fragments:
             try:
@@ -1285,6 +1315,8 @@ class WBOFragmenter(Fragmenter):
         qcschema initial molecules, cmiles identifiers and provenance
 
         """
+        from openeye import oechem
+
         self._options.update(kwargs)
         mol_copy = oechem.OEMol(molecule)
         oechem.OEAddExplicitHydrogens(mol_copy)
@@ -1335,6 +1367,8 @@ class WBOFragmenter(Fragmenter):
             dictionary with the QCArchive job label as keys that maps to the torsiondrive input for each fragment
 
         """
+        from openeye import oechem
+
         # capture options
         self._options.update(kwargs)
         torsiondrive_json_dict = {}
@@ -1374,6 +1408,7 @@ class WBOFragmenter(Fragmenter):
             Filename to write out PDF
 
         """
+        from openeye import oechem, oedepict
         itf = oechem.OEInterface()
         oedepict.OEPrepareDepiction(self.molecule)
 

@@ -1,11 +1,6 @@
-import openeye as oe
-from openeye import oechem, oequacpac, oeomega
 from cmiles.utils import mol_to_smiles
 
 from .utils import logger
-
-OPENEYE_VERSION = oe.__name__ + '-v' + oe.__version__
-
 
 
 def enumerate_states(molecule, tautomers=True, stereoisomers=True, verbose=False, return_mols=False,
@@ -54,6 +49,7 @@ def enumerate_states(molecule, tautomers=True, stereoisomers=True, verbose=False
         list of oemols or SMILES of states generated for molecule
 
     """
+    from openeye import oechem
 
     # If incoming molecule has nitro in form ([NX3](=O)=O), do not filter out later
     if _check_nitro(molecule):
@@ -158,6 +154,8 @@ def _enumerate_tautomers(molecule, max_states=200, pka_norm=True, warts=True):
     tautomers: list of oemols
 
     """
+    from openeye import oequacpac
+
     tautomers = []
     tautomer_options = oequacpac.OETautomerOptions()
     tautomer_options.SetApplyWarts(warts)
@@ -189,6 +187,7 @@ def _enumerate_stereoisomers(molecule, max_states=200, force_flip=True, enum_nit
     stereoisomers: list of oemols
 
     """
+    from openeye import oeomega, oechem
     stereoisomers = []
     if verbose:
         logger().debug("Enumerating stereoisomers...")
@@ -210,6 +209,8 @@ def _check_nitro(molecule):
     -------
 
     """
+    from openeye import oechem
+
     qmol = oechem.OEQMol()
     if not oechem.OEParseSmarts(qmol, '([NX3](=O)=O)'):
         print('OEParseSmarts failed')
