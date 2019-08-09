@@ -188,6 +188,7 @@ def find_torsion_around_bond(molecule, bond):
     This returns the map indices of the torsion -1, not the atom indices.
 
     """
+    from openeye import oechem
     if not has_atom_map(molecule):
         raise ValueError("Molecule must have atom maps")
     #torsions = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
@@ -227,7 +228,7 @@ def find_equivelant_torsions(mapped_mol, restricted=False, central_bonds=None):
         maps central bond to all equivelant torisons
     """
     #ToDo check that mol has mapping
-
+    from openeye import oechem
     mol = oechem.OEMol(mapped_mol)
     if not has_atom_map(mol):
         raise ValueError("OEMol must have map indices")
