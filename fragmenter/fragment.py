@@ -7,7 +7,6 @@ import os
 from pkg_resources import resource_filename
 
 import warnings
-import networkx as nx
 import time
 
 from .utils import logger
@@ -494,6 +493,7 @@ class CombinatorialFragmenter(Fragmenter):
 
         """
         from openeye import oechem
+        import networkx as nx
 
         G = nx.Graph()
         for atom in self.molecule.GetAtoms():
