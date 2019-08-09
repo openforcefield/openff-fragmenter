@@ -12,6 +12,7 @@ dependencies:
   - openeye-toolkits
   - rdkit
   - pyyaml
+  - networkx
   - pip
   - numpydoc
     # Pip depends

@@ -13,6 +13,7 @@ dependencies:
   - rdkit
   - pyyaml
   - postgresql
+  - networkx
 
     # Testing
   - pytest
