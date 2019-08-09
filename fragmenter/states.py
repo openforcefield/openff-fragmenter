@@ -160,9 +160,7 @@ def _enumerate_tautomers(molecule, max_states=200, pka_norm=True, warts=True):
     tautomer_options = oequacpac.OETautomerOptions()
     tautomer_options.SetApplyWarts(warts)
     tautomer_options.SetMaxTautomersGenerated(max_states)
-    i = 0
     for tautomer in oequacpac.OEGetReasonableTautomers(molecule, tautomer_options, pka_norm):
-        i += 1
         tautomers.append(tautomer)
     return tautomers
 

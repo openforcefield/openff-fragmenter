@@ -84,7 +84,7 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
         if not status: raise(RuntimeError("OEAssignPartialCharges returned error code %d" % status))
 
     #Determine conformations to return
-    if keep_confs == None:
+    if keep_confs is None:
         #If returning original conformation
         original = molecule.GetCoords()
         #Delete conformers over 1
