@@ -8,7 +8,7 @@ folder <https://github.com/openforcefield/fragmenter/tree/master/examples>`_
     :language: python
 
 
-Below are the fragments this script generated and the output you get by calling ``fragment_engine.to_pdf()``
+Below are the fragments this script generated and the output you get by calling ``fragment_engine.depict_fragments()``
 
 .. image:: ../examples/example_fragments.png
     :width: 400
