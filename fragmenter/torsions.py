@@ -1,9 +1,5 @@
 __author__ = 'Chaya D. Stern'
 
-# try:
-#     import openeye.oechem as oechem
-# except ImportError:
-#     pass
 import numpy as np
 import itertools
 from math import radians, degrees

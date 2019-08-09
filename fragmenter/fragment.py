@@ -12,7 +12,6 @@ import time
 from .utils import logger
 from .chemi import get_charges, generate_conformers, LabelWibergBondOrder, LabelFragBondOrder, ColorAtomByFragmentIndex
 from fragmenter import torsions
-#from .torsions import find_torsion_around_bond
 from .states import  _enumerate_stereoisomers
 
 
