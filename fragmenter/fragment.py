@@ -11,7 +11,8 @@ import time
 
 from .utils import logger
 from .chemi import get_charges, generate_conformers, LabelWibergBondOrder, LabelFragBondOrder, ColorAtomByFragmentIndex
-from .torsions import find_torsion_around_bond
+from fragmenter import torsions
+#from .torsions import find_torsion_around_bond
 from .states import  _enumerate_stereoisomers
 
 
@@ -1376,7 +1377,7 @@ class WBOFragmenter(Fragmenter):
             # find torsion around bond in fragment
             molecule = self.fragments[bond]
             mapped_smiles = oechem.OEMolToSmiles(molecule)
-            torsion_map_idx = find_torsion_around_bond(molecule, bond)
+            torsion_map_idx = torsions.find_torsion_around_bond(molecule, bond)
             torsiondrive_job_label = cmiles.utils.to_canonical_label(mapped_smiles, torsion_map_idx)
             torsiondrive_json_dict[torsiondrive_job_label] = {}
 

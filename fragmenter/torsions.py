@@ -1,9 +1,9 @@
 __author__ = 'Chaya D. Stern'
 
-try:
-    import openeye.oechem as oechem
-except ImportError:
-    pass
+# try:
+#     import openeye.oechem as oechem
+# except ImportError:
+#     pass
 import numpy as np
 import itertools
 from math import radians, degrees
@@ -35,6 +35,7 @@ def find_torsions(molecule, restricted=True, terminal=True):
 
     """
     # Check if molecule has map
+    from openeye import oechem
     is_mapped = has_atom_map(molecule)
     if not is_mapped:
         utils.logger().warning('Molecule does not have atom map. A new map will be generated. You might need a new tagged SMARTS if the ordering was changed')
@@ -100,6 +101,7 @@ def _find_torsions_from_smarts(molecule, smarts):
         list of torsions that match the SMARTS string
 
     """
+    from openeye import oechem
 
     #ToDO use MDL aromaticity model
     qmol=oechem.OEQMol()
@@ -424,6 +426,7 @@ def generate_constraint_opt_input(qc_molecule, dihedrals, maximum_rotation=30, i
     QCFractal optimization jobs input
 
     """
+    from openeye import oechem
 
     optimization_jobs = {}
     tagged_smiles = qc_molecule['identifiers']['canonical_isomeric_explicit_hydrogen_mapped_smiles']
