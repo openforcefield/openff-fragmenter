@@ -718,7 +718,6 @@ class CombinatorialFragmenter(Fragmenter):
         """
         json_dict = {}
         for frag_smiles in self.fragments:
-            print(frag_smiles)
             json_dict[frag_smiles] = {}
             try:
                 identifiers = cmiles.get_molecule_ids(frag_smiles, strict=False)
@@ -1238,8 +1237,6 @@ class WBOFragmenter(Fragmenter):
                     else:
                         raise ValueError('Only wbo and path_lenght are supported heuristics')
         if heuristic == 'path_length':
-            print(sort_by_1)
-            print(sort_by_2)
             min_1 = min(sort_by_1)
             min_2 = min(sort_by_2)
             if min_1 < min_2:
