@@ -897,7 +897,7 @@ class WBOFragmenter(Fragmenter):
         """
         if not fragment:
             time1 = time.time()
-            self.molecule = get_charges(self.molecule)
+            self.molecule = get_charges(self.molecule, **kwargs)
             time2 = time.time()
             if self.verbose:
                 logger().info('WBO took {} seconds to calculate'.format(time2-time1))
@@ -1089,12 +1089,16 @@ class WBOFragmenter(Fragmenter):
         """
         from openeye import oechem
 
-        restore_atom_map(fragment)
+        # Create new oemol because sometimes the molecule created from atom bond set is wonky and then the WBOs are not reproducible
+        smiles = oechem.OEMolToSmiles(fragment)
+        mol = oechem.OEMol()
+        oechem.OESmilesToMol(mol, smiles)
         try:
-            charged_fragment = self.calculate_wbo(fragment=fragment, normalize=False,  **kwargs)
+            charged_fragment = self.calculate_wbo(fragment=mol, normalize=False,  **kwargs)
         except RuntimeError:
             raise RuntimeError("Cannot calculate WBO for fragment built around bond {}".format(bond_tuple))
         # Get new WBO
+        restore_atom_map(charged_fragment)
         a1 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
         a2 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[-1]))
         bond = charged_fragment.GetBond(a1, a2)
@@ -1234,6 +1238,8 @@ class WBOFragmenter(Fragmenter):
                     else:
                         raise ValueError('Only wbo and path_lenght are supported heuristics')
         if heuristic == 'path_length':
+            print(sort_by_1)
+            print(sort_by_2)
             min_1 = min(sort_by_1)
             min_2 = min(sort_by_2)
             if min_1 < min_2:
