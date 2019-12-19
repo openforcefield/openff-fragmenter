@@ -168,6 +168,8 @@ class Fragmenter(object):
             # check what stereo in original fragment is and only return those where the defined stereo did not change
             stereoisomers = self._fix_enum_nitrogen(fragment)
 
+        if len(stereoisomers) == 1:
+            return stereoisomers[0]
         return stereoisomers
 
     def _fix_enum_nitrogen(self, fragment):
@@ -1236,6 +1238,19 @@ class WBOFragmenter(Fragmenter):
                         reverse = False
                     else:
                         raise ValueError('Only wbo and path_lenght are supported heuristics')
+
+        # A work around for a known bug where if stereochemistry changes or gets removed, the WBOs can change more than
+        # the threshold (this will sometimes happen if a very small threshold is chosen) and even the parent will have
+        # a wBO difference greater than the threshold. In this case, return the molecule
+        if heuristic == 'wbo' and len(sort_by) == 0:
+            atom_bond_set = self._to_atom_bond_set(atoms, bonds)
+            fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
+            return fragment_mol
+        if heuristic == 'path_length' and len(sort_by_1) == 0 and len(sort_by_2) == 0:
+            atom_bond_set = self._to_atom_bond_set(atoms, bonds)
+            fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
+            return fragment_mol
+
         if heuristic == 'path_length':
             min_1 = min(sort_by_1)
             min_2 = min(sort_by_2)
