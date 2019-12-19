@@ -1,6 +1,7 @@
 import logging
 import sys
 import json
+from openeye import oechem
 
 """
 ~~~~~~~~~~~~~~~~~~~
@@ -134,5 +135,45 @@ def deserialize_bond(key):
     """
     return tuple(int(x) for x in key.split('[')[-1].split(']')[0].split(','))
 
+
+def carboxylic_acid_hack(mol):
+    """
+    This is a workaround for a known bug in Openeye where carboxylic acid fails to get charged
+    Parameters
+    ----------
+    mol : oemol
+
+    Returns
+    -------
+
+    """
+    # Check for Carboxylic Acid patterns in the molecule
+    smarts = '(O=)[C][O,S][H]'
+    ss = oechem.OESubSearch(smarts)
+
+    oechem.OEPrepareSearch(mol, ss)
+    unique_match = True
+
+    a_match_list = []
+    for match in ss.Match(mol, unique_match):
+
+        for ma in match.GetAtoms():
+            a_match_list.append(ma.target)
+
+    # Set the Carboxylic Acid torsion to zero for each generated conformers
+    if a_match_list:
+
+        if len(a_match_list) % 4 != 0:
+            raise ValueError("The atom matching list must be multiple of 4")
+
+        for i in range(0, len(a_match_list), 4):
+
+            chunk = a_match_list[i:i + 4]
+
+            for conf in mol.GetConfs():
+                conf.SetTorsion(chunk[0],
+                                chunk[1],
+                                chunk[2],
+                                chunk[3], 0.0)
 
 

@@ -6,7 +6,7 @@ except ImportError:
     raise Warning("Need license for OpenEye!")
 
 import cmiles
-from .utils import logger, BOHR_2_ANGSTROM
+from .utils import logger, BOHR_2_ANGSTROM, carboxylic_acid_hack
 
 import os
 import numpy as np
@@ -73,6 +73,9 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
         molecule = oechem.OEMol(molecule)
 
     charged_copy = generate_conformers(molecule, max_confs=max_confs, strict_stereo=strict_stereo, **kwargs)  # Generate up to max_confs conformers
+
+    # fix issue that causes carboxylic acid to fail charging
+    carboxylic_acid_hack(charged_copy)
 
     if not legacy:
         # 2017.2.1 OEToolkits new charging function
