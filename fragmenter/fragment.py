@@ -352,8 +352,8 @@ class Fragmenter(object):
                               "You probably ran into a bug. Please report the input molecule to the issue tracker")
         #Always restore map?
         #if restore_maps:
-        restore_atom_map(fragment)
-
+        # In some cases (symmetric molecules) this changes the atom map so skip it
+        #restore_atom_map(fragment)
         # Perceive stereo and check that defined stereo did not change
         oechem.OEPerceiveChiral(fragment)
         oechem.OE3DToAtomStereo(fragment)
