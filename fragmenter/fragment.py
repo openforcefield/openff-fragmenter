@@ -1097,7 +1097,12 @@ class WBOFragmenter(Fragmenter):
         try:
             charged_fragment = self.calculate_wbo(fragment=mol, normalize=False,  **kwargs)
         except RuntimeError:
-            raise RuntimeError("Cannot calculate WBO for fragment built around bond {}".format(bond_tuple))
+            logger().warn("Cannot calculate WBO for fragment built around bond {}. Continue growing fragment".format(bond_tuple))
+            # Most of the time it fails because it is either missing parameters or a functional group that should not
+            # be fragmented was fragmented
+            #ToDo:  hanlde different kinds of failures instead of just continuing to grow until the fialure goes away
+            return 1
+
         # Get new WBO
         restore_atom_map(charged_fragment)
         a1 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
