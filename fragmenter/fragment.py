@@ -1097,7 +1097,7 @@ class WBOFragmenter(Fragmenter):
         try:
             charged_fragment = self.calculate_wbo(fragment=mol, normalize=False,  **kwargs)
         except RuntimeError:
-            logger().warn("Cannot calculate WBO for fragment {}. Continue growing fragment".format(oechem.OEMolToSmiles(charged_fragment)))
+            logger().warn("Cannot calculate WBO for fragment {}. Continue growing fragment".format(oechem.OEMolToSmiles(mol)))
             # Most of the time it fails because it is either missing parameters or a functional group that should not
             # be fragmented was fragmented
             #ToDo:  hanlde different kinds of failures instead of just continuing to grow until the fialure goes away
