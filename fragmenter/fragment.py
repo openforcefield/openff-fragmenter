@@ -1097,10 +1097,11 @@ class WBOFragmenter(Fragmenter):
         try:
             charged_fragment = self.calculate_wbo(fragment=mol, normalize=False,  **kwargs)
         except RuntimeError:
-            logger().warn("Cannot calculate WBO for fragment built around bond {}. Continue growing fragment".format(bond_tuple))
+            logger().warn("Cannot calculate WBO for fragment {}. Continue growing fragment".format(oechem.OEMolToSmiles(charged_fragment)))
             # Most of the time it fails because it is either missing parameters or a functional group that should not
             # be fragmented was fragmented
             #ToDo:  hanlde different kinds of failures instead of just continuing to grow until the fialure goes away
+            # Some fail because there are functional groups that should not be fragmented.
             return 1
 
         # Get new WBO
@@ -1113,6 +1114,10 @@ class WBOFragmenter(Fragmenter):
                                                                                               bond_tuple[0],
                                                                                               a2,
                                                                                      bond_tuple[1]))
+        if not 'WibergBondOrder' in bond.GetData():
+            logger().warn('Cannot calculate WBO for fragment {}. Continue growing fragment'.format(oechem.OEMolToSmiles(charged_fragment)))
+            return 1
+
         frag_wbo = bond.GetData('WibergBondOrder')
         mol_wbo = self.rotors_wbo[bond_tuple]
         self.fragments[bond_tuple] = charged_fragment
