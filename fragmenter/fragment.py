@@ -1091,7 +1091,6 @@ class WBOFragmenter(Fragmenter):
                             ortho_bonds.update(self.ring_systems[ring_system][-1])
         return ortho_atoms, ortho_bonds
 
-
     def _compare_wbo(self, fragment, bond_tuple, **kwargs):
         """
         Compare Wiberg Bond order of rotatable bond in fragment to parent
@@ -1535,3 +1534,175 @@ class WBOFragmenter(Fragmenter):
             oedepict.OEDrawBorder(header, headerpen)
 
         return oedepict.OEWriteReport(fname, report)
+
+
+class PfizerFragmenter(WBOFragmenter):
+    """
+    Fragment engine for fragmenting molecules using Pfizer's protocol (doi: 10.1021/acs.jcim.9b00373)
+
+    Parameters
+    ----------
+    molecule : OEMol
+        Molecule to fragment.
+    """
+    def __init__(self, molecule, verbose=False):
+        super().__init__(molecule)
+
+        self.verbose = verbose
+        # ToDo check for map indices and add
+
+        fn = resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts.yml'))
+        with open(fn, 'r') as f:
+            functional_groups = yaml.safe_load(f)
+        self._options['functional_groups'] = functional_groups
+        self._tag_functional_groups(functional_groups)
+
+        self.rotors_wbo = {}
+        self.ring_systems = {}
+        self._find_ring_systems(keep_non_rotor_ring_substituents=False)
+        self.fragments = {} # Fragments from fragmentation scheme for each rotatable bond
+        self._fragments = {} # Used internally for depiction
+
+
+    def fragment(self):
+        """
+        Fragment molecules according to Pfizer protocol
+
+        Returns
+        -------
+
+        """
+        rotatable_bonds = self._find_rotatable_bonds()
+        for bond in rotatable_bonds:
+            oe_bond = self.get_bond(bond)
+            torsion_quartet = self._get_torsion_quartet(oe_bond)
+            atoms, bonds = self._get_ring_and_fgroups(torsion_quartet)
+            atom_bond_set = self._to_atom_bond_set(atoms, bonds)
+            fragment = self._cap_open_valence(atom_bond_set)
+
+    def _get_torsion_quartet(self, bond):
+        """
+        Get all atoms bonded to the torsion quartet around rotatable bond
+        Returns
+        -------
+
+        """
+        atom_map_idx = set()
+        bond_tuples = set()
+        a1, a2 = bond.GetBgn(), bond.GetEnd()
+        m1, m2 = a1.GetMapIdx(), a2.GetMapIdx()
+        atom_map_idx.update((m1, m2))
+        bond_tuples.add((m1, m2))
+        for atom in (a1, a2):
+            for a in atom.GetAtoms():
+                m = a.GetMapIdx()
+                atom_map_idx.add(m)
+                bond_tuples.add((atom.GetMapIdx(), m))
+                for nbr in a.GetAtoms():
+                    m_nbr = nbr.GetMapIdx()
+                    atom_map_idx.add(m_nbr)
+                    bond_tuples.add((m, m_nbr))
+
+        return atom_map_idx, bond_tuples
+
+    def _get_ring_and_fgroups(self, torsion_quartet):
+        """
+        Keep ortho substituents
+        Parameters
+        ----------
+        torions_quartet :
+
+        Returns
+        -------
+
+        """
+        from openeye import oechem
+
+        atoms = torsion_quartet[0]
+        bonds = torsion_quartet[1]
+        new_atoms = set()
+        new_bonds = set()
+        for atom_m in atoms:
+            atom = self.molecule.GetAtom(oechem.OEHasMapIdx(atom_m))
+            if 'fgroup' in atom.GetData():
+                # Grab functional group
+                fgroup = atom.GetData('fgroup')
+                new_atoms.update(self.functional_groups[fgroup][0])
+                new_bonds.update(self.functional_groups[fgroup][1])
+            if 'ringsystem' in atom.GetData():
+                # grab rind
+                ring_idx = atom.GetData('ringsystem')
+                new_atoms.update(self.ring_systems[ring_idx][0])
+                new_bonds.update(self.ring_systems[ring_idx][1])
+
+        # Now check for ortho substituents to any bond in the fragment
+        for bond in bonds:
+            oe_bond = self.get_bond(bond)
+            a1 = oe_bond.GetBgn()
+            a2 = oe_bond.GetEnd()
+            if not oe_bond.IsInRing() and (a1.IsInRing() or a2.IsInRing()) and (not a1.IsHydrogen() and not a2.IsHydrogen()):
+                print(a1.GetMapIdx(), a2.GetMapIdx())
+                if a1.IsInRing():
+                    ring_idx = a1.GetData('ringsystem')
+                elif a2.IsInRing():
+                    ring_idx = a2.GetData('ringsystem')
+                else:
+                    print('Only one atom should be in a ring when checking for ortho substituents')
+                ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond)
+                if ortho:
+                    new_atoms.update(ortho[0])
+                    new_bonds.update(ortho[1])
+        atoms.update(new_atoms)
+        bonds.update(new_bonds)
+
+        return atoms, bonds
+
+    def _cap_open_valence(self, atoms, bonds):
+        """
+        Cap with methyl for fragments that ends with N, O or S. Otherwise cap with H
+        Parameters
+        ----------
+        fragment :
+
+        Returns
+        -------
+
+
+        """
+        from openeye import oechem
+        need_to_cap = []
+        for m in atoms:
+            a = self.molecule.GetAtoms(oechem.OEHasMapIdx(m))
+            for nbr in a.GetAtoms():
+                nbr_m_idx = nbr.GetMapIdx()
+                if not nbr.IsHydrogen() and not nbr_m_idx in atoms:
+                    # This is a cut
+                    if a.GetAtomicNum() in (7, 8, 16):
+                        need_to_cap.append(a.GetMapIdx())
+        # Now turn into atom bond set and then cap
+        atom_bond_set = self._to_atom_bond_set(atoms, bonds)
+        fragment = self._atom_bond_set_to_mol(atom_bond_set, adjust_hcount=True)
+        for atom in fragment.GetAtoms():
+            if atom.GetMapIdx() in need_to_cap:
+                # Remove a H
+                DELETED = False
+                for a in atom.GetAtoms():
+                    if a.IsHydrogen() and not DELETED:
+                        bond_to_del = fragment.GetBond(a, atom)
+                        fragment.DeleteAtom(a)
+                        fragment.DeleteBond(bond_to_del)
+                        DELETED = True
+                new_a = fragment.NewAtom(cmiles.utils_symbols['C'])
+                fragment.NewBond(atom, new_a)
+
+        # Create new fragment
+        smiles = oechem.OEMolToSmiles(fragment)
+        fragment = oechem.OEMol()
+        oechem.OESmilesToMol(fragment, smiles)
+        oechem.OEAssignImplicitHydrogens(fragment)
+
+        return fragment
+
+
+
+
