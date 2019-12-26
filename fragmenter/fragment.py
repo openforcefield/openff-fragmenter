@@ -356,6 +356,9 @@ class Fragmenter(object):
         #if restore_maps:
         # In some cases (symmetric molecules) this changes the atom map so skip it
         #restore_atom_map(fragment)
+        # atom map should be restored for combinatorial fragmentation
+        if isinstance(self, CombinatorialFragmenter):
+            restore_atom_map(fragment)
         # Perceive stereo and check that defined stereo did not change
         oechem.OEPerceiveChiral(fragment)
         oechem.OE3DToAtomStereo(fragment)
@@ -959,7 +962,7 @@ class WBOFragmenter(Fragmenter):
             self.rotors_wbo[bond] = b.GetData('WibergBondOrder')
 
 
-    def _find_ring_systems(self, keep_non_rotor_ring_substituents=True):
+    def _find_ring_systems(self, keep_non_rotor_ring_substituents=False):
 
         """
         This function tags ring atom and bonds with ringsystem index
@@ -967,6 +970,8 @@ class WBOFragmenter(Fragmenter):
         Parameters
         ----------
         mol: OpenEye OEMolGraph
+        keep_non_rotor_ring_substituents: bool, optional, default False
+            If True, keep all non rotatable ring substituents. According to the benchmark, it is not necessary.
 
         Returns
         -------
@@ -995,6 +1000,21 @@ class WBOFragmenter(Fragmenter):
                         ringidx_bonds.add((a_idx, nbrIdx))
                         tag = oechem.OEGetTag('ringsystem')
                         bond.SetData(tag, ringidx)
+            # Find functional groups
+            fgroup_atoms = set()
+            fgroup_bonds = set()
+            for m in ringidx_atoms:
+                ring_atom = self.molecule.GetAtom(oechem.OEHasMapIdx(m))
+                print(ring_atom)
+                print(ring_atom.GetData())
+                if 'fgroup' in ring_atom.GetData():
+                    # Grab all atoms and bonds in functional group
+                    fgroup = ring_atom.GetData('fgroup')
+                    fgroup_atoms.update(self.functional_groups[fgroup][0])
+                    fgroup_bonds.update(self.functional_groups[fgroup][-1])
+            ringidx_atoms.update(fgroup_atoms)
+            ringidx_bonds.update(fgroup_bonds)
+
             non_rotor_atoms = set()
             non_rotor_bond = set()
             if keep_non_rotor_ring_substituents:
