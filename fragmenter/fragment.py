@@ -1005,8 +1005,6 @@ class WBOFragmenter(Fragmenter):
             fgroup_bonds = set()
             for m in ringidx_atoms:
                 ring_atom = self.molecule.GetAtom(oechem.OEHasMapIdx(m))
-                print(ring_atom)
-                print(ring_atom.GetData())
                 if 'fgroup' in ring_atom.GetData():
                     # Grab all atoms and bonds in functional group
                     fgroup = ring_atom.GetData('fgroup')
