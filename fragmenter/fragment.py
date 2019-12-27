@@ -1056,7 +1056,8 @@ class WBOFragmenter(Fragmenter):
 
         """
         from openeye import oechem
-
+        print(ring_idx)
+        print(rot_bond)
         # Get the ring atom
         ring_atom = None
         for m in rot_bond:
@@ -1074,9 +1075,11 @@ class WBOFragmenter(Fragmenter):
         for atom in ring_atoms:
             for a in atom.GetAtoms():
                 if not a.IsHydrogen() and not a.GetMapIdx() in self.ring_systems[ring_idx][0]:
-                    # Check if atom is bonded to ring atom of rotatable bond
-                    if self.molecule.GetBond(atom, ring_atom):
-                        # This is an ortho group
+                    # Check if atom is bonded to ring atom in rotatable bond. This can sometimes be missed so it needs to be checked
+                    b_ortho = self.molecule.GetBond(atom, ring_atom)
+                    b_direct = self.molecule.GetBond(a, ring_atom)
+                    if b_ortho or (b_direct and atom.GetMapIdx() == ring_atom.GetMapIdx()):
+                        # This atom is either ortho to bond or also bonded to rotatable bond
                         ortho_atoms.add(a.GetMapIdx())
                         ortho_bonds.add((a.GetMapIdx(), atom.GetMapIdx()))
                         # Check if substituent is part of functional group
@@ -1642,6 +1645,7 @@ class PfizerFragmenter(WBOFragmenter):
             a1 = oe_bond.GetBgn()
             a2 = oe_bond.GetEnd()
             if not oe_bond.IsInRing() and (a1.IsInRing() or a2.IsInRing()) and (not a1.IsHydrogen() and not a2.IsHydrogen()):
+                print(bond)
                 if a1.IsInRing():
                     ring_idx = a1.GetData('ringsystem')
                 elif a2.IsInRing():
@@ -1649,6 +1653,7 @@ class PfizerFragmenter(WBOFragmenter):
                 else:
                     print('Only one atom should be in a ring when checking for ortho substituents')
                 ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond)
+                print(ortho)
                 if ortho:
                     new_atoms.update(ortho[0])
                     new_bonds.update(ortho[1])

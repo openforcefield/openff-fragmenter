@@ -1,3 +1,5 @@
+nitrogen: '[NX3][N]='
+nitric_oxide: '[N]-[O]'
 amide: '[#7][#6](=[#8])'
 amide_n: '[#7][#6](-[O-])'
 amide_2: '[NX3][CX3](=[OX1])[NX3]'
@@ -14,7 +16,6 @@ phosphate: '[PX4](=[OX1])([#8])([#8])([#8])'
 carboxylic_acid: '[CX3](=O)[OX1H0-,OX2H1]'
 nitro: '([NX3+](=O)[O-])'
 ester: '[CX3](=O)[OX2H0]'
-
 #alcohol: '[#6][OX2H]'
 #tri_halide: '[#6][#6]((([F,Cl,I,Br])[F,Cl,I,Br])[F,Cl,I,Br])'
 #nitrile: '[NX1]#[CX2][#6]'
