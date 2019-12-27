@@ -387,15 +387,63 @@ def tet_fix_stereo(smiles, frag):
     fixed = f._fix_stereo(frag)
     assert f._check_stereo(fixed) == True
 
-@pytest.mark.parametrize('engine', ['WBO', 'combinatorial'])
+@pytest.mark.parametrize('engine', ['WBO', 'combinatorial', 'pfizer'])
 def test_depict_fragments(engine):
     mol = chemi.smiles_to_oemol('CCCCC')
     if engine == 'WBO':
         f = fragmenter.fragment.WBOFragmenter(mol)
     if engine =='combinatorial':
         f = fragmenter.fragment.CombinatorialFragmenter(mol)
+    if engine == 'pfizer':
+        f = fragmenter.fragment.PfizerFragmenter(mol)
     f.fragment()
     assert f.depict_fragments('test.pdf') == True
 
+
 def test_new_stereo_center():
     pass
+
+
+@using_openeye
+@pytest.mark.parametrize('input, output', [('CCCCCCC', 4)])
+def test_pfizer_fragmenter(input, output):
+    mol = chemi.smiles_to_oemol(input)
+    f = fragmenter.fragment.PfizerFragmenter(mol)
+    f.fragment()
+    assert len(f.fragments) == output
+
+@using_openeye
+@pytest.mark.parametrize('input, output', [('CCCCCCC', (14, 20))])
+def test_get_torsion_quartet(input, output):
+    from openeye import oechem
+    mol = oechem.OEMol()
+    oechem.OESmilesToMol(mol, input)
+    f = fragmenter.fragment.PfizerFragmenter(mol)
+    atoms, bonds= f._get_torsion_quartet((3, 5))
+    # This also includes explicit hydrogen
+    assert len(atoms) == output[0]
+    assert len(bonds) == output[1]
+
+@using_openeye
+@pytest.mark.parametrize('input, bond, output', [('CCCCCCC', (3, 5), True),
+                                           ('CCCCc1ccccc1', (9, 10), False)])
+def test_get_ring_and_fgroup(input, bond, output):
+    mol = chemi.smiles_to_oemol(input)
+    f = fragmenter.fragment.PfizerFragmenter(mol)
+    atoms, bonds = f._get_torsion_quartet(bond)
+    l_atoms = len(atoms)
+    l_bonds = len(bonds)
+    atoms_2, bonds_2 = f._get_ring_and_fgroups(atoms, bonds)
+    assert (l_atoms == len(atoms_2)) == output
+    assert (l_bonds == len(bonds_2)) == output
+
+@pytest.mark.parametrize('input, bond, output', [('CNCCc1ccccc1', (6, 8), 7)])
+def test_cap_open_valance(input, bond, output):
+    from openeye import oechem
+    mol = chemi.smiles_to_oemol(input)
+    f = fragmenter.fragment.PfizerFragmenter(mol)
+    atoms, bonds = f._get_torsion_quartet(bond)
+    atoms, bonds = f._get_ring_and_fgroups(atoms, bonds)
+    f._cap_open_valence(atoms, bonds, bond)
+    # Check that carbon bonded to N was added
+    assert f.molecule.GetAtom(oechem.OEHasMapIdx(output))

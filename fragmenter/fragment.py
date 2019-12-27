@@ -1563,37 +1563,40 @@ class PfizerFragmenter(WBOFragmenter):
         self.fragments = {} # Fragments from fragmentation scheme for each rotatable bond
         self._fragments = {} # Used internally for depiction
 
-
     def fragment(self):
         """
         Fragment molecules according to Pfizer protocol
-
-        Returns
-        -------
-
         """
         rotatable_bonds = self._find_rotatable_bonds()
         for bond in rotatable_bonds:
-            oe_bond = self.get_bond(bond)
-            torsion_quartet = self._get_torsion_quartet(oe_bond)
-            atoms, bonds = self._get_ring_and_fgroups(torsion_quartet)
-            atom_bond_set = self._to_atom_bond_set(atoms, bonds)
-            fragment = self._cap_open_valence(atom_bond_set)
+            atoms, bonds = self._get_torsion_quartet(bond)
+            atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
+            self._cap_open_valence(atoms, bonds, bond)
 
     def _get_torsion_quartet(self, bond):
         """
         Get all atoms bonded to the torsion quartet around rotatable bond
+
+        Parameters
+        ----------
+        bond: tuple of ints
+            map indices of atoms in bond
+
         Returns
         -------
+        atoms, bonds: set of ints (map indices of atoms in quartet), set of tuples of ints (bonds in quartet)
 
         """
+        from openeye import oechem
         atom_map_idx = set()
         bond_tuples = set()
-        a1, a2 = bond.GetBgn(), bond.GetEnd()
-        m1, m2 = a1.GetMapIdx(), a2.GetMapIdx()
+        print(bond)
+        atoms = [self.molecule.GetAtom(oechem.OEHasMapIdx(i)) for i in bond]
+
+        m1, m2 = atoms[0].GetMapIdx(), atoms[1].GetMapIdx()
         atom_map_idx.update((m1, m2))
         bond_tuples.add((m1, m2))
-        for atom in (a1, a2):
+        for atom in atoms:
             for a in atom.GetAtoms():
                 m = a.GetMapIdx()
                 atom_map_idx.add(m)
@@ -1605,21 +1608,20 @@ class PfizerFragmenter(WBOFragmenter):
 
         return atom_map_idx, bond_tuples
 
-    def _get_ring_and_fgroups(self, torsion_quartet):
+    def _get_ring_and_fgroups(self, atoms, bonds):
         """
         Keep ortho substituents
         Parameters
         ----------
-        torions_quartet :
+        torions_quartet : set of set of ints and set of bond tuples
 
         Returns
         -------
+        atoms, bonds: set of ints and set of tuple of ints
 
         """
         from openeye import oechem
 
-        atoms = torsion_quartet[0]
-        bonds = torsion_quartet[1]
         new_atoms = set()
         new_bonds = set()
         for atom_m in atoms:
@@ -1657,52 +1659,113 @@ class PfizerFragmenter(WBOFragmenter):
 
         return atoms, bonds
 
-    def _cap_open_valence(self, atoms, bonds):
+    def _cap_open_valence(self, atoms, bonds, target_bond):
         """
         Cap with methyl for fragments that ends with N, O or S. Otherwise cap with H
         Parameters
         ----------
-        fragment :
-
-        Returns
-        -------
-
-
+        atoms: set of ints
+            map indices of atom in fragment
+        bpnds: set of tuples of ints
+            map indices of bonds in fragment
+        target_bond: tuple of ints
+            bond map indices the fragment is for
         """
         from openeye import oechem
-        need_to_cap = []
+        atoms_to_add = set()
+        bonds_to_add = set()
         for m in atoms:
-            a = self.molecule.GetAtoms(oechem.OEHasMapIdx(m))
+            a = self.molecule.GetAtom(oechem.OEHasMapIdx(m))
             for nbr in a.GetAtoms():
                 nbr_m_idx = nbr.GetMapIdx()
                 if not nbr.IsHydrogen() and not nbr_m_idx in atoms:
-                    # This is a cut
-                    if a.GetAtomicNum() in (7, 8, 16):
-                        need_to_cap.append(a.GetMapIdx())
-        # Now turn into atom bond set and then cap
+                    # This is a cut. If atom is N, O or S, it needs to be capped
+                    if a.GetAtomicNum() in (7, 8, 16) or 'fgroup' in a.GetData():
+                        # Add all carbons bonded to this atom
+                        for nbr_2 in a.GetAtoms():
+                            if nbr_2.IsCarbon():
+                                atoms_to_add.add(nbr_2.GetMapIdx())
+                                bonds_to_add.add((a.GetMapIdx(), nbr_2.GetMapIdx()))
+        atoms.update(atoms_to_add)
+        bonds.update(bonds_to_add)
+        print(atoms)
+        print(bonds)
         atom_bond_set = self._to_atom_bond_set(atoms, bonds)
-        fragment = self._atom_bond_set_to_mol(atom_bond_set, adjust_hcount=True)
-        for atom in fragment.GetAtoms():
-            if atom.GetMapIdx() in need_to_cap:
-                # Remove a H
-                DELETED = False
-                for a in atom.GetAtoms():
-                    if a.IsHydrogen() and not DELETED:
-                        bond_to_del = fragment.GetBond(a, atom)
-                        fragment.DeleteAtom(a)
-                        fragment.DeleteBond(bond_to_del)
-                        DELETED = True
-                new_a = fragment.NewAtom(cmiles.utils_symbols['C'])
-                fragment.NewBond(atom, new_a)
+        self._fragments[target_bond] = atom_bond_set
+        self.fragments[target_bond] = self._atom_bond_set_to_mol(atom_bond_set, adjust_hcount=True)
 
-        # Create new fragment
-        smiles = oechem.OEMolToSmiles(fragment)
-        fragment = oechem.OEMol()
-        oechem.OESmilesToMol(fragment, smiles)
-        oechem.OEAssignImplicitHydrogens(fragment)
+    def depict_fragments(self, fname):
+        """
+        Generate PDF of fragments for the molecule with the rotatable bond highlighted and annotated with its WBO
 
-        return fragment
+        Parameters
+        ----------
+        fname : str
+            Filename to write out PDF
 
+        """
+        from openeye import oechem, oedepict
+        itf = oechem.OEInterface()
+        oedepict.OEPrepareDepiction(self.molecule)
 
+        ropts = oedepict.OEReportOptions()
+        oedepict.OESetupReportOptions(ropts, itf)
+        ropts.SetFooterHeight(25.0)
+        ropts.SetHeaderHeight(ropts.GetPageHeight() / 4.0)
+        report = oedepict.OEReport(ropts)
 
+        # setup decpiction options
+        opts = oedepict.OE2DMolDisplayOptions()
+        oedepict.OESetup2DMolDisplayOptions(opts, itf)
+        cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
+        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
+        opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
+        opts.SetAtomLabelFontScale(1.2)
 
+        lineWidthScale = 0.75
+        fadehighlight = oedepict.OEHighlightByColor(oechem.OEGrey, lineWidthScale)
+
+        # depict each fragment combinations
+
+        for bond_tuple in self._fragments:
+
+            cell = report.NewCell()
+            bond = self.get_bond(bond_tuple)
+            # Get bond in fragment
+            fragment = self.fragments[bond_tuple]
+            disp = oedepict.OE2DMolDisplay(self.molecule, opts)
+
+            fragatoms = oechem.OEIsAtomMember(self._fragments[bond_tuple].GetAtoms())
+            fragbonds = oechem.OEIsBondMember(self._fragments[bond_tuple].GetBonds())
+
+            notfragatoms = oechem.OENotAtom(fragatoms)
+            notfragbonds = oechem.OENotBond(fragbonds)
+
+            oedepict.OEAddHighlighting(disp, fadehighlight, notfragatoms, notfragbonds)
+
+            atomBondSet = oechem.OEAtomBondSet()
+            atomBondSet.AddBond(bond)
+            atomBondSet.AddAtom(bond.GetBgn())
+            atomBondSet.AddAtom(bond.GetEnd())
+
+            hstyle = oedepict.OEHighlightStyle_BallAndStick
+            hcolor = oechem.OEColor(oechem.OELightBlue)
+            oedepict.OEAddHighlighting(disp, hcolor, hstyle, atomBondSet)
+            oedepict.OERenderMolecule(cell, disp)
+
+        # depict original fragmentation in each header
+        cellwidth, cellheight = report.GetHeaderWidth(), report.GetHeaderHeight()
+        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
+        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
+
+        bondlabel = LabelWibergBondOrder()
+        opts.SetBondPropertyFunctor(bondlabel)
+        disp = oedepict.OE2DMolDisplay(self.molecule, opts)
+
+        headerpen = oedepict.OEPen(oechem.OEWhite, oechem.OELightGrey, oedepict.OEFill_Off, 2.0)
+        for header in report.GetHeaders():
+            oedepict.OERenderMolecule(header, disp)
+            oedepict.OEDrawBorder(header, headerpen)
+
+        return oedepict.OEWriteReport(fname, report)
