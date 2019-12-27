@@ -1590,7 +1590,6 @@ class PfizerFragmenter(WBOFragmenter):
         from openeye import oechem
         atom_map_idx = set()
         bond_tuples = set()
-        print(bond)
         atoms = [self.molecule.GetAtom(oechem.OEHasMapIdx(i)) for i in bond]
 
         m1, m2 = atoms[0].GetMapIdx(), atoms[1].GetMapIdx()
@@ -1643,7 +1642,6 @@ class PfizerFragmenter(WBOFragmenter):
             a1 = oe_bond.GetBgn()
             a2 = oe_bond.GetEnd()
             if not oe_bond.IsInRing() and (a1.IsInRing() or a2.IsInRing()) and (not a1.IsHydrogen() and not a2.IsHydrogen()):
-                print(a1.GetMapIdx(), a2.GetMapIdx())
                 if a1.IsInRing():
                     ring_idx = a1.GetData('ringsystem')
                 elif a2.IsInRing():
@@ -1688,8 +1686,6 @@ class PfizerFragmenter(WBOFragmenter):
                                 bonds_to_add.add((a.GetMapIdx(), nbr_2.GetMapIdx()))
         atoms.update(atoms_to_add)
         bonds.update(bonds_to_add)
-        print(atoms)
-        print(bonds)
         atom_bond_set = self._to_atom_bond_set(atoms, bonds)
         self._fragments[target_bond] = atom_bond_set
         self.fragments[target_bond] = self._atom_bond_set_to_mol(atom_bond_set, adjust_hcount=True)
