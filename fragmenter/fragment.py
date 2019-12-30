@@ -1056,8 +1056,6 @@ class WBOFragmenter(Fragmenter):
 
         """
         from openeye import oechem
-        print(ring_idx)
-        print(rot_bond)
         # Get the ring atom
         ring_atom = None
         for m in rot_bond:
@@ -1645,7 +1643,6 @@ class PfizerFragmenter(WBOFragmenter):
             a1 = oe_bond.GetBgn()
             a2 = oe_bond.GetEnd()
             if not oe_bond.IsInRing() and (a1.IsInRing() or a2.IsInRing()) and (not a1.IsHydrogen() and not a2.IsHydrogen()):
-                print(bond)
                 if a1.IsInRing():
                     ring_idx = a1.GetData('ringsystem')
                 elif a2.IsInRing():
@@ -1653,7 +1650,6 @@ class PfizerFragmenter(WBOFragmenter):
                 else:
                     print('Only one atom should be in a ring when checking for ortho substituents')
                 ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond)
-                print(ortho)
                 if ortho:
                     new_atoms.update(ortho[0])
                     new_bonds.update(ortho[1])
