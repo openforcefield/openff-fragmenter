@@ -873,7 +873,7 @@ class WBOFragmenter(Fragmenter):
         setattr(self, 'threshold', threshold)
         self._options.update(kwargs)
         # Calculate WBO for molecule
-        self.calculate_wbo()
+        self.calculate_wbo(**kwargs)
         self._get_rotor_wbo()
         # Find ring systems
         self._find_ring_systems(keep_non_rotor_ring_substituents=keep_non_rotor_ring_substituents)
