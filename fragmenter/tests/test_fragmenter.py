@@ -153,9 +153,12 @@ def test_build_fragment():
     for bond in f.rotors_wbo:
         f._build_fragment(bond)
     assert len(f.fragments) == 3
-    for bond in f.fragments:
-        remove_atom_map(f.fragments[bond])
-        assert oechem.OEMolToSmiles(f.fragments[bond]) == 'CCCC'
+    remove_atom_map(f.fragments[(3, 5)])
+    assert oechem.OEMolToSmiles(f.fragments[(3, 5)]) == 'CCCCC'
+    remove_atom_map(f.fragments[(4, 6)])
+    assert oechem.OEMolToSmiles(f.fragments[(4, 6)]) == 'CCCCC'
+    remove_atom_map(f.fragments[(5, 6)])
+    assert oechem.OEMolToSmiles(f.fragments[(5, 6)]) == 'CCCCCC'
 
 
 @using_openeye
@@ -263,10 +266,11 @@ def test_find_ortho_substituent():
     f = fragmenter.fragment.WBOFragmenter(mol)
     f._find_ring_systems(keep_non_rotor_ring_substituents=False)
     ortho = f._find_ortho_substituent(ring_idx=1, rot_bond=(7, 28))
-    assert len(ortho[0]) == 2
-    assert len(ortho[1]) == 2
-    assert ortho[0] == set((19, 33))
-    assert ortho[1] == set(((19, 6), (33, 8)))
+    # Code was changed to also include substituents bonded diretly to 1-5 atoms, not only ortho to rotatable bond. So the self bond and its connected functional group comes along to ortho.
+    assert len(ortho[0]) == 5 # 2 ortho, 1 self, 2 functional groups
+    assert len(ortho[1]) == 5
+    assert ortho[0] == set((14, 19, 28, 30, 33))
+    assert ortho[1] == set(((14, 28),(14, 30), (19, 6), (28, 7), (33, 8)))
 
 def test_find_rotatable_bonds():
     from openeye import oechem
@@ -286,8 +290,7 @@ def test_add_substituent():
     mol = chemi.smiles_to_oemol(smiles)
     f = fragmenter.fragment.WBOFragmenter(mol)
     f.fragment()
-    for bond in f.fragments:
-        assert mol_to_smiles(f.fragments[bond], mapped=False, explicit_hydrogen=False) == 'CCCC'
+    assert mol_to_smiles(f.fragments[(3, 5)], mapped=False, explicit_hydrogen=False) == 'CCCCC'
 
     mol = f.fragments[(3, 5)]
     atoms = set()
@@ -305,7 +308,7 @@ def test_add_substituent():
 
     mol = f._add_next_substituent(atoms, bonds, target_bond=(3, 5))
 
-    assert mol_to_smiles(mol, mapped=False, explicit_hydrogen=False) == 'CCCCC'
+    assert mol_to_smiles(mol, mapped=False, explicit_hydrogen=False) == 'CCCCCC'
 
 def test_to_json():
     smiles = 'CCCCCC'
@@ -313,10 +316,10 @@ def test_to_json():
     f = fragmenter.fragment.WBOFragmenter(mol)
     f.fragment()
     json_dict = f.to_json()
-    assert len(json_dict) == 1
-    assert list(json_dict.keys())[0] == 'CCCC'
-    assert 'provenance' in json_dict['CCCC']
-    assert 'cmiles_identifiers' in json_dict['CCCC']
+    assert len(json_dict) == 2
+    assert list(json_dict.keys())[0] == 'CCCCC'
+    assert 'provenance' in json_dict['CCCCC']
+    assert 'cmiles_identifiers' in json_dict['CCCCC']
 
 def test_to_qcscheme_mol():
     smiles = 'CCCCCC'
@@ -339,7 +342,7 @@ def test_to_qcschema_mols():
     f.fragment()
 
     qcschema_mol = f.to_qcschema_mols()
-    assert len(qcschema_mol) == 1
+    assert len(qcschema_mol) == 2
 
 def test_td_inputs():
     smiles = 'CCCCCC'
@@ -348,7 +351,7 @@ def test_td_inputs():
     f.fragment()
 
     td_inputs = f.to_torsiondrive_json()
-    assert len(td_inputs) == 1
+    assert len(td_inputs) == 2
 
 @pytest.mark.parametrize('smiles, output',
                         [('OC1(CN(C1)C(=O)C1=C(NC2=C(F)C=C(I)C=C2)C(F)=C(F)C=C1)[C@@H]1CCCCN1', {20: 'S'}),

@@ -1219,7 +1219,6 @@ class WBOFragmenter(Fragmenter):
         #             bond_tuples.update(self.functional_groups[fgroup][-1])
         # Cap open valence
         if cap:
-            # Only cap for the minimal fragment. When growing out further, rely on the WBO if cap is needed. Many times it's not because WBO dist don't change too much
             atom_map_idx, bond_tuples = self._cap_open_valence(atom_map_idx, bond_tuples, bond_tuple)
         atom_bond_set = self._to_atom_bond_set(atom_map_idx, bond_tuples)
         fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
@@ -1348,7 +1347,7 @@ class WBOFragmenter(Fragmenter):
         bonds.update(bonds_to_add)
         return atoms, bonds
 
-    def _add_next_substituent(self, atoms, bonds, target_bond, heuristic='path_length', **kwargs):
+    def _add_next_substituent(self, atoms, bonds, target_bond, heuristic='path_length', cap=True, **kwargs):
         """
         If the difference between WBO in fragment and molecules is greater than threshold, add substituents to
         fragment until difference is within threshold
@@ -1433,6 +1432,9 @@ class WBOFragmenter(Fragmenter):
             atoms.add(atom)
             bonds.add(bond)
             # Check new WBO
+            # cap open valence
+            # if cap:
+            #     atoms, bonds = self._cap_open_valence(atoms, bonds, target_bond)
             atom_bond_set = self._to_atom_bond_set(atoms, bonds)
             fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
             if self._compare_wbo(fragment_mol, target_bond, **kwargs) < self.threshold:
@@ -1694,7 +1696,7 @@ class PfizerFragmenter(WBOFragmenter):
         rotatable_bonds = self._find_rotatable_bonds()
         for bond in rotatable_bonds:
             atoms, bonds = self._get_torsion_quartet(bond)
-            atoms, bonds = self._get_ring_and_fgroups(atoms, bonds, central_bond=bond)
+            atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
             self._cap_open_valence(atoms, bonds, bond)
 
     def _get_torsion_quartet(self, bond):
@@ -1731,7 +1733,7 @@ class PfizerFragmenter(WBOFragmenter):
 
         return atom_map_idx, bond_tuples
 
-    def _get_ring_and_fgroups(self, atoms, bonds, central_bond):
+    def _get_ring_and_fgroups(self, atoms, bonds):
         """
         Keep ortho substituents
         Parameters
