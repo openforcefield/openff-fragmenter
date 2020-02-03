@@ -189,9 +189,9 @@ def find_torsion_around_bond(molecule, bond):
 
     """
     from openeye import oechem
-    if not has_atom_map(molecule):
-        raise ValueError("Molecule must have atom maps")
-    #torsions = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
+    #if not has_atom_map(molecule):
+    #    raise ValueError("Molecule must have atom maps")
+    torsions = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
 
     terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
     terminal_torsions = _find_torsions_from_smarts(molecule, terminal_smarts)
@@ -502,7 +502,12 @@ def measure_dihedral_angle(dihedral, coords):
     -------
 
     """
-    coords = np.array(coords, dtype=float).reshape(int(len(coords)/3), 3) * utils.BOHR_2_ANGSTROM
+    reshape = True
+    if isinstance(coords, np.ndarray):
+        if coords.shape[-1] == 3:
+            reshape = False
+    if reshape:
+        coords = np.array(coords, dtype=float).reshape((len(coords)/3), 3) * utils.BOHR_2_ANGSTROM
     a = coords[dihedral[0]]
     b = coords[dihedral[1]]
     c = coords[dihedral[2]]
