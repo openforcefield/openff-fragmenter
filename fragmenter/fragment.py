@@ -1613,13 +1613,11 @@ class WBOFragmenter(Fragmenter):
             a2 = fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[1]))
             bond_in_frag = fragment.GetBond(a1, a2)
             wbo_frag = bond_in_frag.GetData('WibergBondOrder')
-            bond.SetData('WibergBondOrder_frag', wbo_frag)
+            #bond.SetData('WibergBondOrder_frag', wbo_frag)
 
             bondlabel_2 = LabelFragBondOrder()
             opts.SetBondPropertyFunctor(bondlabel_2)
             disp = oedepict.OE2DMolDisplay(self.molecule, opts)
-
-            bond.DeleteData('WibergBondOrder_frag')
 
             # ToDo get AtomBondSet for fragments so depiction works properly
             fragatoms = oechem.OEIsAtomMember(self._fragments[bond_tuple].GetAtoms())
@@ -1636,12 +1634,23 @@ class WBOFragmenter(Fragmenter):
             atomBondSet.AddAtom(bond.GetEnd())
 
             hstyle = oedepict.OEHighlightStyle_BallAndStick
-            hcolor = oechem.OEColor(oechem.OELightBlue)
+            hcolor = oechem.OEColor(oechem.OELimeGreen)
             oedepict.OEAddHighlighting(disp, hcolor, hstyle, atomBondSet)
+
+            # Add WBO label
+            if abs(wbo_frag - self.rotors_wbo[bond_tuple]) > 0.03:
+                # Set highlight color to red
+                hcolor = oechem.OEColor(oechem.OERed)
+            else:
+                hcolor = oechem.OEColor(oechem.OEBlack)
+            bond_label = oedepict.OEHighlightLabel("{:.2f}".format(wbo_frag), hcolor)
+            bond_label.SetFontScale(4.0)
+            oedepict.OEAddLabel(disp, bond_label, atomBondSet)
 
             #oegrapheme.OEAddGlyph(disp, bondglyph, fragbonds)
 
             oedepict.OERenderMolecule(cell, disp)
+
 
         # depict original fragmentation in each header
 
@@ -1695,6 +1704,7 @@ class PfizerFragmenter(WBOFragmenter):
         """
         rotatable_bonds = self._find_rotatable_bonds()
         for bond in rotatable_bonds:
+            print(bond)
             atoms, bonds = self._get_torsion_quartet(bond)
             atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
             self._cap_open_valence(atoms, bonds, bond)
@@ -1731,6 +1741,7 @@ class PfizerFragmenter(WBOFragmenter):
                     atom_map_idx.add(m_nbr)
                     bond_tuples.add((m, m_nbr))
 
+        print(atom_map_idx)
         return atom_map_idx, bond_tuples
 
     def _get_ring_and_fgroups(self, atoms, bonds):
@@ -1775,6 +1786,7 @@ class PfizerFragmenter(WBOFragmenter):
                 else:
                     print('Only one atom should be in a ring when checking for ortho substituents')
                 ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond)
+                print('ortho: {}'.format(ortho))
                 if ortho:
                     new_atoms.update(ortho[0])
                     new_bonds.update(ortho[1])
