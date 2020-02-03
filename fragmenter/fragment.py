@@ -524,13 +524,13 @@ class CombinatorialFragmenter(Fragmenter):
         ebunch = []
         for node in self._nx_graph.edges:
             if not self._nx_graph.edges[node]['aromatic'] and not self._nx_graph.edges[node]['in_ring'] \
-                    and not (self._nx_graph.node[node[0]]['name'] == 'H' or self._nx_graph.node[node[-1]]['name'] == 'H')\
+                    and not (self._nx_graph.nodes[node[0]]['name'] == 'H' or self._nx_graph.nodes[node[-1]]['name'] == 'H')\
                     and not (self._nx_graph.edges[node]['fgroup']):
                 ebunch.append(node)
         # Cut molecule
         self._nx_graph.remove_edges_from(ebunch)
         # Generate fragments
-        subgraphs = list(nx.connected_component_subgraphs(self._nx_graph))
+        subgraphs = list(self._nx_graph.subgraph(c) for c in nx.connected_components(self._nx_graph))
         return subgraphs
 
     def _subgraphs_to_atom_bond_sets(self, subgraphs):
@@ -546,7 +546,7 @@ class CombinatorialFragmenter(Fragmenter):
         # Build openeye atombondset from subgraphs
         for subgraph in subgraphs:
             atom_bond_set = oechem.OEAtomBondSet()
-            for node in subgraph.node:
+            for node in subgraph.nodes:
                 atom_bond_set.AddAtom(self.molecule.GetAtom(oechem.OEHasAtomIdx(node)))
             for node1, node2 in subgraph.edges():
                 a1 = self.molecule.GetAtom(oechem.OEHasAtomIdx(node1))
