@@ -6,7 +6,7 @@ except ImportError:
     raise Warning("Need license for OpenEye!")
 
 import cmiles
-from .utils import logger, BOHR_2_ANGSTROM
+from .utils import logger, BOHR_2_ANGSTROM, carboxylic_acid_hack
 
 import os
 import numpy as np
@@ -73,6 +73,9 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
         molecule = oechem.OEMol(molecule)
 
     charged_copy = generate_conformers(molecule, max_confs=max_confs, strict_stereo=strict_stereo, **kwargs)  # Generate up to max_confs conformers
+
+    # fix issue that causes carboxylic acid to fail charging
+    carboxylic_acid_hack(charged_copy)
 
     if not legacy:
         # 2017.2.1 OEToolkits new charging function
@@ -176,7 +179,7 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     return molcopy
 
 
-def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, copy_mol=True):
+def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, copy_mol=True, mapped=True, **kwargs):
     """
     Generate conformers using torsion angle grids.
 
@@ -191,6 +194,9 @@ def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, c
         maximum rotation in degrees
     copy_mol: bool, optional, default True
         If True, return a copy of molecule and do not change incoming molecule
+    mapped: bool, optional, default True
+        If True, will proceed without checking if map indices are missing. Only use this option if you know what you are doing.
+        It is needed when new fragments are generated and are missing map indices on the hydrogens that were used in capping
 
     Returns
     -------
@@ -200,12 +206,14 @@ def generate_grid_conformers(molecule, dihedrals, intervals, max_rotation=360, c
     # molecule must be mapped
     if copy_mol:
         molecule = copy.deepcopy(molecule)
-    if cmiles.utils.is_missing_atom_map(molecule):
-        raise ValueError("Molecule must have atom indices")
+    if mapped:
+        # Check for missing atom maps
+        if cmiles.utils.is_missing_atom_map(molecule):
+           raise ValueError("Molecule must have atom indices")
 
     # Check length of dihedrals match length of intervals
 
-    conf_mol = generate_conformers(molecule, max_confs=1)
+    conf_mol = generate_conformers(molecule, max_confs=1, **kwargs)
     conf = conf_mol.GetConfs().next()
     coords = oechem.OEFloatArray(conf.GetMaxAtomIdx()*3)
     conf.GetCoords(coords)
@@ -986,7 +994,7 @@ def highlight_bond_by_map_idx(mol, fname, bond_map_idx=None, width=600, height=4
         opts.SetAtomPropLabelFont(oedepict.OEFont(oechem.OEBlack))
         opts.SetAtomPropLabelFontScale(label_scale)
         opts.SetBondWidthScaling(scale_bondwidth)
-
+        #opts.SetPropertyOffset(1.0)
 
     disp = oedepict.OE2DMolDisplay(mol, opts)
     if color:
@@ -1001,7 +1009,7 @@ def highlight_bond_by_map_idx(mol, fname, bond_map_idx=None, width=600, height=4
     return oedepict.OERenderMolecule(fname, disp)
 
 
-def highlight_bonds_with_label(mol_copy, fname, conjugation=True, rotor=False, width=600, height=400, label=None):
+def highlight_bonds_with_label(mol_copy, fname, conjugation=True, rotor=False, width=600, height=400, label=None, scale=2.0):
     """
     Generate image of molecule with highlighted bonds. The bonds can either be highlighted with a conjugation tag
     or if it is rotatable.
@@ -1047,12 +1055,14 @@ def highlight_bonds_with_label(mol_copy, fname, conjugation=True, rotor=False, w
 
     opts = oedepict.OE2DMolDisplayOptions(width, height, oedepict.OEScale_AutoScale)
     opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
+
     if label is not None:
         bond_label = {'WibergBondOrder': LabelWibergBondOrder, 'Wiberg_psi4': LabelWibergPsiBondOrder,
                       'Mayer_psi4': LabelMayerPsiBondOrder}
 
         bondlabel = bond_label[label]
-        opts.SetBondPropertyFunctor(bondlabel())
+        opts.SetBondPropertyFunctor(bondlabel(oedepict.OE2DPoint(50, 50)))
+        opts.SetBondPropLabelFontScale(scale)
 
     disp = oedepict.OE2DMolDisplay(mol, opts)
 
