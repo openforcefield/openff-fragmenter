@@ -1269,7 +1269,9 @@ class WBOFragmenter(Fragmenter):
         Keep ortho substituents
         Parameters
         ----------
-        torions_quartet : set of set of ints and set of bond tuples
+        atoms : set ints atom indices
+        bonds: set of bond tuples
+        central_bond: bond tuple
 
         Returns
         -------
@@ -1866,8 +1868,6 @@ class PfizerFragmenter(WBOFragmenter):
 
             cell = report.NewCell()
             bond = self.get_bond(bond_tuple)
-            # Get bond in fragment
-            fragment = self.fragments[bond_tuple]
             disp = oedepict.OE2DMolDisplay(self.molecule, opts)
 
             fragatoms = oechem.OEIsAtomMember(self._fragments[bond_tuple].GetAtoms())
