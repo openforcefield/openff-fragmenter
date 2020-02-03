@@ -191,7 +191,6 @@ def find_torsion_around_bond(molecule, bond):
     from openeye import oechem
     #if not has_atom_map(molecule):
     #    raise ValueError("Molecule must have atom maps")
-    torsions = [[tor.a, tor.b, tor.c, tor.d ] for tor in oechem.OEGetTorsions(molecule)]
 
     terminal_smarts = '[*]~[*]-[X2H1,X3H2,X4H3]-[#1]'
     terminal_torsions = _find_torsions_from_smarts(molecule, terminal_smarts)
