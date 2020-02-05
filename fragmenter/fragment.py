@@ -1706,7 +1706,6 @@ class PfizerFragmenter(WBOFragmenter):
         """
         rotatable_bonds = self._find_rotatable_bonds()
         for bond in rotatable_bonds:
-            print(bond)
             atoms, bonds = self._get_torsion_quartet(bond)
             atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
             self._cap_open_valence(atoms, bonds, bond)
@@ -1743,7 +1742,6 @@ class PfizerFragmenter(WBOFragmenter):
                     atom_map_idx.add(m_nbr)
                     bond_tuples.add((m, m_nbr))
 
-        print(atom_map_idx)
         return atom_map_idx, bond_tuples
 
     def _get_ring_and_fgroups(self, atoms, bonds):
@@ -1788,7 +1786,6 @@ class PfizerFragmenter(WBOFragmenter):
                 else:
                     print('Only one atom should be in a ring when checking for ortho substituents')
                 ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond)
-                print('ortho: {}'.format(ortho))
                 if ortho:
                     new_atoms.update(ortho[0])
                     new_bonds.update(ortho[1])
