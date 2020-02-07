@@ -1307,7 +1307,6 @@ class WBOFragmenter(Fragmenter):
                 else:
                     print('Only one atom should be in a ring when checking for ortho substituents')
                 ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond)
-                print('ortho: {}'.format(ortho))
                 if ortho:
                     new_atoms.update(ortho[0])
                     new_bonds.update(ortho[1])
