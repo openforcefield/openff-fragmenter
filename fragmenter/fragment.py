@@ -1182,7 +1182,7 @@ class WBOFragmenter(Fragmenter):
         if 'heuristic' not in self._options:
             self._options['heuristic'] = heuristic
         atoms, bonds = self._get_torsion_quartet(bond_tuple)
-        atom_map_idx, bond_tuples = self._get_ring_and_fgroups(atoms, bonds, central_bond=bond_tuple)
+        atom_map_idx, bond_tuples = self._get_ring_and_fgroups(atoms, bonds)
 
         # bond = self.get_bond(bond_tuple=bond_tuple)
         #
@@ -1264,14 +1264,12 @@ class WBOFragmenter(Fragmenter):
 
         return atom_map_idx, bond_tuples
 
-    def _get_ring_and_fgroups(self, atoms, bonds, central_bond):
+    def _get_ring_and_fgroups(self, atoms, bonds):
         """
         Keep ortho substituents
         Parameters
         ----------
-        atoms : set ints atom indices
-        bonds: set of bond tuples
-        central_bond: bond tuple
+        torions_quartet : set of set of ints and set of bond tuples
 
         Returns
         -------
@@ -1295,24 +1293,24 @@ class WBOFragmenter(Fragmenter):
                 new_atoms.update(self.ring_systems[ring_idx][0])
                 new_bonds.update(self.ring_systems[ring_idx][1])
 
-        # Now check for ortho substituents to any bond bonded to central bond
+        # Now check for ortho substituents to any bond in the fragment
         for bond in bonds:
-            # Only add ortho if the bond is bonded to the central bond to avoid having meta substituents come along without first evaluating if they are needed
-            if bond[0] in central_bond or bond[1] in central_bond:
-                oe_bond = self.get_bond(bond)
-                a1 = oe_bond.GetBgn()
-                a2 = oe_bond.GetEnd()
-                if not oe_bond.IsInRing() and (a1.IsInRing() or a2.IsInRing()) and (not a1.IsHydrogen() and not a2.IsHydrogen()):
-                    if a1.IsInRing():
-                        ring_idx = a1.GetData('ringsystem')
-                    elif a2.IsInRing():
-                        ring_idx = a2.GetData('ringsystem')
-                    else:
-                        print('Only one atom should be in a ring when checking for ortho substituents')
-                    ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond)
-                    if ortho:
-                        new_atoms.update(ortho[0])
-                        new_bonds.update(ortho[1])
+            oe_bond = self.get_bond(bond)
+            a1 = oe_bond.GetBgn()
+            a2 = oe_bond.GetEnd()
+            if not oe_bond.IsInRing() and (a1.IsInRing() or a2.IsInRing()) and (
+                    not a1.IsHydrogen() and not a2.IsHydrogen()):
+                if a1.IsInRing():
+                    ring_idx = a1.GetData('ringsystem')
+                elif a2.IsInRing():
+                    ring_idx = a2.GetData('ringsystem')
+                else:
+                    print('Only one atom should be in a ring when checking for ortho substituents')
+                ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond)
+                print('ortho: {}'.format(ortho))
+                if ortho:
+                    new_atoms.update(ortho[0])
+                    new_bonds.update(ortho[1])
         atoms.update(new_atoms)
         bonds.update(new_bonds)
 
