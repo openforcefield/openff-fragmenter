@@ -1555,6 +1555,8 @@ class WBOFragmenter(Fragmenter):
 
             # Map torsion to canonical ordered molecule
             # First canonical order the molecule
+            # Note: potential bug - add explicit hydrogen before order atoms
+            oechem.OEAddExplicitHydrogens(mol_copy)
             cmiles._cmiles_oe.canonical_order_atoms(mol_copy)
             dih = []
             for m_idx in torsion_map_idx:
