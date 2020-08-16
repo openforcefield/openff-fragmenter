@@ -1,4 +1,5 @@
-nitrogen: '[NX3][N]='
+hydrazine: '[NX3][NX3]'
+hydrazone: '[NX3][NX2]'
 nitric_oxide: '[N]-[O]'
 amide: '[#7][#6](=[#8])'
 amide_n: '[#7][#6](-[O-])'
