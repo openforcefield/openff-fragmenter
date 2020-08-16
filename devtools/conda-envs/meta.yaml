@@ -9,7 +9,7 @@ dependencies:
     # Base Depends
   - python
   - setuptools
-  - openeye-toolkits
+  - openeye-toolkits=2019.10.2
   - rdkit
   - pyyaml
   - postgresql
