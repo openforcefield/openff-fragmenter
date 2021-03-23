@@ -16,7 +16,7 @@ requirements:
   run:
     - python
     - setuptools
-    - openeye-toolkits=2019.10.2
+    - openeye-toolkits>2020
     - rdkit
     - pyyaml
 
