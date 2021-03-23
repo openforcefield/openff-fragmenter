@@ -1,15 +1,14 @@
 name: test
 channels:
-  - openeye
-  - rdkit
   - conda-forge
+  - openeye
 
 dependencies:
 
     # Base Depends
   - python
   - setuptools
-  - openeye-toolkits=2019.10.2
+  - openeye-toolkits>=2020
   - rdkit
   - pyyaml
   - postgresql
