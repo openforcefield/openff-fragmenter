@@ -77,14 +77,30 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     # fix issue that causes carboxylic acid to fail charging
     carboxylic_acid_hack(charged_copy)
 
-    if not legacy:
-        # 2017.2.1 OEToolkits new charging function
-        status = oequacpac.OEAssignCharges(charged_copy, oequacpac.OEAM1BCCCharges())
-        if not status: raise(RuntimeError("OEAssignCharges failed."))
-    else:
-        # AM1BCCSym recommended by Chris Bayly to KAB+JDC, Oct. 20 2014.
-        status = oequacpac.OEAssignPartialCharges(charged_copy, oequacpac.OECharges_AM1BCCSym)
-        if not status: raise(RuntimeError("OEAssignPartialCharges returned error code %d" % status))
+    # Set the options to use when computing the WBOs. This is based on example at
+    # https://docs.eyesopen.com/toolkits/python/quacpactk/examples_summary_wibergbondorders.html
+    am1 = oequacpac.OEAM1()
+
+    am1results = oequacpac.OEAM1Results()
+    am1options = am1.GetOptions()
+    am1options.SetSemiMethod(oequacpac.OEMethodType_AM1)
+    status = am1.CalcAM1(am1results, charged_copy)
+    if not status: raise(RuntimeError("CalcAM1 failed."))
+
+
+    #if not legacy:
+    #    # 2017.2.1 OEToolkits new charging function
+    #    status = oequacpac.OEAssignCharges(charged_copy, oequacpac.OEAM1BCCCharges())
+    #    if not status: raise(RuntimeError("OEAssignCharges failed."))
+    #else:
+    #    # AM1BCCSym recommended by Chris Bayly to KAB+JDC, Oct. 20 2014.
+    #    status = oequacpac.OEAssignPartialCharges(charged_copy, oequacpac.OECharges_AM1BCCSym)
+    #    if not status: raise(RuntimeError("OEAssignPartialCharges returned error code %d" % status))
+
+    for bond in charged_copy.GetBonds():
+        bond.SetData('WibergBondOrder',
+            am1results.GetBondOrder(bond.GetBgnIdx(), bond.GetEndIdx())
+        )
 
     #Determine conformations to return
     if keep_confs is None:
@@ -552,11 +568,12 @@ def normalize_molecule(molecule, name='', add_atom_map=False):
     """
     molcopy = oechem.OEMol(molecule)
 
+    # Add hydrogens.
+    oechem.OEAddExplicitHydrogens(molcopy)
+
     # Assign aromaticity.
     oechem.OEAssignAromaticFlags(molcopy, oechem.OEAroModelOpenEye)
 
-    # Add hydrogens.
-    oechem.OEAddExplicitHydrogens(molcopy)
 
     # Set title to IUPAC name.
     title = name
