@@ -2,6 +2,7 @@ import pytest
 
 try:
     import openeye.oechem
+
     has_openeye = True
 except ImportError:
     has_openeye = False

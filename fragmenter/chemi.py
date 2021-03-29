@@ -1,5 +1,6 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
 import cmiles
+
 from .utils import logger
 
 
@@ -17,7 +18,7 @@ def carboxylic_acid_hack(mol):
     from openeye import oechem
 
     # Check for Carboxylic Acid patterns in the molecule
-    smarts = '(O=)[C][O,S][H]'
+    smarts = "(O=)[C][O,S][H]"
     ss = oechem.OESubSearch(smarts)
 
     oechem.OEPrepareSearch(mol, ss)
@@ -37,13 +38,10 @@ def carboxylic_acid_hack(mol):
 
         for i in range(0, len(a_match_list), 4):
 
-            chunk = a_match_list[i:i + 4]
+            chunk = a_match_list[i : i + 4]
 
             for conf in mol.GetConfs():
-                conf.SetTorsion(chunk[0],
-                                chunk[1],
-                                chunk[2],
-                                chunk[3], 0.0)
+                conf.SetTorsion(chunk[0], chunk[1], chunk[2], chunk[3], 0.0)
 
 
 def smiles_to_oemol(smiles, normalize=True, **kwargs):
@@ -69,7 +67,7 @@ def smiles_to_oemol(smiles, normalize=True, **kwargs):
     return molecule
 
 
-def normalize_molecule(molecule, name='', add_atom_map=False):
+def normalize_molecule(molecule, name="", add_atom_map=False):
     """Normalize a copy of the molecule by checking aromaticity, adding explicit hydrogens and renaming by IUPAC name
     or given title
 
@@ -103,7 +101,7 @@ def normalize_molecule(molecule, name='', add_atom_map=False):
     molcopy.SetTitle(title)
 
     # Check for any missing atom names, if found reassign all of them.
-    if any([atom.GetName() == '' for atom in molcopy.GetAtoms()]):
+    if any([atom.GetName() == "" for atom in molcopy.GetAtoms()]):
         oechem.OETriposAtomNames(molcopy)
 
     # Add canonical ordered atom maps
@@ -112,8 +110,15 @@ def normalize_molecule(molecule, name='', add_atom_map=False):
     return molcopy
 
 
-def get_charges(molecule, max_confs=800, strict_stereo=True,
-                normalize=True, keep_confs=None, legacy=True, **kwargs):
+def get_charges(
+    molecule,
+    max_confs=800,
+    strict_stereo=True,
+    normalize=True,
+    keep_confs=None,
+    legacy=True,
+    **kwargs
+):
     """Generate charges for an OpenEye OEMol molecule.
     Parameters
     ----------
@@ -154,15 +159,19 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     if molecule.GetConfs() == 0:
         keep_confs = 1
 
-    if not oechem.OEChemIsLicensed(): raise(ImportError("Need License for OEChem!"))
-    if not oequacpac.OEQuacPacIsLicensed(): raise(ImportError("Need License for oequacpac!"))
+    if not oechem.OEChemIsLicensed():
+        raise (ImportError("Need License for OEChem!"))
+    if not oequacpac.OEQuacPacIsLicensed():
+        raise (ImportError("Need License for oequacpac!"))
 
     if normalize:
         molecule = normalize_molecule(molecule, molecule.GetTitle())
     else:
         molecule = oechem.OEMol(molecule)
 
-    charged_copy = generate_conformers(molecule, max_confs=max_confs, strict_stereo=strict_stereo, **kwargs)  # Generate up to max_confs conformers
+    charged_copy = generate_conformers(
+        molecule, max_confs=max_confs, strict_stereo=strict_stereo, **kwargs
+    )  # Generate up to max_confs conformers
 
     # fix issue that causes carboxylic acid to fail charging
     carboxylic_acid_hack(charged_copy)
@@ -170,41 +179,59 @@ def get_charges(molecule, max_confs=800, strict_stereo=True,
     if not legacy:
         # 2017.2.1 OEToolkits new charging function
         status = oequacpac.OEAssignCharges(charged_copy, oequacpac.OEAM1BCCCharges())
-        if not status: raise(RuntimeError("OEAssignCharges failed."))
+        if not status:
+            raise (RuntimeError("OEAssignCharges failed."))
     else:
         # AM1BCCSym recommended by Chris Bayly to KAB+JDC, Oct. 20 2014.
-        status = oequacpac.OEAssignPartialCharges(charged_copy, oequacpac.OECharges_AM1BCCSym)
-        if not status: raise(RuntimeError("OEAssignPartialCharges returned error code %d" % status))
+        status = oequacpac.OEAssignPartialCharges(
+            charged_copy, oequacpac.OECharges_AM1BCCSym
+        )
+        if not status:
+            raise (
+                RuntimeError("OEAssignPartialCharges returned error code %d" % status)
+            )
 
-    #Determine conformations to return
+    # Determine conformations to return
     if keep_confs is None:
-        #If returning original conformation
+        # If returning original conformation
         original = molecule.GetCoords()
-        #Delete conformers over 1
-        for k, conf in enumerate( charged_copy.GetConfs() ):
+        # Delete conformers over 1
+        for k, conf in enumerate(charged_copy.GetConfs()):
             if k > 0:
                 charged_copy.DeleteConf(conf)
-        #Copy coordinates to single conformer
-        charged_copy.SetCoords( original )
+        # Copy coordinates to single conformer
+        charged_copy.SetCoords(original)
     elif keep_confs > 0:
-        logger().debug("keep_confs was set to %s. Molecule positions will be reset." % keep_confs)
+        logger().debug(
+            "keep_confs was set to %s. Molecule positions will be reset." % keep_confs
+        )
 
-        #Otherwise if a number is provided, return this many confs if available
-        for k, conf in enumerate( charged_copy.GetConfs() ):
+        # Otherwise if a number is provided, return this many confs if available
+        for k, conf in enumerate(charged_copy.GetConfs()):
             if k > keep_confs - 1:
                 charged_copy.DeleteConf(conf)
     elif keep_confs == -1:
-        #If we want all conformations, continue
+        # If we want all conformations, continue
         pass
     else:
-        #Not a valid option to keep_confs
-        raise(ValueError('Not a valid option to keep_confs in get_charges.'))
+        # Not a valid option to keep_confs
+        raise (ValueError("Not a valid option to keep_confs in get_charges."))
 
     return charged_copy
 
 
-def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True, ewindow=15.0, rms_threshold=1.0, strict_types=True,
-                        can_order=True, copy=True, timeout=100):
+def generate_conformers(
+    molecule,
+    max_confs=800,
+    dense=False,
+    strict_stereo=True,
+    ewindow=15.0,
+    rms_threshold=1.0,
+    strict_types=True,
+    can_order=True,
+    copy=True,
+    timeout=100,
+):
     """Generate conformations for the supplied molecule
     Parameters
     ----------
@@ -249,9 +276,13 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
     omega.SetIncludeInput(True)
     omega.SetCanonOrder(can_order)
 
-    omega.SetSampleHydrogens(True)  # Word to the wise: skipping this step can lead to significantly different charges!
+    omega.SetSampleHydrogens(
+        True
+    )  # Word to the wise: skipping this step can lead to significantly different charges!
     omega.SetEnergyWindow(ewindow)
-    omega.SetRMSThreshold(rms_threshold)  # Word to the wise: skipping this step can lead to significantly different charges!
+    omega.SetRMSThreshold(
+        rms_threshold
+    )  # Word to the wise: skipping this step can lead to significantly different charges!
 
     omega.SetStrictStereo(strict_stereo)
     omega.SetStrictAtomTypes(strict_types)
@@ -263,7 +294,7 @@ def generate_conformers(molecule, max_confs=800, dense=False, strict_stereo=True
 
     status = omega(molcopy)  # generate conformation
     if not status:
-        raise(RuntimeError("omega returned error code %d" % status))
+        raise (RuntimeError("omega returned error code %d" % status))
 
     if atom_map:
         cmiles.utils.restore_atom_map(molcopy)
