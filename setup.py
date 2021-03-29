@@ -3,35 +3,37 @@ fragmenter
 
 Fragment molecules for quantum mechanics torsion scans.
 """
-from setuptools import setup
+import sys
+
+from setuptools import setup, find_packages
 import versioneer
 
-DOCLINES = __doc__.split("\n")
+short_description = __doc__.split("\n")
+
+# from https://github.com/pytest-dev/pytest-runner#conditional-requirement
+needs_pytest = {'pytest', 'test', 'ptr'}.intersection(sys.argv)
+pytest_runner = ['pytest-runner'] if needs_pytest else []
+
+try:
+    with open("README.md", "r") as handle:
+        long_description = handle.read()
+except IOError:
+    long_description = "\n".join(short_description[2:])
+
 
 setup(
     name='fragmenter',
     author='Chaya D. Stern',
-    description=DOCLINES[0],
-    long_description="\n".join(DOCLINES[2:]),
+    description=short_description[0],
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     license='MIT',
-    packages=['fragmenter', "fragmenter.tests"],
-    # Optional include package data to ship with your package
-    package_data={'fragmenter': [] + ["data/*.yml"]
-                  },
+    packages=find_packages(),
+    include_package_data=True,
+    setup_requires=[] + pytest_runner,
     extras_require={
         'docs': ['numpydoc']
     }
-    # Additional entries you may want simply uncomment the lines you want and fill in the data
-    # author_email='me@place.org',      # Author email
-    # url='http://www.my_package.com',  # Website
-    # install_requires=[],              # Required packages, pulls from pip if needed; do not use for Conda deployment
-    # platforms=['Linux',
-    #            'Mac OS-X',
-    #            'Unix',
-    #            'Windows'],            # Valid platforms your code works on, adjust to your flavor
-    # zip_safe=False,                   # Compress final package or not
-    # python_requires=">=3.5",          # Python version restrictions
-
 )
