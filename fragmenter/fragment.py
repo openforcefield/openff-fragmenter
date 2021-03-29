@@ -49,21 +49,6 @@ class Fragmenter(abc.ABC):
         # For provenance
         self._options = {}
 
-    @property
-    def n_rotors(self):
-        """
-        Returns number of rotatable bonds in molecule
-        """
-        return sum([bond.IsRotor() for bond in self.molecule.GetBonds()])
-
-    @staticmethod
-    def _count_rotors_in_fragment(fragment):
-        return sum([bond.IsRotor() for bond in fragment.GetBonds()])
-
-    @staticmethod
-    def _count_heavy_atoms_in_fragment(fragment):
-        return sum([not atom.IsHydrogen() for atom in fragment.GetAtoms()])
-
     def _find_stereo(self):
         """
         Find chiral atoms and bonds, store the chirality.
