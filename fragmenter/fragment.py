@@ -131,7 +131,7 @@ class Fragmenter(abc.ABC):
             if b.IsChiral():
                 b_tuple = (b.GetBgn().GetMapIdx(), b.GetEnd().GetMapIdx())
                 reversed_b_tuple = tuple(reversed(b_tuple))
-                if not b_tuple in self.stereo and reversed_b_tuple not in self.stereo:
+                if b_tuple not in self.stereo and reversed_b_tuple not in self.stereo:
                     logger().warning(
                         "A new chiral bond formed at bond {}".format(b_tuple)
                     )
@@ -245,7 +245,7 @@ class Fragmenter(abc.ABC):
             for b in fragment.GetBonds():
                 if b.IsChiral():
                     b_tuple = (b.GetBgn().GetMapIdx(), b.GetEnd().GetMapIdx())
-                    if not b_tuple in self.stereo:
+                    if b_tuple not in self.stereo:
                         reverse_tuple = tuple(reversed(b_tuple))
                         if reverse_tuple not in self.stereo:
                             logger().warning(
@@ -811,7 +811,7 @@ class WBOFragmenter(Fragmenter):
                     a1, bond_tuple[0], a2, bond_tuple[1]
                 )
             )
-        if not "WibergBondOrder" in bond.GetData():
+        if "WibergBondOrder" not in bond.GetData():
             logger().warn(
                 "Cannot calculate WBO for fragment {}. Continue growing fragment".format(
                     oechem.OEMolToSmiles(charged_fragment)
@@ -999,7 +999,7 @@ class WBOFragmenter(Fragmenter):
             a = self.molecule.GetAtom(oechem.OEHasMapIdx(m))
             for nbr in a.GetAtoms():
                 nbr_m_idx = nbr.GetMapIdx()
-                if not nbr.IsHydrogen() and not nbr_m_idx in atoms:
+                if not nbr.IsHydrogen() and nbr_m_idx not in atoms:
                     # This is a cut. If atom is N, O or S, it needs to be capped
                     if a.GetAtomicNum() in (7, 8, 16) or "fgroup" in a.GetData():
                         # Add all carbons bonded to this atom
@@ -1042,7 +1042,7 @@ class WBOFragmenter(Fragmenter):
             a = self.molecule.GetAtom(oechem.OEHasMapIdx(m_idx))
             for nbr in a.GetAtoms():
                 nbr_m_idx = nbr.GetMapIdx()
-                if not nbr.IsHydrogen() and not nbr_m_idx in atoms:
+                if not nbr.IsHydrogen() and nbr_m_idx not in atoms:
                     b = self.molecule.GetBond(a, nbr)
                     atoms_to_add.append((nbr_m_idx, (m_idx, nbr_m_idx)))
                     if heuristic == "wbo":
@@ -1078,8 +1078,10 @@ class WBOFragmenter(Fragmenter):
                 sort_by = sort_by_2
             elif min_1 == min_2:
                 indices = []
-                for l in [sort_by_1, sort_by_2]:
-                    indices.extend([i for i, x in enumerate(l) if x == min_1])
+                for length_index in [sort_by_1, sort_by_2]:
+                    indices.extend(
+                        [i for i, x in enumerate(length_index) if x == min_1]
+                    )
                 atoms_to_add = [atoms_to_add[i] for i in indices]
                 for a, b in atoms_to_add:
                     bond = self.get_bond(b)
@@ -1351,7 +1353,7 @@ class PfizerFragmenter(WBOFragmenter):
             a = self.molecule.GetAtom(oechem.OEHasMapIdx(m))
             for nbr in a.GetAtoms():
                 nbr_m_idx = nbr.GetMapIdx()
-                if not nbr.IsHydrogen() and not nbr_m_idx in atoms:
+                if not nbr.IsHydrogen() and nbr_m_idx not in atoms:
                     # This is a cut. If atom is N, O or S, it needs to be capped
                     if a.GetAtomicNum() in (7, 8, 16) or "fgroup" in a.GetData():
                         # Add all carbons bonded to this atom

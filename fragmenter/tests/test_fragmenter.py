@@ -404,8 +404,8 @@ def test_td_inputs():
             "OC1(CN(C1)C(=O)C1=C(NC2=C(F)C=C(I)C=C2)C(F)=C(F)C=C1)[C@H]1CCCCN1",
             {20: "R"},
         ),
-        ("C\C=C\C", {(1, 2): "E"}),
-        ("C/C=C\C", {(1, 2): "Z"}),
+        (r"C\C=C\C", {(1, 2): "E"}),
+        (r"C/C=C\C", {(1, 2): "Z"}),
     ],
 )
 def test_find_stereo(smiles, output):
@@ -420,8 +420,8 @@ def test_find_stereo(smiles, output):
     [
         ("C[C@@](F)(Cl)I", "C[C@@](F)(Cl)I", True),
         ("C[C@@](F)(Cl)I", "C[C@](F)(Cl)I", False),
-        ("C\C=C\C", "C\C=C\C", True),
-        ("C/C=C\C", "C\C=C\C", False),
+        (r"C\C=C\C", r"C\C=C\C", True),
+        (r"C/C=C\C", r"C\C=C\C", False),
     ],
 )
 def test_check_stereo(smiles, frag, output):
@@ -437,8 +437,8 @@ def test_check_stereo(smiles, frag, output):
     [
         ("C[C@@](F)(Cl)I", "C[C@@](F)(Cl)I"),
         ("C[C@@](F)(Cl)I", "C[C@](F)(Cl)I"),
-        ("C\C=C\C", "C\C=C\C"),
-        ("C/C=C\C", "C\C=C\C"),
+        (r"C\C=C\C", r"C\C=C\C"),
+        (r"C/C=C\C", r"C\C=C\C"),
     ],
 )
 def tet_fix_stereo(smiles, frag):
@@ -447,7 +447,7 @@ def tet_fix_stereo(smiles, frag):
     f._find_stereo()
     frag = chemi.smiles_to_oemol(frag, add_atom_map=True)
     fixed = f._fix_stereo(frag)
-    assert f._check_stereo(fixed) == True
+    assert f._check_stereo(fixed) is True
 
 
 def test_new_stereo_center():

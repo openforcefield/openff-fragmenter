@@ -1,7 +1,9 @@
+import importlib
+
 import pytest
 
 try:
-    import openeye.oechem
+    importlib.import_module("openeye.oechem")
 
     has_openeye = True
 except ImportError:
