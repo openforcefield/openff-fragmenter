@@ -1,24 +1,24 @@
-from itertools import combinations
-import cmiles.utils
-from cmiles.utils import mol_to_smiles, has_stereo_defined, has_atom_map, is_missing_atom_map, remove_atom_map, restore_atom_map
-
-import yaml
+import abc
 import os
+import time
+import warnings
+from itertools import combinations
+
+import cmiles
+import yaml
+from cmiles.utils import has_stereo_defined, is_missing_atom_map, restore_atom_map, \
+    mol_to_smiles, has_explicit_hydrogen, add_atom_map, mol_to_map_ordered_qcschema, \
+    to_canonical_label, has_atom_map, remove_atom_map
 from pkg_resources import resource_filename
 
-import warnings
-import time
-
-from .utils import logger
-from .chemi import get_charges, generate_conformers, LabelWibergBondOrder, LabelFragBondOrder, ColorAtomByFragmentIndex
 from fragmenter import torsions
-from .states import  _enumerate_stereoisomers
+from .chemi import get_charges, generate_conformers
+from .states import _enumerate_stereoisomers
+from .utils import logger
 
 
-class Fragmenter(object):
-    """
-    Base fragmenter class.
-    This class is inherited by CombinatorialFragmenter and WBOFragmenter
+class Fragmenter(abc.ABC):
+    """Base fragmenter class.
     """
 
     def __init__(self, molecule):
@@ -28,10 +28,10 @@ class Fragmenter(object):
         self.functional_groups = {}
 
          # Add explicit hydrogen
-        if not cmiles.utils.has_explicit_hydrogen(self.molecule):
+        if not has_explicit_hydrogen(self.molecule):
             oechem.OEAddExplicitHydrogens(self.molecule)
         # Add canonical atom map
-        cmiles.utils.add_atom_map(self.molecule)
+        add_atom_map(self.molecule)
 
         if is_missing_atom_map(self.molecule):
             warnings.warn("Some atoms are missing atom maps. This might cause a problem at several points during "
@@ -357,16 +357,10 @@ class Fragmenter(object):
         # In some cases (symmetric molecules) this changes the atom map so skip it
         #restore_atom_map(fragment)
         # atom map should be restored for combinatorial fragmentation
-        if isinstance(self, CombinatorialFragmenter):
-            restore_atom_map(fragment)
         # Perceive stereo and check that defined stereo did not change
         oechem.OEPerceiveChiral(fragment)
         oechem.OE3DToAtomStereo(fragment)
         oechem.OE3DToBondStereo(fragment)
-        if isinstance(self, CombinatorialFragmenter):
-            # I only saw chirality flip when calculating WBOs - skip the fix and check for combinatorial
-            # fragmentation because it can change the relative stereo
-            return fragment
         if has_stereo_defined(fragment):
             if not self._check_stereo(fragment):
                 fragment = self._fix_stereo(fragment)
@@ -412,7 +406,7 @@ class Fragmenter(object):
                       'routine': {'fragment_molecule': {
                           'version': fragmenter_version,
                           'options': self._options,
-                          'parent_molecule': cmiles.utils.mol_to_smiles(self.molecule, mapped=False,
+                          'parent_molecule': mol_to_smiles(self.molecule, mapped=False,
                                                                         explicit_hydrogen=False),
                           'parent_name': self.molecule.GetTitle(),
                           'mapped_parent_smiles': oechem.OEMolToSmiles(self.molecule)
@@ -711,109 +705,6 @@ class CombinatorialFragmenter(Fragmenter):
 
         return combined
 
-    def to_json(self):
-        """
-        Write out fragments to JSON with provenance
-
-        Returns
-        -------
-        json_dict: dict
-            JSON dictionary of the fragments to their CMILES identifiers. Keys are canonical SMILES
-        """
-        json_dict = {}
-        for frag_smiles in self.fragments:
-            json_dict[frag_smiles] = {}
-            try:
-                identifiers = cmiles.get_molecule_ids(frag_smiles, strict=False)
-                json_dict[frag_smiles]['cmiles_identifiers'] = identifiers
-            except ValueError:
-                json_dict[frag_smiles]['cmiles_identifiers'] = {}
-            json_dict[frag_smiles]['provenance'] = self.get_provenance()
-            json_dict[frag_smiles]['provenance']['routine']['fragment_molecule']['map_to_parent'] = []
-            for mol in self.fragments[frag_smiles]:
-                json_dict[frag_smiles]['provenance']['routine']['fragment_molecule']['map_to_parent'].append(oechem.OEMolToSmiles(mol))
-
-        return json_dict
-
-
-    def depict_fragments(self, fname, line_width=0.75):
-        """
-        Generate PDF of all combinatorial fragments with individual fragments color coded
-
-        Parameters
-        ----------
-        fname : str
-            filename for output PDF
-        line_width : float
-            width of drawn molecule lines
-        """
-        from openeye import oechem, oedepict, oegrapheme
-
-        itf = oechem.OEInterface()
-        oedepict.OEConfigure2DMolDisplayOptions(itf)
-        oedepict.OEConfigureReportOptions(itf)
-
-        oedepict.OEPrepareDepiction(self.molecule)
-
-
-        ropts = oedepict.OEReportOptions()
-        oedepict.OESetupReportOptions(ropts, itf)
-        ropts.SetFooterHeight(25.0)
-        ropts.SetHeaderHeight(ropts.GetPageHeight() / 4.0)
-        report = oedepict.OEReport(ropts)
-
-        opts = oedepict.OE2DMolDisplayOptions()
-        oedepict.OESetup2DMolDisplayOptions(opts, itf)
-        cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
-        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
-        opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
-        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
-        opts.SetAtomLabelFontScale(1.2)
-
-        # add index to keep track of bonds
-        idx_tag = 'fragment_idx'
-        tag = oechem.OEGetTag(idx_tag)
-        for f_idx, frag in enumerate(self._fragments):
-            for atom in frag.GetAtoms():
-                atom.SetData(tag, f_idx)
-
-        # setup depiction style
-        n_frags = len(self._fragments)
-        colors = [c for c in oechem.OEGetLightColors()]
-        if len(colors) < n_frags:
-            n = n_frags - len(colors)
-            colors.extend([c for c in oechem.OEGetColors(oechem.OEBlueTint, oechem.OERed, n)])
-
-        atom_glyph = ColorAtomByFragmentIndex(colors, tag)
-        fade_hightlight = oedepict.OEHighlightByColor(oechem.OEGrey, line_width)
-
-        for frag in self._fragment_combinations:
-            cell = report.NewCell()
-            display = oedepict.OE2DMolDisplay(self.molecule, opts)
-
-            frag_atoms = oechem.OEIsAtomMember(frag.GetAtoms())
-            frag_bonds = oechem.OEIsBondMember(frag.GetBonds())
-
-            not_fragment_atoms = oechem.OENotAtom(frag_atoms)
-            not_fragment_bonds = oechem.OENotBond(frag_bonds)
-
-            oedepict.OEAddHighlighting(display, fade_hightlight, not_fragment_atoms, not_fragment_bonds)
-            oegrapheme.OEAddGlyph(display, atom_glyph, frag_atoms)
-
-            oedepict.OERenderMolecule(cell, display)
-        cellwidth, cellheight = report.GetHeaderWidth(), report.GetHeaderHeight()
-        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
-        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
-        disp = oedepict.OE2DMolDisplay(self.molecule, opts)
-        oegrapheme.OEAddGlyph(disp, atom_glyph, oechem.OEIsTrueAtom())
-
-        headerpen = oedepict.OEPen(oechem.OEWhite, oechem.OELightGrey, oedepict.OEFill_Off, 2.0)
-        for header in report.GetHeaders():
-            oedepict.OERenderMolecule(header, disp)
-            oedepict.OEDrawBorder(header, headerpen)
-
-        return oedepict.OEWriteReport(fname, report)
-
 
 class WBOFragmenter(Fragmenter):
     """
@@ -847,7 +738,7 @@ class WBOFragmenter(Fragmenter):
         self._fragments = {} # Used internally for depiction
 
 
-    def fragment(self,  threshold=0.03, keep_non_rotor_ring_substituents=False, **kwargs):
+    def fragment(self, threshold=0.03, keep_non_rotor_ring_substituents=False, **kwargs):
         """
         Fragment molecules using the Wiberg Bond Order as a surrogate
 
@@ -1178,45 +1069,11 @@ class WBOFragmenter(Fragmenter):
 
         """
         # Capture options
-
         if 'heuristic' not in self._options:
             self._options['heuristic'] = heuristic
         atoms, bonds = self._get_torsion_quartet(bond_tuple)
         atom_map_idx, bond_tuples = self._get_ring_and_fgroups(atoms, bonds)
 
-        # bond = self.get_bond(bond_tuple=bond_tuple)
-        #
-        # atom_map_idx = set()
-        # bond_tuples = set()
-        #
-        # #bond_idx = set()
-        # a1, a2 = bond.GetBgn(), bond.GetEnd()
-        # m1, m2 = a1.GetMapIdx(), a2.GetMapIdx()
-        # atom_map_idx.update((m1, m2))
-        # #bond = self.molecule.GetBond(a1, a2)
-        # #bond_idx.add(bond.GetIdx())
-        # bond_tuples.add((m1, m2))
-        # for atom in (a1, a2):
-        #     for a in atom.GetAtoms():
-        #         m = a.GetMapIdx()
-        #         atom_map_idx.add(m)
-        #         bond_tuples.add((atom.GetMapIdx(), m))
-        #         if 'ringsystem' in a.GetData():
-        #             # Grab the ring
-        #             ring_idx = a.GetData('ringsystem')
-        #             atom_map_idx.update(self.ring_systems[ring_idx][0])
-        #             bond_tuples.update(self.ring_systems[ring_idx][-1])
-        #             #bond_idx.update(self.ring_systems[ring_idx][-1])
-        #             # Check for ortho substituents here
-        #             ortho = self._find_ortho_substituent(ring_idx=ring_idx, rot_bond=bond_tuple)
-        #             if ortho:
-        #                 atom_map_idx.update(ortho[0])
-        #                 bond_tuples.update(ortho[1])
-        #         if 'fgroup' in a.GetData():
-        #             # Grab rest of fgroup
-        #             fgroup = a.GetData('fgroup')
-        #             atom_map_idx.update(self.functional_groups[fgroup][0])
-        #             bond_tuples.update(self.functional_groups[fgroup][-1])
         # Cap open valence
         if cap:
             atom_map_idx, bond_tuples = self._cap_open_valence(atom_map_idx, bond_tuples, bond_tuple)
@@ -1443,35 +1300,6 @@ class WBOFragmenter(Fragmenter):
                 return self._add_next_substituent(atoms=atoms, bonds=bonds, target_bond=target_bond,
                                                   heuristic=heuristic, **kwargs)
 
-    def to_json(self):
-        """
-        Write out fragments to JSON with provenance
-
-        Returns
-        -------
-        json_dict: dict
-            maps fragment SMILES to CMILES identifiers
-
-        """
-        from openeye import oechem
-
-        json_dict = {}
-        for bond in self.fragments:
-            try:
-                can_iso_smiles = cmiles.utils.mol_to_smiles(self.fragments[bond], mapped=False, explicit_hydrogen=False)
-            except ValueError:
-                cmiles.utils.remove_atom_map(self.fragments[bond])
-                can_iso_smiles = oechem.OEMolToSmiles(self.fragments[bond])
-                cmiles.utils.restore_atom_map(self.fragments[bond])
-            try:
-                identifiers = cmiles.get_molecule_ids(can_iso_smiles)
-                can_iso_smiles = identifiers['canonical_isomeric_smiles']
-                json_dict[can_iso_smiles] = {'cmiles_identifiers': identifiers}
-            except ValueError:
-                json_dict[can_iso_smiles] = {'cmiles_identifiers': {}}
-            json_dict[can_iso_smiles]['provenance'] = self.get_provenance()
-        return json_dict
-
     def _to_qcschema_mol(self, molecule, **kwargs):
         """
 
@@ -1490,42 +1318,16 @@ class WBOFragmenter(Fragmenter):
         self._options.update(kwargs)
         mol_copy = oechem.OEMol(molecule)
         oechem.OEAddExplicitHydrogens(mol_copy)
-        explicit_h_smiles = cmiles.utils.mol_to_smiles(mol_copy, mapped=False)
+        explicit_h_smiles = mol_to_smiles(mol_copy, mapped=False)
         cmiles_identifiers = cmiles.get_molecule_ids(explicit_h_smiles)
         can_mapped_smiles = cmiles_identifiers['canonical_isomeric_explicit_hydrogen_mapped_smiles']
 
         conformers = generate_conformers(mol_copy, **kwargs)
-        qcschema_mols = [cmiles.utils.mol_to_map_ordered_qcschema(conf, can_mapped_smiles) for conf in conformers.GetConfs()]
+        qcschema_mols = [mol_to_map_ordered_qcschema(conf, can_mapped_smiles) for conf in conformers.GetConfs()]
 
         return {'initial_molecule': qcschema_mols,
                 'identifiers': cmiles_identifiers,
                 'provenance': self.get_provenance()}
-
-    def to_qcschema_mols(self, **kwargs):
-        """
-        Writes fragments to a list of qcschema molecules for input to QCArchive computations
-
-        Parameters
-        ----------
-        kwargs : parameters for ``chemi.generate_conformers``
-
-        Returns
-        -------
-        qcschema_fragments: list
-            list of qcschema molecules
-
-        """
-        qcschema_fragments = []
-        equivelant_frags = []
-        for bond in self.fragments:
-            molecule = self.fragments[bond]
-            qcschema_mol = self._to_qcschema_mol(molecule, **kwargs)
-            smiles = qcschema_mol['identifiers']['canonical_isomeric_smiles']
-            if smiles not in equivelant_frags:
-                equivelant_frags.append(smiles)
-                qcschema_fragments.append(qcschema_mol)
-        return qcschema_fragments
-
 
     def to_torsiondrive_json(self, **kwargs):
         """
@@ -1547,7 +1349,7 @@ class WBOFragmenter(Fragmenter):
             molecule = self.fragments[bond]
             mapped_smiles = oechem.OEMolToSmiles(molecule)
             torsion_map_idx = torsions.find_torsion_around_bond(molecule, bond)
-            torsiondrive_job_label = cmiles.utils.to_canonical_label(mapped_smiles, torsion_map_idx)
+            torsiondrive_job_label = to_canonical_label(mapped_smiles, torsion_map_idx)
             torsiondrive_json_dict[torsiondrive_job_label] = {}
 
             # prepare torsiondrive input
@@ -1568,108 +1370,6 @@ class WBOFragmenter(Fragmenter):
                                                               'grid': [15],
                                                               'provenance': self.get_provenance()})
         return torsiondrive_json_dict
-
-
-    def depict_fragments(self, fname):
-        """
-        Generate PDF of fragments for the molecule with the rotatable bond highlighted and annotated with its WBO
-
-        Parameters
-        ----------
-        fname : str
-            Filename to write out PDF
-
-        """
-        from openeye import oechem, oedepict
-        itf = oechem.OEInterface()
-        oedepict.OEPrepareDepiction(self.molecule)
-
-        ropts = oedepict.OEReportOptions()
-        oedepict.OESetupReportOptions(ropts, itf)
-        ropts.SetFooterHeight(25.0)
-        ropts.SetHeaderHeight(ropts.GetPageHeight() / 4.0)
-        report = oedepict.OEReport(ropts)
-
-        # setup decpiction options
-        opts = oedepict.OE2DMolDisplayOptions()
-        oedepict.OESetup2DMolDisplayOptions(opts, itf)
-        cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
-        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
-        opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
-        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
-        opts.SetAtomLabelFontScale(1.2)
-
-        lineWidthScale = 0.75
-        fadehighlight = oedepict.OEHighlightByColor(oechem.OEGrey, lineWidthScale)
-
-        # depict each fragment combinations
-
-        for bond_tuple in self._fragments:
-
-            cell = report.NewCell()
-            bond = self.get_bond(bond_tuple)
-            # Get bond in fragment
-            fragment = self.fragments[bond_tuple]
-            a1 = fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
-            a2 = fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[1]))
-            bond_in_frag = fragment.GetBond(a1, a2)
-            wbo_frag = bond_in_frag.GetData('WibergBondOrder')
-            #bond.SetData('WibergBondOrder_frag', wbo_frag)
-
-            bondlabel_2 = LabelFragBondOrder()
-            opts.SetBondPropertyFunctor(bondlabel_2)
-            disp = oedepict.OE2DMolDisplay(self.molecule, opts)
-
-            # ToDo get AtomBondSet for fragments so depiction works properly
-            fragatoms = oechem.OEIsAtomMember(self._fragments[bond_tuple].GetAtoms())
-            fragbonds = oechem.OEIsBondMember(self._fragments[bond_tuple].GetBonds())
-
-            notfragatoms = oechem.OENotAtom(fragatoms)
-            notfragbonds = oechem.OENotBond(fragbonds)
-
-            oedepict.OEAddHighlighting(disp, fadehighlight, notfragatoms, notfragbonds)
-
-            atomBondSet = oechem.OEAtomBondSet()
-            atomBondSet.AddBond(bond)
-            atomBondSet.AddAtom(bond.GetBgn())
-            atomBondSet.AddAtom(bond.GetEnd())
-
-            hstyle = oedepict.OEHighlightStyle_BallAndStick
-            hcolor = oechem.OEColor(oechem.OELimeGreen)
-            oedepict.OEAddHighlighting(disp, hcolor, hstyle, atomBondSet)
-
-            # Add WBO label
-            if abs(wbo_frag - self.rotors_wbo[bond_tuple]) > 0.03:
-                # Set highlight color to red
-                hcolor = oechem.OEColor(oechem.OERed)
-            else:
-                hcolor = oechem.OEColor(oechem.OEBlack)
-            bond_label = oedepict.OEHighlightLabel("{:.2f}".format(wbo_frag), hcolor)
-            bond_label.SetFontScale(4.0)
-            oedepict.OEAddLabel(disp, bond_label, atomBondSet)
-
-            #oegrapheme.OEAddGlyph(disp, bondglyph, fragbonds)
-
-            oedepict.OERenderMolecule(cell, disp)
-
-
-        # depict original fragmentation in each header
-
-        cellwidth, cellheight = report.GetHeaderWidth(), report.GetHeaderHeight()
-        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
-        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
-
-        bondlabel = LabelWibergBondOrder()
-        opts.SetBondPropertyFunctor(bondlabel)
-        disp = oedepict.OE2DMolDisplay(self.molecule, opts)
-        #oegrapheme.OEAddGlyph(disp, bondglyph, oechem.IsTrueBond())
-
-        headerpen = oedepict.OEPen(oechem.OEWhite, oechem.OELightGrey, oedepict.OEFill_Off, 2.0)
-        for header in report.GetHeaders():
-            oedepict.OERenderMolecule(header, disp)
-            oedepict.OEDrawBorder(header, headerpen)
-
-        return oedepict.OEWriteReport(fname, report)
 
 
 class PfizerFragmenter(WBOFragmenter):
@@ -1825,77 +1525,3 @@ class PfizerFragmenter(WBOFragmenter):
         atom_bond_set = self._to_atom_bond_set(atoms, bonds)
         self._fragments[target_bond] = atom_bond_set
         self.fragments[target_bond] = self._atom_bond_set_to_mol(atom_bond_set, adjust_hcount=True)
-
-    def depict_fragments(self, fname):
-        """
-        Generate PDF of fragments for the molecule with the rotatable bond highlighted and annotated with its WBO
-
-        Parameters
-        ----------
-        fname : str
-            Filename to write out PDF
-
-        """
-        from openeye import oechem, oedepict
-        itf = oechem.OEInterface()
-        oedepict.OEPrepareDepiction(self.molecule)
-
-        ropts = oedepict.OEReportOptions()
-        oedepict.OESetupReportOptions(ropts, itf)
-        ropts.SetFooterHeight(25.0)
-        ropts.SetHeaderHeight(ropts.GetPageHeight() / 4.0)
-        report = oedepict.OEReport(ropts)
-
-        # setup decpiction options
-        opts = oedepict.OE2DMolDisplayOptions()
-        oedepict.OESetup2DMolDisplayOptions(opts, itf)
-        cellwidth, cellheight = report.GetCellWidth(), report.GetCellHeight()
-        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
-        opts.SetTitleLocation(oedepict.OETitleLocation_Hidden)
-        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
-        opts.SetAtomLabelFontScale(1.2)
-
-        lineWidthScale = 0.75
-        fadehighlight = oedepict.OEHighlightByColor(oechem.OEGrey, lineWidthScale)
-
-        # depict each fragment combinations
-
-        for bond_tuple in self._fragments:
-
-            cell = report.NewCell()
-            bond = self.get_bond(bond_tuple)
-            disp = oedepict.OE2DMolDisplay(self.molecule, opts)
-
-            fragatoms = oechem.OEIsAtomMember(self._fragments[bond_tuple].GetAtoms())
-            fragbonds = oechem.OEIsBondMember(self._fragments[bond_tuple].GetBonds())
-
-            notfragatoms = oechem.OENotAtom(fragatoms)
-            notfragbonds = oechem.OENotBond(fragbonds)
-
-            oedepict.OEAddHighlighting(disp, fadehighlight, notfragatoms, notfragbonds)
-
-            atomBondSet = oechem.OEAtomBondSet()
-            atomBondSet.AddBond(bond)
-            atomBondSet.AddAtom(bond.GetBgn())
-            atomBondSet.AddAtom(bond.GetEnd())
-
-            hstyle = oedepict.OEHighlightStyle_BallAndStick
-            hcolor = oechem.OEColor(oechem.OELightBlue)
-            oedepict.OEAddHighlighting(disp, hcolor, hstyle, atomBondSet)
-            oedepict.OERenderMolecule(cell, disp)
-
-        # depict original fragmentation in each header
-        cellwidth, cellheight = report.GetHeaderWidth(), report.GetHeaderHeight()
-        opts.SetDimensions(cellwidth, cellheight, oedepict.OEScale_AutoScale)
-        opts.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
-
-        bondlabel = LabelWibergBondOrder()
-        opts.SetBondPropertyFunctor(bondlabel)
-        disp = oedepict.OE2DMolDisplay(self.molecule, opts)
-
-        headerpen = oedepict.OEPen(oechem.OEWhite, oechem.OELightGrey, oedepict.OEFill_Off, 2.0)
-        for header in report.GetHeaders():
-            oedepict.OERenderMolecule(header, disp)
-            oedepict.OEDrawBorder(header, headerpen)
-
-        return oedepict.OEWriteReport(fname, report)

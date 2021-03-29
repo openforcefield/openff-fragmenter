@@ -1,5 +1,0 @@
-expand_states: False
-torsion_scan:
-  1D_scans: True
-  terminal_grid:
-  mid_grid: 15
