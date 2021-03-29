@@ -1,20 +1,30 @@
 name: test
 channels:
   - openeye
+  - rdkit
   - conda-forge
-  - defaults
 
 dependencies:
 
     # Base Depends
   - python
-  - openff-toolkit-base
-  - openeye-toolkits
-  - cmiles-base
+  - setuptools
+  - openeye-toolkits=2019.10.2
+  - rdkit
   - pyyaml
+  - postgresql
   - networkx
 
     # Testing
   - pytest
   - pytest-cov
-  - codecov
+
+  # QCFractal and friends
+  - qcfractal
+  - geometric
+  - torsiondrive
+
+    # Pip depends
+  - pip:
+    - codecov
+    - git+git://github.com/openforcefield/cmiles.git@v0.1.5#egg=cmiles
