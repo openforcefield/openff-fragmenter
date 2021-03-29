@@ -1,6 +1,14 @@
 from .utils import logger
 
-def _enumerate_stereoisomers(molecule, max_states=200, force_flip=True, enum_nitrogen=True, warts=True, verbose=True):
+
+def _enumerate_stereoisomers(
+    molecule,
+    max_states=200,
+    force_flip=True,
+    enum_nitrogen=True,
+    warts=True,
+    verbose=True,
+):
     """
     Enumerate stereoisomers
     Parameters
@@ -21,12 +29,15 @@ def _enumerate_stereoisomers(molecule, max_states=200, force_flip=True, enum_nit
     stereoisomers: list of oemols
 
     """
-    from openeye import oeomega, oechem
+    from openeye import oechem, oeomega
+
     stereoisomers = []
     if verbose:
         logger().debug("Enumerating stereoisomers...")
     i = 0
-    for enantiomer in oeomega.OEFlipper(molecule, max_states, force_flip, enum_nitrogen, warts):
+    for enantiomer in oeomega.OEFlipper(
+        molecule, max_states, force_flip, enum_nitrogen, warts
+    ):
         i += 1
         enantiomer = oechem.OEMol(enantiomer)
         stereoisomers.append(enantiomer)

@@ -2,13 +2,17 @@ import logging
 import sys
 
 BOHR_2_ANGSTROM = 0.529177210
-ANGSROM_2_BOHR = 1. / BOHR_2_ANGSTROM
+ANGSROM_2_BOHR = 1.0 / BOHR_2_ANGSTROM
 HARTREE_2_KJMOL = 2625.50
-KJMOL_2_HARTREE = 1. / HARTREE_2_KJMOL
+KJMOL_2_HARTREE = 1.0 / HARTREE_2_KJMOL
 
 
-def logger(name='fragmenter', pattern='%(asctime)s %(levelname)s %(name)s: %(message)s',
-           date_format='%H:%M:%S', handler=logging.StreamHandler(sys.stdout)):
+def logger(
+    name="fragmenter",
+    pattern="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    date_format="%H:%M:%S",
+    handler=logging.StreamHandler(sys.stdout),
+):
     """
     Retrieves the logger instance associated to the given name
 
