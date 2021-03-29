@@ -3,6 +3,11 @@ Unit and regression test for the fragmenter package.
 """
 
 # Import package, test suite, and other packages as needed
+import os
+
+import yaml
+from pkg_resources import resource_filename
+
 import fragmenter
 from fragmenter import chemi
 from cmiles.utils import mol_to_smiles, remove_atom_map
@@ -14,24 +19,6 @@ import pytest
 def test_fragmenter_imported():
     """Sample test, will always pass so long as import statement worked"""
     assert "fragmenter" in sys.modules
-
-@using_openeye
-def test_expand_tautomers():
-    from openeye import oechem
-    imidazol_smiles = 'CC1=CN=CN1'
-    oemol = oechem.OEMol()
-    oechem.OESmilesToMol(oemol, imidazol_smiles)
-    tautomers = fragmenter.states._enumerate_tautomers(oemol)
-    assert len(tautomers) == 2
-    for tau in tautomers:
-        assert chemi.get_charge(tau) == 0
-
-    salsalate = 'OC(=O)C1=CC=CC=C1OC(=O)C1=CC=CC=C1O'
-    oemol = oechem.OEMol()
-    oechem.OESmilesToMol(oemol, salsalate)
-    tautomers = fragmenter.states._enumerate_tautomers(oemol)
-    assert len(tautomers) == 1
-    assert chemi.get_charge(tautomers[0]) == -1
 
 
 @using_openeye
@@ -48,40 +35,14 @@ def test_expand_stereoisomers(smiles, forceflip, enum_n, output):
     assert len(stereo) == output
 
 @using_openeye
-@pytest.mark.parametrize('smiles, tautomers, stereoisomers, max_stereo_return, filter_nitro, output',
-                        [('N[C@@H](CC1=CC(I)=C(OC2=CC(I)=C(O)C=C2)C(I)=C1)C(O)=O', True, True, 10, True, 4),
-                         ('N[C@@H](CC1=CC(I)=C(OC2=CC(I)=C(O)C=C2)C(I)=C1)C(O)=O', False, False, 10, True, 1),
-                         ('N[C@@H](CC1=CC(I)=C(OC2=CC(I)=C(O)C=C2)C(I)=C1)C(O)=O', True, False, 1, True, 2),
-                         ('N[C@@H](CC1=CC(I)=C(OC2=CC(I)=C(O)C=C2)C(I)=C1)C(O)=O', False, True, 1, True, 2),
-                         ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', True, True, 10, True, 2),
-                         ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', False, False, 1, True, 1),
-                         ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', True, True, 10, False, 4),
-                         ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', False, False, 10, False, 2)])
-def test_expand_states(smiles, tautomers, stereoisomers, max_stereo_return, filter_nitro, output):
-    from openeye import oechem
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
-    states = fragmenter.states.enumerate_states(mol, tautomers=tautomers, stereoisomers=stereoisomers,
-                                                  max_stereo_returns=max_stereo_return, filter_nitro=filter_nitro, verbose=False)
-    assert len(states) == output
-
-@using_openeye
-@pytest.mark.parametrize('smiles, output', [('CCN(CCO)c1ccc(c(c1)C)/N=N/c2ncc(s2)N(=O)=O', True),
-                                            ('CC1=C(C(C(=C(N1)C)C(=O)OCC(C)C)c2ccccc2[N+](=O)[O-])C(=O)OC', False)])
-def test_filter_nitro(smiles, output):
-    from openeye import oechem
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
-    assert fragmenter.states._check_nitro(mol) == output
-
-@using_openeye
+@pytest.mark.xfail(reason="combination fragmenter only?")
 def test_keep_track_of_map():
     from openeye import oechem
     smiles = 'c1ccc(cc1)Nc2ncccn2'
     mapped_mol = oechem.OEMol()
     oechem.OESmilesToMol(mapped_mol, smiles)
 
-    frags = fragmenter.fragment.CombinatorialFragmenter(mapped_mol)
+    frags = fragmenter.fragment.WBOFragmenter(mapped_mol)
     frags.fragment()
     #frags._fragment_all_bonds_not_in_ring_systems()
     #frags._combine_fragments(min_rotors=1, max_rotors=frags.n_rotors+1, restore_maps=True)
@@ -101,7 +62,14 @@ def test_tag_fgroups():
              '[H:51])([H:54])[H:55])[H:43])[H:44])[H:46])[H:49])[H:45]'
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
-    frags = fragmenter.fragment.CombinatorialFragmenter(mol)
+
+    with open(
+        resource_filename('fragmenter', os.path.join('data', 'fgroup_smarts_comb.yml')),
+        'r'
+    ) as f:
+        functional_groups = yaml.safe_load(f)
+
+    frags = fragmenter.fragment.WBOFragmenter(mol, functional_groups=functional_groups)
     fgroups = {}
     fgroups['alkyne_0'] = [1, 2]
     fgroups['carbonyl_0'] = [21, 36]
@@ -310,17 +278,6 @@ def test_add_substituent():
 
     assert mol_to_smiles(mol, mapped=False, explicit_hydrogen=False) == 'CCCCCC'
 
-def test_to_json():
-    smiles = 'CCCCCC'
-    mol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f.fragment()
-    json_dict = f.to_json()
-    assert len(json_dict) == 2
-    assert list(json_dict.keys())[0] == 'CCCCC'
-    assert 'provenance' in json_dict['CCCCC']
-    assert 'cmiles_identifiers' in json_dict['CCCCC']
-
 def test_to_qcscheme_mol():
     smiles = 'CCCCCC'
     mol = chemi.smiles_to_oemol(smiles)
@@ -334,15 +291,6 @@ def test_to_qcscheme_mol():
     assert 'connectivity' in qcschema_mol['initial_molecule'][0]
     assert 'identifiers' in qcschema_mol
     assert 'provenance' in qcschema_mol
-
-def test_to_qcschema_mols():
-    smiles = 'CCCCCC'
-    mol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f.fragment()
-
-    qcschema_mol = f.to_qcschema_mols()
-    assert len(qcschema_mol) == 2
 
 def test_td_inputs():
     smiles = 'CCCCCC'
@@ -390,18 +338,6 @@ def tet_fix_stereo(smiles, frag):
     frag = chemi.smiles_to_oemol(frag, add_atom_map=True)
     fixed = f._fix_stereo(frag)
     assert f._check_stereo(fixed) == True
-
-@pytest.mark.parametrize('engine', ['WBO', 'combinatorial', 'pfizer'])
-def test_depict_fragments(engine):
-    mol = chemi.smiles_to_oemol('CCCCC')
-    if engine == 'WBO':
-        f = fragmenter.fragment.WBOFragmenter(mol)
-    if engine =='combinatorial':
-        f = fragmenter.fragment.CombinatorialFragmenter(mol)
-    if engine == 'pfizer':
-        f = fragmenter.fragment.PfizerFragmenter(mol)
-    f.fragment()
-    assert f.depict_fragments('test.pdf') == True
 
 
 def test_new_stereo_center():

@@ -15,7 +15,7 @@ dependencies:
   - networkx
 
     # Optional dependencies
-  - openeye-toolkits
+  - openeye-toolkits=2019.10.2
 
     # Testing
   - pytest
