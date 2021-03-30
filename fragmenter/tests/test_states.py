@@ -24,8 +24,12 @@ from fragmenter.tests.utils import global_toolkit_wrapper
             False,
             ["F[C@](Br)(Cl)[C@@H](Br)(Cl)", "F[C@@](Br)(Cl)[C@@H](Br)(Cl)"],
         ),
+        ("FC(Cl)Br", False, ["F[C@H](Cl)Br", "F[C@@H](Cl)Br"]),
         ("F[C@H](Cl)Br", True, ["F[C@H](Cl)Br", "F[C@@H](Cl)Br"]),
         ("F[C@H](Cl)Br", False, ["F[C@H](Cl)Br"]),
+        ("ClC=CBr", False, [r"Cl/C=C/Br", r"Cl\C=C/Br"]),
+        ("Cl/C=C/Br", False, [r"Cl/C=C/Br"]),
+        ("Cl/C=C/Br", True, [r"Cl/C=C/Br", r"Cl\C=C/Br"]),
     ],
 )
 @pytest.mark.parametrize(
@@ -34,7 +38,7 @@ from fragmenter.tests.utils import global_toolkit_wrapper
 def test_enumerate_stereoisomers(smiles, force_flip, expected, toolkit_wrapper):
 
     if (
-        "@" in smiles
+        ("@" in smiles or "/" in smiles)
         and force_flip
         and isinstance(toolkit_wrapper, RDKitToolkitWrapper)
     ):
