@@ -22,23 +22,7 @@ def test_fragmenter_imported():
 @using_openeye
 @pytest.mark.parametrize(
     "smiles, forceflip, enum_n, output",
-    [
-        ("C1=CN(C=N1)C(C1=CC=CC=C1)C1=CC=C(C=C1)C1=CC=CC=C1", True, False, 2),
-        (
-            "C[C@@H](C1=NC(=CS1)C1=CC=C(C=C1)C#N)[C@](O)(CN1C=NC=N1)C1=C(F)C=CC(F)=C1",
-            False,
-            False,
-            1,
-        ),
-        (
-            "C[C@@H](C1=NC(=CS1)C1=CC=C(C=C1)C#N)[C@](O)(CN1C=NC=N1)C1=C(F)C=CC(F)=C1",
-            True,
-            False,
-            4,
-        ),
-        ("CN(CC=CC1=CC=CC=C1)CC1=CC=CC2=CC=CC=C12", True, True, 4),
-        ("CN(CC=CC1=CC=CC=C1)CC1=CC=CC2=CC=CC=C12", False, False, 2),
-    ],
+    [("CN(CC=CC1=CC=CC=C1)CC1=CC=CC2=CC=CC=C12", True, True, 4)],
 )
 def test_expand_stereoisomers(smiles, forceflip, enum_n, output):
     from openeye import oechem

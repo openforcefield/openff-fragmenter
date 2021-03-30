@@ -16,6 +16,7 @@ dependencies:
 
     # Optional dependencies
   - openeye-toolkits=2019.10.2
+  - rdkit
 
     # Testing
   - pytest
