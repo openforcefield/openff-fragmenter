@@ -1,7 +1,9 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
+import logging
+
 import cmiles
 
-from .utils import logger
+logger = logging.getLogger(__name__)
 
 
 def carboxylic_acid_hack(mol):
@@ -202,7 +204,7 @@ def get_charges(
         # Copy coordinates to single conformer
         charged_copy.SetCoords(original)
     elif keep_confs > 0:
-        logger().debug(
+        logger.debug(
             "keep_confs was set to %s. Molecule positions will be reset." % keep_confs
         )
 

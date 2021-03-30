@@ -1,4 +1,6 @@
-from .utils import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _enumerate_stereoisomers(
@@ -33,7 +35,7 @@ def _enumerate_stereoisomers(
 
     stereoisomers = []
     if verbose:
-        logger().debug("Enumerating stereoisomers...")
+        logger.debug("Enumerating stereoisomers...")
     i = 0
     for enantiomer in oeomega.OEFlipper(
         molecule, max_states, force_flip, enum_nitrogen, warts

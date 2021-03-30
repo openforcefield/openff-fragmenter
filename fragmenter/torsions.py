@@ -1,6 +1,8 @@
+import logging
+
 import numpy as np
 
-from fragmenter.utils import logger
+logger = logging.getLogger(__name__)
 
 
 def _find_torsions_from_smarts(molecule, smarts):
@@ -25,7 +27,7 @@ def _find_torsions_from_smarts(molecule, smarts):
     # ToDO use MDL aromaticity model
     qmol = oechem.OEQMol()
     if not oechem.OEParseSmarts(qmol, smarts):
-        logger().warning("OEParseSmarts failed")
+        logger.warning("OEParseSmarts failed")
     ss = oechem.OESubSearch(qmol)
     tors = []
     oechem.OEPrepareSearch(molecule, ss)
@@ -73,7 +75,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
     best_tor_order = best_tor[0].GetAtomicNum() + best_tor[3].GetAtomicNum()
     first_pass = True
     for tor in sorted_tors:
-        logger().debug(
+        logger.debug(
             "Map Idxs: {} {} {} {}".format(
                 tor[0].GetMapIdx(),
                 tor[1].GetMapIdx(),
@@ -81,7 +83,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
                 tor[3].GetMapIdx(),
             )
         )
-        logger().debug(
+        logger.debug(
             "Atom Numbers: {} {} {} {}".format(
                 tor[0].GetAtomicNum(),
                 tor[1].GetAtomicNum(),
@@ -95,7 +97,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
         ):
             # new_tor = True
             if not first_pass:
-                logger().debug(
+                logger.debug(
                     "Adding to list: {} {} {} {}".format(
                         best_tor[0].GetMapIdx(),
                         best_tor[1].GetMapIdx(),
@@ -107,13 +109,13 @@ def one_torsion_per_rotatable_bond(torsion_list):
             first_pass = False
             best_tor = tor
             best_tor_order = tor[0].GetAtomicNum() + tor[3].GetAtomicNum()
-            logger().debug(
+            logger.debug(
                 "new_tor with central bond across atoms: {} {}".format(
                     tor[1].GetMapIdx(), tor[2].GetMapIdx()
                 )
             )
         else:
-            logger().debug(
+            logger.debug(
                 "Not a new_tor but now with end atoms: {} {}".format(
                     tor[0].GetMapIdx(), tor[3].GetMapIdx()
                 )
@@ -122,7 +124,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
             if tor_order > best_tor_order:
                 best_tor = tor
                 best_tor_order = tor_order
-    logger().debug(
+    logger.debug(
         "Adding to list: {} {} {} {}".format(
             best_tor[0].GetMapIdx(),
             best_tor[1].GetMapIdx(),
@@ -132,9 +134,9 @@ def one_torsion_per_rotatable_bond(torsion_list):
     )
     tors.append(best_tor)
 
-    logger().debug("List of torsion to drive:")
+    logger.debug("List of torsion to drive:")
     for tor in tors:
-        logger().debug(
+        logger.debug(
             "Idx: {} {} {} {}".format(
                 tor[0].GetMapIdx(),
                 tor[1].GetMapIdx(),
@@ -142,7 +144,7 @@ def one_torsion_per_rotatable_bond(torsion_list):
                 tor[3].GetMapIdx(),
             )
         )
-        logger().debug(
+        logger.debug(
             "Atom numbers: {} {} {} {}".format(
                 tor[0].GetAtomicNum(),
                 tor[1].GetAtomicNum(),

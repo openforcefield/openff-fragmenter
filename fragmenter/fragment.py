@@ -1,4 +1,5 @@
 import abc
+import logging
 import os
 import time
 import warnings
@@ -21,7 +22,8 @@ from fragmenter import torsions
 
 from .chemi import generate_conformers, get_charges
 from .states import _enumerate_stereoisomers
-from .utils import logger
+
+logger = logging.getLogger(__name__)
 
 
 class Fragmenter(abc.ABC):
@@ -108,7 +110,7 @@ class Fragmenter(abc.ABC):
         for a in fragment.GetAtoms():
             if a.IsChiral():
                 if not a.GetMapIdx() in self.stereo:
-                    logger().warning(
+                    logger.warning(
                         "A new stereocenter formed at atom {} {}".format(
                             a.GetMapIdx(), oechem.OEGetAtomicSymbol(a.GetAtomicNum())
                         )
@@ -121,7 +123,7 @@ class Fragmenter(abc.ABC):
                 else:
                     s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
                 if not s == self.stereo[a.GetMapIdx()]:
-                    logger().warning(
+                    logger.warning(
                         "Stereochemistry for atom {} flipped from {} to {}".format(
                             a.GetMapIdx(), self.stereo[a.GetMapIdx()], s
                         )
@@ -132,7 +134,7 @@ class Fragmenter(abc.ABC):
                 b_tuple = (b.GetBgn().GetMapIdx(), b.GetEnd().GetMapIdx())
                 reversed_b_tuple = tuple(reversed(b_tuple))
                 if b_tuple not in self.stereo and reversed_b_tuple not in self.stereo:
-                    logger().warning(
+                    logger.warning(
                         "A new chiral bond formed at bond {}".format(b_tuple)
                     )
                     return False
@@ -143,7 +145,7 @@ class Fragmenter(abc.ABC):
                 else:
                     s = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(fragment, b)]
                 if not s == self.stereo[b_tuple]:
-                    logger().warning(
+                    logger.warning(
                         "Stereochemistry fro bond {} flipped from {} to {}".format(
                             b_tuple, self.stereo[b_tuple], s
                         )
@@ -232,7 +234,7 @@ class Fragmenter(abc.ABC):
             for a in isomer.GetAtoms():
                 if a.IsChiral():
                     if not a.GetMapIdx() in fragment_stereo:
-                        logger().warning(
+                        logger.warning(
                             "A new stereocenter formed at atom {} {}".format(
                                 a.GetMapIdx(),
                                 oechem.OEGetAtomicSymbol(a.GetAtomicNum()),
@@ -248,7 +250,7 @@ class Fragmenter(abc.ABC):
                     if b_tuple not in self.stereo:
                         reverse_tuple = tuple(reversed(b_tuple))
                         if reverse_tuple not in self.stereo:
-                            logger().warning(
+                            logger.warning(
                                 "A new stereo bond was formed at bond tuple {}".format(
                                     b_tuple
                                 )
@@ -557,13 +559,13 @@ class WBOFragmenter(Fragmenter):
             self.molecule = get_charges(self.molecule, **kwargs)
             time2 = time.time()
             if self.verbose:
-                logger().info("WBO took {} seconds to calculate".format(time2 - time1))
+                logger.info("WBO took {} seconds to calculate".format(time2 - time1))
         else:
             time1 = time.time()
             fragment = get_charges(fragment, **kwargs)
             time2 = time.time()
             if self.verbose:
-                logger().info("WBO took {} seconds to calculate".format(time2 - time1))
+                logger.info("WBO took {} seconds to calculate".format(time2 - time1))
         return fragment
 
     def _find_rotatable_bonds(self):
@@ -609,9 +611,7 @@ class WBOFragmenter(Fragmenter):
             "nrotor" not in self.molecule.GetData()
             and "cputime" not in self.molecule.GetData()
         ):
-            logger().info(
-                "WBO was not calculated for this molecule. Calculating WBO..."
-            )
+            logger.info("WBO was not calculated for this molecule. Calculating WBO...")
             self.calculate_wbo()
         rotatable_bonds = self._find_rotatable_bonds()
         for bond in rotatable_bonds:
@@ -789,7 +789,7 @@ class WBOFragmenter(Fragmenter):
                 fragment=mol, normalize=False, **kwargs
             )
         except RuntimeError:
-            logger().warn(
+            logger.warn(
                 "Cannot calculate WBO for fragment {}. Continue growing fragment".format(
                     oechem.OEMolToSmiles(mol)
                 )
@@ -812,7 +812,7 @@ class WBOFragmenter(Fragmenter):
                 )
             )
         if "WibergBondOrder" not in bond.GetData():
-            logger().warn(
+            logger.warn(
                 "Cannot calculate WBO for fragment {}. Continue growing fragment".format(
                     oechem.OEMolToSmiles(charged_fragment)
                 )
