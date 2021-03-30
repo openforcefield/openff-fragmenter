@@ -3,17 +3,15 @@ Unit and regression test for the fragmenter package.
 """
 
 # Import package, test suite, and other packages as needed
-import os
 import sys
 
 import pytest
-import yaml
 from cmiles.utils import mol_to_smiles, remove_atom_map
-from pkg_resources import resource_filename
 
 import fragmenter
 from fragmenter import chemi
 from fragmenter.tests.utils import using_openeye
+from fragmenter.utils import get_fgroup_smarts_comb
 
 
 def test_fragmenter_imported():
@@ -93,11 +91,7 @@ def test_tag_fgroups():
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
 
-    with open(
-        resource_filename("fragmenter", os.path.join("data", "fgroup_smarts_comb.yml")),
-        "r",
-    ) as f:
-        functional_groups = yaml.safe_load(f)
+    functional_groups = get_fgroup_smarts_comb()
 
     frags = fragmenter.fragment.WBOFragmenter(mol, functional_groups=functional_groups)
     fgroups = {}
