@@ -1,11 +1,9 @@
 import abc
 import logging
-import os
 import time
 import warnings
 
 import cmiles
-import yaml
 from cmiles.utils import (
     add_atom_map,
     has_explicit_hydrogen,
@@ -16,12 +14,12 @@ from cmiles.utils import (
     restore_atom_map,
     to_canonical_label,
 )
-from pkg_resources import resource_filename
 
 from fragmenter import torsions
 
 from .chemi import generate_conformers, get_charges
 from .states import _enumerate_stereoisomers
+from .utils import get_fgroup_smarts
 
 logger = logging.getLogger(__name__)
 
@@ -291,12 +289,7 @@ class Fragmenter(abc.ABC):
         if functional_groups:
             fgroups_smarts = functional_groups
         if functional_groups is None:
-            # Load yaml file
-            fn = resource_filename(
-                "fragmenter", os.path.join("data", "fgroup_smarts.yml")
-            )
-            with open(fn, "r") as f:
-                fgroups_smarts = yaml.safe_load(f)
+            fgroups_smarts = get_fgroup_smarts()
         elif functional_groups is False:
             # Don't tag fgroups
             return
@@ -483,11 +476,8 @@ class WBOFragmenter(Fragmenter):
         self.verbose = verbose
 
         if functional_groups is None:
-            fn = resource_filename(
-                "fragmenter", os.path.join("data", "fgroup_smarts.yml")
-            )
-            with open(fn, "r") as f:
-                functional_groups = yaml.safe_load(f)
+            functional_groups = get_fgroup_smarts()
+
         self._options["functional_groups"] = functional_groups
         self._tag_functional_groups(functional_groups)
 
@@ -1218,9 +1208,8 @@ class PfizerFragmenter(WBOFragmenter):
         self.verbose = verbose
         # ToDo check for map indices and add
 
-        fn = resource_filename("fragmenter", os.path.join("data", "fgroup_smarts.yml"))
-        with open(fn, "r") as f:
-            functional_groups = yaml.safe_load(f)
+        functional_groups = get_fgroup_smarts()
+
         self._options["functional_groups"] = functional_groups
         self._tag_functional_groups(functional_groups)
 
