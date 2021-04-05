@@ -37,16 +37,6 @@ from fragmenter.tests.utils import global_toolkit_wrapper
 )
 def test_enumerate_stereoisomers(smiles, force_flip, expected, toolkit_wrapper):
 
-    if (
-        ("@" in smiles or "/" in smiles)
-        and force_flip
-        and isinstance(toolkit_wrapper, RDKitToolkitWrapper)
-    ):
-
-        pytest.skip(
-            "the rdkit wrapper cannot flip existing stereo. see #892 of the OFF TK."
-        )
-
     with global_toolkit_wrapper(toolkit_wrapper):
 
         molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
