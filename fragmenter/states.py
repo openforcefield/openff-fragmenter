@@ -1,8 +1,6 @@
 import logging
 
-from openff.toolkit.topology import Molecule
-
-from fragmenter.utils import copy_molecule
+from fragmenter.utils import to_off_molecule
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +34,7 @@ def _enumerate_stereoisomers(
 
     """
 
-    # Make a copy of the input molecule so we don't accidentally change it. This is
-    # mainly needed due to OFF TK issue #890.
-    molecule = copy_molecule(molecule)
-
-    off_molecule = Molecule.from_openeye(molecule, allow_undefined_stereo=True)
+    off_molecule = to_off_molecule(molecule)
 
     if max_states > 200:
 
