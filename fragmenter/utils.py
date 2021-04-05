@@ -2,6 +2,7 @@ import os
 from typing import Dict
 
 import yaml
+from openff.toolkit.topology import Molecule
 from pkg_resources import resource_filename
 
 
@@ -45,17 +46,45 @@ def get_fgroup_smarts_comb() -> Dict[str, str]:
     return functional_groups
 
 
-def copy_molecule(molecule):
-    """Returns a copy of either a native OE or RDKit molecule. This is a temporary
-    method added while OpenFF toolkit issue #890 is unresolved."""
+def to_off_molecule(molecule) -> Molecule:
+    """Returns a copy of either a native OE or RDKit molecule as an OFF molecule. This
+    is a temporary method added while OpenFF toolkit issue #890 is unresolved."""
 
     if "oechem" in molecule.__class__.__module__:
         from openeye import oechem
 
-        return oechem.OEMol(molecule)
+        return Molecule.from_openeye(
+            oechem.OEMol(molecule), allow_undefined_stereo=True
+        )
     elif "rdkit" in molecule.__class__.__module__:
-        from rdkit import Chem
-
-        return Chem.Mol(molecule)
+        return Molecule.from_rdkit(molecule, allow_undefined_stereo=True)
 
     raise NotImplementedError()
+
+
+def get_map_index(
+    molecule: Molecule, atom_index: int, error_on_missing: bool = True
+) -> int:
+    """Returns the map index of a particular atom in a molecule.
+
+    Parameters
+    ----------
+    molecule
+        The molecule containing the atom.
+    atom_index
+        The index of the atom in the molecule.
+    error_on_missing
+        Whether an error should be raised if the atom does not have a corresponding
+        map index
+
+    Returns
+    -------
+        The map index if found, otherwise 0.
+    """
+    atom_map = molecule.properties.get("atom_map", {})
+    atom_map_index = atom_map.get(atom_index, None)
+
+    if atom_map_index is None and error_on_missing:
+        raise KeyError(f"{atom_index} is not in the atom map ({atom_map}).")
+
+    return 0 if atom_map_index is None else atom_map_index
