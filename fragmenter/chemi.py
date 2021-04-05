@@ -1,7 +1,10 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
 import logging
+from typing import Dict
 
 import cmiles
+import networkx
+from openff.toolkit.topology import Molecule
 
 logger = logging.getLogger(__name__)
 
@@ -302,3 +305,57 @@ def generate_conformers(
         cmiles.utils.restore_atom_map(molcopy)
 
     return molcopy
+
+
+def find_ring_systems(molecule: Molecule) -> Dict[int, int]:
+    """This function attempts to find all ring systems (see [1] for more details) in
+    a given molecule.
+
+    The method first attempts to determine which atoms and bonds are part of rings
+    by matching the `[*:1]@[*:2]` SMIRKS pattern against the molecule.
+
+    The matched bonds are then used to construct a graph (using ``networkx``), from which
+    the ring systems are identified as those sets of atoms which are 'connected'
+    together (using ``connected_components``) by at least one path.
+
+    Parameters
+    ----------
+    molecule:
+        The molecule to search for ring systems.
+
+    Notes
+    -----
+    * Two molecular rings with only one common atom (i.e. spiro compounds) are
+      considered to be part of the same ring system.
+
+    References
+    ----------
+    [1] `Ring Perception <https://docs.eyesopen.com/toolkits/python/oechemtk/ring.html>`_
+
+    Returns
+    -------
+        The index of which ring system each atom belongs to. Only ring atoms are
+        included in the returned dictionary.
+    """
+
+    # Find the ring atoms
+    ring_atom_index_pairs = {
+        tuple(sorted(pair))
+        for pair in molecule.chemical_environment_matches("[*:1]@[*:2]")
+    }
+
+    # Construct a networkx graph from the found ring bonds.
+    graph = networkx.Graph()
+
+    for atom_index_pair in ring_atom_index_pairs:
+        graph.add_edge(*atom_index_pair)
+
+    ring_systems = {}
+
+    for i, ring_system in enumerate(networkx.connected_components(graph)):
+
+        for atom_index in ring_system:
+            assert atom_index not in ring_systems
+            ring_systems[atom_index] = i + 1
+
+    return ring_systems
