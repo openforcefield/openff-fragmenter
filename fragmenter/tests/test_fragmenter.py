@@ -11,7 +11,14 @@ from cmiles.utils import mol_to_smiles, remove_atom_map
 import fragmenter
 from fragmenter import chemi
 from fragmenter.tests.utils import using_openeye
-from fragmenter.utils import get_fgroup_smarts_comb
+from fragmenter.utils import get_fgroup_smarts, get_fgroup_smarts_comb
+
+
+class DummyFragmenter(fragmenter.fragment.Fragmenter):
+    """A mock fragmenter class used for testing"""
+
+    def fragment(self):
+        return
 
 
 def test_fragmenter_imported():
@@ -118,7 +125,7 @@ def test_get_bond():
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
     f = fragmenter.fragment.WBOFragmenter(mol)
-    bond = f.get_bond(bond_tuple=(3, 4))
+    bond = f._get_bond(bond_tuple=(3, 4))
     assert bond.IsRotor()
 
 
@@ -162,7 +169,7 @@ def test_to_atom_bond_set():
     smiles = "[H:38][c:1]1[c:2]([c:14]([n:28][c:5]([c:8]1[C:25]([H:64])([H:65])[N:33]2[C:17]([C:19]([N:34]([C:20]([C:18]2([H:46])[H:47])([H:50])[H:51])[C:26]([H:66])([H:67])[C:22]([H:55])([H:56])[H:57])([H:48])[H:49])([H:44])[H:45])[H:42])[N:35]([H:69])[c:16]3[n:29][c:6]([c:12]([c:13]([n:31]3)[c:7]4[c:3]([c:10]5[c:9]([c:11]([c:4]4[H:41])[F:36])[n:30][c:15]([n:32]5[C:27]([H:68])([C:23]([H:58])([H:59])[H:60])[C:24]([H:61])([H:62])[H:63])[C:21]([H:52])([H:53])[H:54])[H:40])[F:37])[H:43])[H:39]"
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
-    f = fragmenter.fragment.Fragmenter(mol)
+    f = DummyFragmenter(mol, get_fgroup_smarts())
     atoms = {17, 18, 19, 20, 22, 26, 33, 34, 66, 67}
     bonds = {
         (17, 19),
@@ -193,7 +200,7 @@ def test_atom_bond_set_to_mol():
     smiles = "[H:38][c:1]1[c:2]([c:14]([n:28][c:5]([c:8]1[C:25]([H:64])([H:65])[N:33]2[C:17]([C:19]([N:34]([C:20]([C:18]2([H:46])[H:47])([H:50])[H:51])[C:26]([H:66])([H:67])[C:22]([H:55])([H:56])[H:57])([H:48])[H:49])([H:44])[H:45])[H:42])[N:35]([H:69])[c:16]3[n:29][c:6]([c:12]([c:13]([n:31]3)[c:7]4[c:3]([c:10]5[c:9]([c:11]([c:4]4[H:41])[F:36])[n:30][c:15]([n:32]5[C:27]([H:68])([C:23]([H:58])([H:59])[H:60])[C:24]([H:61])([H:62])[H:63])[C:21]([H:52])([H:53])[H:54])[H:40])[F:37])[H:43])[H:39]"
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
-    f = fragmenter.fragment.Fragmenter(mol)
+    f = DummyFragmenter(mol, get_fgroup_smarts())
     atoms = {17, 18, 19, 20, 22, 26, 33, 34, 66, 67}
     bonds = {
         (17, 19),
