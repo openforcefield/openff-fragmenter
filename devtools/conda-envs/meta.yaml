@@ -11,7 +11,7 @@ dependencies:
   - python
 
     # ---- openff-toolkit deps ----
-#  - openff-toolkit-base
+#  - openff-toolkit
   - numpy
   - smirnoff99frosst
   - openff-forcefields
@@ -19,6 +19,8 @@ dependencies:
   - networkx
   - mdtraj
   - xmltodict
+  - ambertools
+  - rdkit
     # ---- openff-toolkit deps ----
 
   - cmiles-base
@@ -26,7 +28,7 @@ dependencies:
   - networkx
 
     # Optional dependencies
-  - openeye-toolkits=2019.10.2
+  - openeye-toolkits
   - rdkit
 
     # Testing

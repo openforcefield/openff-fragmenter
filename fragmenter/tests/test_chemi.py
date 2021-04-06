@@ -1,65 +1,121 @@
 """Test chemi module"""
-
+import numpy
 import pytest
 from openff.toolkit.topology import Molecule
-from openff.toolkit.utils import OpenEyeToolkitWrapper, RDKitToolkitWrapper
+from openff.toolkit.utils import (
+    AmberToolsToolkitWrapper,
+    OpenEyeToolkitWrapper,
+    RDKitToolkitWrapper,
+    ToolkitRegistry,
+)
+from simtk import unit
 
 from fragmenter import chemi
-from fragmenter.chemi import find_ring_systems
+from fragmenter.chemi import assign_elf10_am1_bond_orders, find_ring_systems
 from fragmenter.tests.utils import global_toolkit_wrapper
 
 
 @pytest.mark.parametrize(
-    "keep_confs, output", [(None, 1), (1, 1), (2, 2), (-1, 3), (-2, "error")]
+    "toolkit_wrapper",
+    [
+        OpenEyeToolkitWrapper(),
+        ToolkitRegistry([AmberToolsToolkitWrapper(), RDKitToolkitWrapper()]),
+    ],
 )
-def test_get_charges(keep_confs, output):
-    mol = chemi.smiles_to_oemol("CCCCCCC")
-    if output == "error":
-        with pytest.raises(ValueError):
-            chemi.get_charges(mol, keep_confs=keep_confs)
-    else:
-        charged = chemi.get_charges(mol, keep_confs=keep_confs)
-        for i, c in enumerate(charged.GetConfs()):
-            i += 1
-        assert i == output
+def test_assign_elf10_am1_bond_orders(toolkit_wrapper):
+
+    with global_toolkit_wrapper(toolkit_wrapper):
+
+        oe_molecule = Molecule.from_smiles("CCCC").to_openeye()
+        oe_molecule = assign_elf10_am1_bond_orders(oe_molecule)
+
+    for bond in oe_molecule.GetBonds():
+        assert "WibergBondOrder" in bond.GetData()
 
 
-def test_generate_conformers():
-    mol = chemi.smiles_to_oemol("CCCCCCC")
-    confs = chemi.generate_conformers(mol, max_confs=1)
-    assert confs.GetMaxConfIdx() == 1
+def test_assign_elf10_am1_bond_orders_simple_parity():
 
-    confs = chemi.generate_conformers(mol)
-    assert confs.GetMaxConfIdx() == 3
+    with global_toolkit_wrapper(OpenEyeToolkitWrapper()):
 
+        oe_molecule = Molecule.from_smiles("C").to_openeye()
+        oe_molecule = assign_elf10_am1_bond_orders(oe_molecule)
 
-def test_smiles_to_oemol():
-    from openeye import oechem
+        oe_orders = [bond.GetData("WibergBondOrder") for bond in oe_molecule.GetBonds()]
 
-    mol = chemi.smiles_to_oemol("CCCC")
-    assert isinstance(mol, oechem.OEMol)
-    assert oechem.OEMolToSmiles(mol) == "CCCC"
-    assert mol.GetTitle() == "butane"
+    with global_toolkit_wrapper(
+        ToolkitRegistry([AmberToolsToolkitWrapper(), OpenEyeToolkitWrapper()])
+    ):
 
-    mol = chemi.smiles_to_oemol("CCCC", normalize=False)
-    assert mol.GetTitle() == ""
+        oe_molecule = Molecule.from_smiles("C").to_openeye()
+        oe_molecule = assign_elf10_am1_bond_orders(oe_molecule)
 
-    mol = chemi.smiles_to_oemol("CCCC", add_atom_map=True)
-    assert (
-        oechem.OEMolToSmiles(mol)
-        == "[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]"
-    )
+        at_orders = [bond.GetData("WibergBondOrder") for bond in oe_molecule.GetBonds()]
+
+    assert numpy.allclose(oe_orders, at_orders, atol=1.0e-2)
 
 
-def test_normalize_molecule():
-    from openeye import oechem
+@pytest.mark.parametrize("smiles, max_confs", [("CCCCCCC", 1), ("CCCCCCC", 3)])
+@pytest.mark.parametrize(
+    "toolkit_wrapper", [OpenEyeToolkitWrapper(), RDKitToolkitWrapper()]
+)
+def test_generate_conformers(smiles, max_confs, toolkit_wrapper):
 
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, "CCCC")
-    assert mol.GetTitle() == ""
+    with global_toolkit_wrapper(toolkit_wrapper):
 
-    normalized_mol = chemi.normalize_molecule(mol)
-    assert normalized_mol.GetTitle() == "butane"
+        returned_molecule = chemi.generate_conformers(
+            Molecule.from_smiles(smiles), max_confs=max_confs
+        )
+
+    assert 0 < returned_molecule.n_conformers <= max_confs
+
+
+@pytest.mark.parametrize(
+    "toolkit_wrapper", [OpenEyeToolkitWrapper(), RDKitToolkitWrapper()]
+)
+def test_generate_conformers_ordering(toolkit_wrapper):
+
+    with global_toolkit_wrapper(toolkit_wrapper):
+
+        original_molecule = Molecule.from_smiles("CCCC")
+
+        returned_molecule = chemi.generate_conformers(original_molecule, max_confs=1)
+        assert returned_molecule.n_conformers == 1
+
+        # Make sure the atom ordering did not change.
+        _, atom_map = Molecule.are_isomorphic(
+            original_molecule, returned_molecule, return_atom_map=True
+        )
+
+        assert all(i == j for i, j in atom_map.items())
+
+
+@pytest.mark.parametrize(
+    "toolkit_wrapper", [OpenEyeToolkitWrapper(), RDKitToolkitWrapper()]
+)
+def test_generate_conformers_canonical_check(toolkit_wrapper):
+
+    with global_toolkit_wrapper(toolkit_wrapper):
+
+        original_molecule = Molecule.from_smiles("CCCCl").canonical_order_atoms()
+        original_molecule = chemi.generate_conformers(original_molecule, max_confs=1)
+
+        # Generate a conformer using a molecule with permuted atom orderings.
+        atom_map = numpy.arange(original_molecule.n_atoms)
+        numpy.random.shuffle(atom_map)
+
+        remapped_molecule = original_molecule.remap(
+            {int(i): int(j) for i, j in enumerate(atom_map)}
+        )
+        remapped_molecule = chemi.generate_conformers(remapped_molecule, max_confs=1)
+
+        original_conformer = original_molecule.conformers[0].value_in_unit(
+            unit.angstrom
+        )
+        remapped_conformer = remapped_molecule.conformers[0].value_in_unit(
+            unit.angstrom
+        )
+
+        assert numpy.allclose(original_conformer[:4], remapped_conformer[atom_map][:4])
 
 
 @pytest.mark.parametrize(
@@ -100,3 +156,28 @@ def test_find_ring_systems(smiles, toolkit_wrapper):
 
         else:
             assert i not in ring_systems
+
+
+@pytest.mark.parametrize(
+    "add_atom_map, expected",
+    [
+        (False, "CCCC"),
+        (
+            True,
+            "[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])"
+            "[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "toolkit_wrapper", [OpenEyeToolkitWrapper(), RDKitToolkitWrapper()]
+)
+def test_smiles_to_oemol(add_atom_map, expected, toolkit_wrapper):
+
+    from openeye import oechem
+
+    with global_toolkit_wrapper(toolkit_wrapper):
+        mol = chemi.smiles_to_oemol("CCCC", add_atom_map=add_atom_map)
+
+    assert isinstance(mol, oechem.OEMol)
+    assert oechem.OEMolToSmiles(mol) == expected
