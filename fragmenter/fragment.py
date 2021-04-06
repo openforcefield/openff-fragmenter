@@ -17,9 +17,9 @@ from cmiles.utils import (
 
 from fragmenter import torsions
 
-from .chemi import generate_conformers, get_charges
+from .chemi import assign_elf10_am1_bond_orders, generate_conformers
 from .states import _enumerate_stereoisomers
-from .utils import get_fgroup_smarts
+from .utils import get_fgroup_smarts, to_off_molecule
 
 logger = logging.getLogger(__name__)
 
@@ -826,7 +826,9 @@ class Fragmenter(abc.ABC):
             "canonical_isomeric_explicit_hydrogen_mapped_smiles"
         ]
 
-        conformers = generate_conformers(mol_copy, **kwargs)
+        conformers = generate_conformers(
+            to_off_molecule(mol_copy), **kwargs
+        ).to_openeye()
         qcschema_mols = [
             mol_to_map_ordered_qcschema(conf, can_mapped_smiles)
             for conf in conformers.GetConfs()
@@ -967,13 +969,13 @@ class WBOFragmenter(Fragmenter):
         """
         if not fragment:
             time1 = time.time()
-            self.molecule = get_charges(self.molecule, **kwargs)
+            self.molecule = assign_elf10_am1_bond_orders(self.molecule, **kwargs)
             time2 = time.time()
             if self.verbose:
                 logger.info("WBO took {} seconds to calculate".format(time2 - time1))
         else:
             time1 = time.time()
-            fragment = get_charges(fragment, **kwargs)
+            fragment = assign_elf10_am1_bond_orders(fragment, **kwargs)
             time2 = time.time()
             if self.verbose:
                 logger.info("WBO took {} seconds to calculate".format(time2 - time1))
@@ -1016,9 +1018,7 @@ class WBOFragmenter(Fragmenter):
         mol = oechem.OEMol()
         oechem.OESmilesToMol(mol, smiles)
         try:
-            charged_fragment = self.calculate_wbo(
-                fragment=mol, normalize=False, **kwargs
-            )
+            charged_fragment = self.calculate_wbo(fragment=mol, **kwargs)
         except RuntimeError:
             logger.warn(
                 "Cannot calculate WBO for fragment {}. Continue growing fragment".format(

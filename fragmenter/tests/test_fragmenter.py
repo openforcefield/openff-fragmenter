@@ -5,6 +5,7 @@ Unit and regression test for the fragmenter package.
 # Import package, test suite, and other packages as needed
 import sys
 
+import numpy
 import pytest
 from cmiles.utils import mol_to_smiles, remove_atom_map
 
@@ -225,7 +226,7 @@ def test_atom_bond_set_to_mol():
 
 def test_calculate_wbo():
     smiles = "CCCC"
-    oemol = chemi.smiles_to_oemol(smiles, name="butane")
+    oemol = chemi.smiles_to_oemol(smiles)
     f = fragmenter.fragment.WBOFragmenter(oemol)
     mol = f.calculate_wbo()
     assert not mol
@@ -247,7 +248,8 @@ def test_compare_wbo():
     f = fragmenter.fragment.WBOFragmenter(mol)
     f.calculate_wbo()
     f._get_rotor_wbo()
-    assert f._compare_wbo(fragment=mol, bond_tuple=(3, 4)) == 0.0
+
+    assert numpy.isclose(f._compare_wbo(fragment=mol, bond_tuple=(3, 4)), 0.0)
 
 
 @pytest.mark.parametrize(
