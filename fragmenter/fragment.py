@@ -76,8 +76,6 @@ class Fragmenter(abc.ABC):
 
         # Fragments from fragmentation scheme for each rotatable bond
         self.fragments = {}
-        # Used internally for depiction
-        self._fragments = {}
 
     def _find_stereo(self):
         """
@@ -105,7 +103,7 @@ class Fragmenter(abc.ABC):
                 m2 = bond.GetEnd().GetMapIdx()
                 self.stereo[(m1, m2)] = self._bond_stereo_map[s]
 
-    def _check_stereo(self, fragment, use_parent=False):
+    def _check_stereo(self, fragment):
         """
         Check if stereo in fragment is different than stereo in parent. If stereo flips, it raises
         an exception.
@@ -113,8 +111,6 @@ class Fragmenter(abc.ABC):
         Parameters
         ----------
         fragment : oemol or AtomBondSet
-        use_parent : bool, optional, default False
-            When checking if an AtomBondSet has the same stereo, the parent molecule needs to be used.
 
         """
         from openeye import oechem
@@ -128,12 +124,9 @@ class Fragmenter(abc.ABC):
                         )
                     )
                     return False
-                if use_parent:
-                    s = self._atom_stereo_map[
-                        oechem.OEPerceiveCIPStereo(self.molecule, a)
-                    ]
-                else:
-                    s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
+
+                s = self._atom_stereo_map[oechem.OEPerceiveCIPStereo(fragment, a)]
+
                 if not s == self.stereo[a.GetMapIdx()]:
                     logger.warning(
                         "Stereochemistry for atom {} flipped from {} to {}".format(
@@ -150,12 +143,9 @@ class Fragmenter(abc.ABC):
                         "A new chiral bond formed at bond {}".format(b_tuple)
                     )
                     return False
-                if use_parent:
-                    s = self._bond_stereo_map[
-                        oechem.OEPerceiveCIPStereo(self.molecule, b)
-                    ]
-                else:
-                    s = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(fragment, b)]
+
+                s = self._bond_stereo_map[oechem.OEPerceiveCIPStereo(fragment, b)]
+
                 if not s == self.stereo[b_tuple]:
                     logger.warning(
                         "Stereochemistry fro bond {} flipped from {} to {}".format(
@@ -466,15 +456,18 @@ class Fragmenter(abc.ABC):
             if not bond:
                 raise ValueError("{} is a disconnected bond".format(b_tuple))
             atom_bond_set.AddBond(bond)
-        self._check_stereo(atom_bond_set, use_parent=True)
+
         return atom_bond_set
 
-    def _atom_bond_set_to_mol(self, frag, adjust_hcount=True):
+    def _atom_bond_set_to_mol(self, atoms, bonds, adjust_hcount=True):
         """
         Convert fragments (AtomBondSet) to OEMol
         Parameters
         ----------
-        frag: OEAtomBondSet
+        atoms : set of ints
+            set of map indices
+        bonds : set of tuples of ints
+            set of bond tuples (m1, m2)
         adjust_hcount: bool, optional, default True
             If False, hydrogen counts will not be adjusted. Not recommended.
 
@@ -483,6 +476,8 @@ class Fragmenter(abc.ABC):
         fragment: OEMol
         """
         from openeye import oechem
+
+        frag = self._to_atom_bond_set(atoms, bonds)
 
         fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
         fragbondpred = oechem.OEIsBondMember(frag.GetBonds())
@@ -910,6 +905,7 @@ class WBOFragmenter(Fragmenter):
         self.rotors_wbo = {}
 
         self.verbose = verbose
+        self.threshold = None
 
     def fragment(
         self, threshold=0.03, keep_non_rotor_ring_substituents=False, **kwargs
@@ -1052,8 +1048,8 @@ class WBOFragmenter(Fragmenter):
 
         frag_wbo = bond.GetData("WibergBondOrder")
         mol_wbo = self.rotors_wbo[bond_tuple]
-        self.fragments[bond_tuple] = charged_fragment
-        return abs(mol_wbo - frag_wbo)
+
+        return abs(mol_wbo - frag_wbo), charged_fragment
 
     def _build_fragment(self, bond_tuple, heuristic="path_length", cap=True, **kwargs):
         """
@@ -1078,12 +1074,12 @@ class WBOFragmenter(Fragmenter):
             atom_map_idx, bond_tuples = self._cap_open_valence(
                 atom_map_idx, bond_tuples, bond_tuple
             )
-        atom_bond_set = self._to_atom_bond_set(atom_map_idx, bond_tuples)
-        fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
+
+        fragment_mol = self._atom_bond_set_to_mol(atom_map_idx, bond_tuples)
         # #return fragment_mol
-        diff = self._compare_wbo(fragment_mol, bond_tuple, **kwargs)
+        diff, fragment_mol = self._compare_wbo(fragment_mol, bond_tuple, **kwargs)
         if diff <= self.threshold:
-            self._fragments[bond_tuple] = atom_bond_set
+            self.fragments[bond_tuple] = fragment_mol
         if diff > self.threshold:
             self._add_next_substituent(
                 atom_map_idx,
@@ -1143,12 +1139,10 @@ class WBOFragmenter(Fragmenter):
         # the threshold (this will sometimes happen if a very small threshold is chosen) and even the parent will have
         # a wBO difference greater than the threshold. In this case, return the molecule
         if heuristic == "wbo" and len(sort_by) == 0:
-            atom_bond_set = self._to_atom_bond_set(atoms, bonds)
-            fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
+            fragment_mol = self._atom_bond_set_to_mol(atoms, bonds)
             return fragment_mol
         if heuristic == "path_length" and len(sort_by_1) == 0 and len(sort_by_2) == 0:
-            atom_bond_set = self._to_atom_bond_set(atoms, bonds)
-            fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
+            fragment_mol = self._atom_bond_set_to_mol(atoms, bonds)
             return fragment_mol
 
         if heuristic == "path_length":
@@ -1189,10 +1183,12 @@ class WBOFragmenter(Fragmenter):
             # cap open valence
             # if cap:
             #     atoms, bonds = self._cap_open_valence(atoms, bonds, target_bond)
-            atom_bond_set = self._to_atom_bond_set(atoms, bonds)
-            fragment_mol = self._atom_bond_set_to_mol(atom_bond_set)
-            if self._compare_wbo(fragment_mol, target_bond, **kwargs) < self.threshold:
-                self._fragments[target_bond] = atom_bond_set
+            fragment_mol = self._atom_bond_set_to_mol(atoms, bonds)
+
+            diff, fragment_mol = self._compare_wbo(fragment_mol, target_bond, **kwargs)
+
+            if diff < self.threshold:
+                self.fragments[target_bond] = fragment_mol
                 return fragment_mol
             else:
                 return self._add_next_substituent(
@@ -1229,9 +1225,6 @@ class PfizerFragmenter(Fragmenter):
             atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
             atoms, bonds = self._cap_open_valence(atoms, bonds, bond)
 
-            atom_bond_set = self._to_atom_bond_set(atoms, bonds)
-
-            self._fragments[bond] = atom_bond_set
             self.fragments[bond] = self._atom_bond_set_to_mol(
-                atom_bond_set, adjust_hcount=True
+                atoms, bonds, adjust_hcount=True
             )
