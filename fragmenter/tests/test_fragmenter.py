@@ -13,7 +13,7 @@ from cmiles.utils import mol_to_smiles, remove_atom_map
 import fragmenter
 from fragmenter import chemi
 from fragmenter.tests.utils import using_openeye
-from fragmenter.utils import get_fgroup_smarts, get_fgroup_smarts_comb
+from fragmenter.utils import get_fgroup_smarts, get_fgroup_smarts_comb, to_off_molecule
 
 
 class DummyFragmenter(fragmenter.fragment.Fragmenter):
@@ -287,20 +287,30 @@ def test_ring_fgroups(input, output):
 
 
 # ToDo add test to test adding substituent directly bonded to rotatable bond
-def test_find_ortho_substituent():
+def test_find_ortho_substituents():
     from openeye import oechem
 
-    smiles = "[H:34][c:1]1[c:2]([c:6]([c:7]([c:8]([c:3]1[H:36])[Cl:33])[N:28]([H:57])[C:14](=[O:30])[c:9]2[c:5]([n:23][c:13]([s:32]2)[N:29]([H:58])[c:11]3[c:4]([c:10]([n:24][c:12]([n:25]3)[C:20]([H:50])([H:51])[H:52])[N:26]4[C:15]([C:17]([N:27]([C:18]([C:16]4([H:41])[H:42])([H:45])[H:46])[C:21]([H:53])([H:54])[C:22]([H:55])([H:56])[O:31][H:59])([H:43])[H:44])([H:39])[H:40])[H:37])[H:38])[C:19]([H:47])([H:48])[H:49])[H:35]"
+    smiles = (
+        "[H:34][c:1]1[c:2]([c:6]([c:7]([c:8]([c:3]1[H:36])[Cl:33])[N:28]([H:57])[C:14]"
+        "(=[O:30])[c:9]2[c:5]([n:23][c:13]([s:32]2)[N:29]([H:58])[c:11]3[c:4]([c:10]"
+        "([n:24][c:12]([n:25]3)[C:20]([H:50])([H:51])[H:52])[N:26]4[C:15]([C:17]([N:27]"
+        "([C:18]([C:16]4([H:41])[H:42])([H:45])[H:46])[C:21]([H:53])([H:54])[C:22]"
+        "([H:55])([H:56])[O:31][H:59])([H:43])[H:44])([H:39])[H:40])[H:37])[H:38])"
+        "[C:19]([H:47])([H:48])[H:49])[H:35]"
+    )
+
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
+
     f = fragmenter.fragment.WBOFragmenter(mol)
     f._find_ring_systems(keep_non_rotor_ring_substituents=False)
-    ortho = f._find_ortho_substituent(ring_idx=1, rot_bond=(7, 28))
-    # Code was changed to also include substituents bonded diretly to 1-5 atoms, not only ortho to rotatable bond. So the self bond and its connected functional group comes along to ortho.
-    assert len(ortho[0]) == 5  # 2 ortho, 1 self, 2 functional groups
-    assert len(ortho[1]) == 5
-    assert ortho[0] == set((14, 19, 28, 30, 33))
-    assert ortho[1] == set(((14, 28), (14, 30), (19, 6), (28, 7), (33, 8)))
+
+    ortho_atoms, ortho_bonds = f._find_ortho_substituents(
+        to_off_molecule(mol), bonds={(7, 28)}
+    )
+
+    assert ortho_atoms == {19, 28, 33}
+    assert ortho_bonds == {(6, 19), (7, 28), (8, 33)}
 
 
 def test_find_rotatable_bonds():
@@ -479,14 +489,81 @@ def test_get_torsion_quartet(input, output):
     "input, bond, output", [("CCCCCCC", (3, 5), True), ("CCCCc1ccccc1", (9, 10), False)]
 )
 def test_get_ring_and_fgroup(input, bond, output):
+
     mol = chemi.smiles_to_oemol(input)
+
     f = fragmenter.fragment.PfizerFragmenter(mol)
     atoms, bonds = f._get_torsion_quartet(bond)
+
+    # Remove duplicates from the bonds.
+    bonds = {tuple(sorted(bond)) for bond in bonds}
+
     l_atoms = len(atoms)
     l_bonds = len(bonds)
+
     atoms_2, bonds_2 = f._get_ring_and_fgroups(atoms, bonds)
+
     assert (l_atoms == len(atoms_2)) == output
     assert (l_bonds == len(bonds_2)) == output
+
+
+@using_openeye
+@pytest.mark.parametrize(
+    "input, bond, expected_atoms, expected_bonds",
+    [
+        (
+            "[H:11][c:1]1[c:2]([c:4]([c:6]([c:5]([c:3]1[H:13])[C:7](=[O:10])[H:15])"
+            "[C:9]([H:19])([H:20])[C:8]([H:16])([H:17])[H:18])[H:14])[H:12]",
+            (6, 9),
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14, 16, 17, 18, 19, 20},
+            # fmt: off
+            {
+                (1, 2), (6, 9), (1, 3), (4, 6), (9, 20), (5, 6), (9, 19), (5, 7),
+                (4, 14), (8, 9), (8, 18), (7, 10), (8, 17), (8, 16), (2, 4), (3, 5)
+            }
+        ),
+        (
+            "[H:11][c:1]1[c:2]([c:4]([c:6]([c:5]([c:3]1[H:13])[C:7](=[O:10])[H:15])"
+            "[C:9]([H:19])([H:20])[C:8]([H:16])([H:17])[H:18])[H:14])[H:12]",
+            (5, 7),
+            {1, 2, 3, 4, 5, 6, 7, 9, 10, 13, 15},
+            # fmt: off
+            {
+                (1, 2), (6, 9), (1, 3), (4, 6), (7, 15), (3, 13), (5, 6), (5, 7),
+                (7, 10), (2, 4), (3, 5)
+            }
+        ),
+        (
+            "[H:19][c:1]1[c:3]([c:9]([c:15]([c:10]([c:4]1[H:22])[H:28])[c:17]2[c:13]"
+            "([c:7]([c:8]([c:14]([c:18]2[c:16]3[c:11]([c:5]([c:2]([c:6]([c:12]3[H:30])"
+            "[H:24])[H:20])[H:23])[H:29])[H:32])[H:26])[H:25])[H:31])[H:27])[H:21]",
+            (15, 17),
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 27, 28, 31},
+            # fmt: off
+            {
+                (11, 16), (1, 3), (10, 15), (13, 17), (12, 16), (2, 5), (8, 14),
+                (9, 15), (14, 18), (16, 18), (4, 10), (2, 6), (5, 11), (1, 4), (3, 9),
+                (6, 12), (10, 28), (15, 17), (17, 18), (9, 27), (7, 13), (13, 31),
+                (7, 8)
+            }
+        ),
+    ],
+)
+def test_get_ring_and_fgroup_ortho(input, bond, expected_atoms, expected_bonds):
+    """Ensure that FGs and rings attached to ortho groups are correctly
+    detected.
+
+    The expected values were generated using fragmenter=0.0.7
+    """
+    mol = chemi.smiles_to_oemol(input)
+
+    f = fragmenter.fragment.PfizerFragmenter(mol)
+
+    atoms, bonds = f._get_torsion_quartet(bond)
+    atoms, bonds = f._get_ring_and_fgroups(atoms, bonds)
+
+    assert atoms == expected_atoms
+    assert bonds == expected_bonds
 
 
 @pytest.mark.parametrize("input, bond, output", [("CNCCc1ccccc1", (6, 8), 7)])
