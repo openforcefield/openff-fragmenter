@@ -11,7 +11,13 @@ from openff.toolkit.utils import (
 from simtk import unit
 
 from fragmenter import chemi
-from fragmenter.chemi import assign_elf10_am1_bond_orders, find_ring_systems
+from fragmenter.chemi import (
+    _find_oe_stereocenters,
+    _find_rd_stereocenters,
+    assign_elf10_am1_bond_orders,
+    find_ring_systems,
+    find_stereocenters,
+)
 from fragmenter.tests.utils import global_toolkit_wrapper
 
 
@@ -181,3 +187,28 @@ def test_smiles_to_oemol(add_atom_map, expected, toolkit_wrapper):
 
     assert isinstance(mol, oechem.OEMol)
     assert oechem.OEMolToSmiles(mol) == expected
+
+
+@pytest.mark.parametrize(
+    "smiles, expected_atoms, expected_bonds",
+    [
+        ("[C:1]([H:6])([H:7])([H:8])[C:5]([Br:3])([Cl:4])([H:2])", [4], []),
+        ("[C:3]([Cl:1])([H:2])=[C:6]([H:4])([Cl:5])", [], [(2, 5)]),
+        (
+            "[C:3]([Cl:1])([H:2])=[C:6]([H:4])[C:5]([Br:7])([Cl:8])([H:9])",
+            [4],
+            [(2, 5)],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "find_method", [_find_oe_stereocenters, _find_rd_stereocenters, find_stereocenters]
+)
+def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method):
+
+    molecule = Molecule.from_mapped_smiles(smiles, allow_undefined_stereo=True)
+
+    stereogenic_atoms, stereogenic_bonds = find_method(molecule)
+
+    assert stereogenic_atoms == expected_atoms
+    assert stereogenic_bonds == expected_bonds

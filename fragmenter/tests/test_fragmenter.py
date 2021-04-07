@@ -3,6 +3,7 @@ Unit and regression test for the fragmenter package.
 """
 
 # Import package, test suite, and other packages as needed
+import logging
 import sys
 
 import numpy
@@ -402,20 +403,30 @@ def test_find_stereo(smiles, output):
 
 
 @pytest.mark.parametrize(
-    "smiles, frag, output",
+    "smiles, frag, output, warning",
     [
-        ("C[C@@](F)(Cl)I", "C[C@@](F)(Cl)I", True),
-        ("C[C@@](F)(Cl)I", "C[C@](F)(Cl)I", False),
-        (r"C\C=C\C", r"C\C=C\C", True),
-        (r"C/C=C\C", r"C\C=C\C", False),
+        ("C[C@@](F)(Cl)I", "C[C@@](F)(Cl)I", True, None),
+        ("C[C@@](F)(Cl)I", "C[C@](F)(Cl)I", False, "Stereochemistry for atom "),
+        ("C[C@@](F)(Cl)F", "C[C@@](F)(Cl)I", False, "A new stereocenter formed at"),
+        (r"C\C=C\C", r"C\C=C\C", True, None),
+        (r"C/C=C\C", r"C\C=C\C", False, "Stereochemistry for bond"),
+        ("CC=C(C)C", r"C\C=C(C)\CC", False, "A new chiral bond formed at"),
     ],
 )
-def test_check_stereo(smiles, frag, output):
+def test_check_stereo(smiles, frag, output, warning, caplog):
     mol = chemi.smiles_to_oemol(smiles)
     f = fragmenter.fragment.WBOFragmenter(mol)
     f._find_stereo()
     frag = chemi.smiles_to_oemol(frag, add_atom_map=True)
-    assert f._check_stereo(frag) == output
+
+    with caplog.at_level(logging.WARNING):
+        assert f._check_stereo(frag) == output
+
+    if warning is None:
+        assert len(caplog.records) == 0
+    else:
+        assert len(caplog.records) == 1
+        assert caplog.records[0].message.startswith(warning)
 
 
 @pytest.mark.parametrize(

@@ -1,11 +1,12 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
 import copy
-from typing import Dict
+from typing import Dict, List, Tuple
 
 import cmiles
 import networkx
 import numpy
 from openff.toolkit.topology import Molecule
+from openff.toolkit.utils import LicenseError, ToolkitUnavailableException
 
 from fragmenter.utils import to_off_molecule
 
@@ -176,6 +177,125 @@ def find_ring_systems(molecule: Molecule) -> Dict[int, int]:
             ring_systems[atom_index] = i + 1
 
     return ring_systems
+
+
+def _find_oe_stereocenters(
+    molecule: Molecule,
+) -> Tuple[List[int], List[Tuple[int, int]]]:
+    """A method which returns the of the stereogenic atom and bonds of a molecule
+    using the OpenEye toolkit.
+
+    Parameters
+    ----------
+    molecule
+        The molecule whose stereocenters should be returned.
+
+    Notes
+    -----
+    * This method currently deals with OE directly and should be removed once
+      the API points suggested in openff-toolkit issue #903 have been added.
+
+    Returns
+    -------
+        The indices of the stereogenic atoms in the molecule and the indices of the
+        atoms involved in stereogenic bonds in the molecule.
+    """
+
+    from openeye import oechem
+
+    oe_molecule = molecule.to_openeye()
+    oechem.OEPerceiveChiral(oe_molecule)
+
+    stereogenic_atoms = {
+        atom.GetIdx() for atom in oe_molecule.GetAtoms() if atom.IsChiral()
+    }
+
+    stereogenic_bonds = {
+        (bond.GetBgnIdx(), bond.GetEndIdx())
+        for bond in oe_molecule.GetBonds()
+        if bond.IsChiral()
+    }
+
+    return sorted(stereogenic_atoms), sorted(stereogenic_bonds)
+
+
+def _find_rd_stereocenters(
+    molecule: Molecule,
+) -> Tuple[List[int], List[Tuple[int, int]]]:
+    """A method which returns the of the stereogenic atom and bonds of a molecule
+    using the RDKit.
+
+    Parameters
+    ----------
+    molecule
+        The molecule whose stereocenters should be returned.
+
+    Notes
+    -----
+    * This method currently deals with RDKit directly and should be removed once
+      the API points suggested in openff-toolkit issue #903 have been added.
+
+    Returns
+    -------
+        The indices of the stereogenic atoms in the molecule and the indices of the
+        atoms involved in stereogenic bonds in the molecule.
+    """
+
+    from rdkit import Chem
+
+    rd_molecule = molecule.to_rdkit()
+
+    Chem.AssignStereochemistry(
+        rd_molecule, cleanIt=True, force=True, flagPossibleStereoCenters=True
+    )
+
+    stereogenic_atoms = {
+        atom.GetIdx()
+        for atom in rd_molecule.GetAtoms()
+        if atom.HasProp("_ChiralityPossible")
+    }
+
+    # Clear any previous assignments on the bonds, since FindPotentialStereo
+    # may not overwrite it
+    for bond in rd_molecule.GetBonds():
+        bond.SetStereo(Chem.BondStereo.STEREONONE)
+
+    Chem.FindPotentialStereoBonds(rd_molecule, cleanIt=True)
+
+    stereogenic_bonds = {
+        (bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
+        for bond in rd_molecule.GetBonds()
+        if bond.GetStereo() == Chem.BondStereo.STEREOANY
+    }
+
+    return sorted(stereogenic_atoms), sorted(stereogenic_bonds)
+
+
+def find_stereocenters(molecule: Molecule) -> Tuple[List[int], List[Tuple[int, int]]]:
+    """A method which returns the of the stereogenic atom and bonds of a molecule.
+
+    Parameters
+    ----------
+    molecule
+        The molecule whose stereocenters should be returned.
+
+    Notes
+    -----
+    * This method currently deals with OE and RDKit molecules and should be updated once
+      the API points suggested in openff-toolkit issue #903 have been added.
+
+    Returns
+    -------
+        The indices of the stereogenic atoms in the molecule and the indices of the
+        atoms involved in stereogenic bonds in the molecule.
+    """
+
+    try:
+        stereogenic_atoms, stereogenic_bonds = _find_oe_stereocenters(molecule)
+    except (ModuleNotFoundError, ToolkitUnavailableException, LicenseError):
+        stereogenic_atoms, stereogenic_bonds = _find_rd_stereocenters(molecule)
+
+    return stereogenic_atoms, stereogenic_bonds
 
 
 def smiles_to_oemol(smiles, add_atom_map: bool = False):
