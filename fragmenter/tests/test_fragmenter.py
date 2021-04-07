@@ -215,8 +215,7 @@ def test_atom_bond_set_to_mol():
         (26, 66),
         (26, 67),
     }
-    atom_bond_set = f._to_atom_bond_set(atoms=atoms, bonds=bonds)
-    mol = f._atom_bond_set_to_mol(atom_bond_set)
+    mol = f._atom_bond_set_to_mol(atoms=atoms, bonds=bonds)
     for b in mol.GetBonds():
         a1 = b.GetBgn()
         a2 = b.GetEnd()
@@ -249,7 +248,7 @@ def test_compare_wbo():
     f.calculate_wbo()
     f._get_rotor_wbo()
 
-    assert numpy.isclose(f._compare_wbo(fragment=mol, bond_tuple=(3, 4)), 0.0)
+    assert numpy.isclose(f._compare_wbo(fragment=mol, bond_tuple=(3, 4))[0], 0.0)
 
 
 @pytest.mark.parametrize(
