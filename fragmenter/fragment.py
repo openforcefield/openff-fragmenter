@@ -363,9 +363,8 @@ class Fragmenter(abc.ABC):
 
         return fragment
 
-    def _get_torsion_quartet(self, bond):
-        """
-        Get all atoms bonded to the torsion quartet around rotatable bond
+    def _get_torsion_quartet(self, bond: BondTuple) -> AtomAndBondSet:
+        """Get all atoms bonded to the torsion quartet around rotatable bond
 
         Parameters
         ----------
@@ -374,29 +373,45 @@ class Fragmenter(abc.ABC):
 
         Returns
         -------
-        atoms, bonds: set of ints (map indices of atoms in quartet), set of tuples of ints (bonds in quartet)
-
+            The map indices of atoms in quartet and the bonds in quartet)
         """
-        from openeye import oechem
 
-        atom_map_idx = set()
-        bond_tuples = set()
-        atoms = [self.molecule.GetAtom(oechem.OEHasMapIdx(i)) for i in bond]
+        off_molecule = to_off_molecule(self.molecule)
 
-        m1, m2 = atoms[0].GetMapIdx(), atoms[1].GetMapIdx()
-        atom_map_idx.update((m1, m2))
-        bond_tuples.add((m1, m2))
+        atom_map_indices = {*bond}
+        bond_map_indices = {bond}
+
+        atoms = [
+            off_molecule.atoms[i]
+            for i, j in off_molecule.properties["atom_map"].items()
+            if j in bond
+        ]
+
         for atom in atoms:
-            for a in atom.GetAtoms():
-                m = a.GetMapIdx()
-                atom_map_idx.add(m)
-                bond_tuples.add((atom.GetMapIdx(), m))
-                for nbr in a.GetAtoms():
-                    m_nbr = nbr.GetMapIdx()
-                    atom_map_idx.add(m_nbr)
-                    bond_tuples.add((m, m_nbr))
 
-        return atom_map_idx, bond_tuples
+            map_index = get_map_index(off_molecule, atom.molecule_atom_index)
+
+            for neighbor in atom.bonded_atoms:
+
+                neighbour_map_index = get_map_index(
+                    off_molecule, neighbor.molecule_atom_index
+                )
+
+                atom_map_indices.add(neighbour_map_index)
+                bond_map_indices.add((map_index, neighbour_map_index))
+
+                for next_neighbour in neighbor.bonded_atoms:
+
+                    next_neighbour_map_index = get_map_index(
+                        off_molecule, next_neighbour.molecule_atom_index
+                    )
+
+                    atom_map_indices.add(next_neighbour_map_index)
+                    bond_map_indices.add(
+                        (neighbour_map_index, next_neighbour_map_index)
+                    )
+
+        return atom_map_indices, bond_map_indices
 
     def _find_ring_systems(self, keep_non_rotor_ring_substituents: bool = False):
         """This function finds all ring systems and stores them in the `ring_systems`
