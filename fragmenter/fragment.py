@@ -27,7 +27,7 @@ from .chemi import (
     generate_conformers,
 )
 from .states import _enumerate_stereoisomers
-from .utils import get_fgroup_smarts, get_map_index, to_off_molecule
+from .utils import get_atom_index, get_fgroup_smarts, get_map_index, to_off_molecule
 
 logger = logging.getLogger(__name__)
 
@@ -634,19 +634,18 @@ class Fragmenter(abc.ABC):
 
         return matched_atoms, matched_bonds
 
-    def _cap_open_valence(self, atoms, bonds, target_bond):
-        """
-        Cap with methyl for fragments that ends with N, O or S. Otherwise cap with H
+    def _cap_open_valence(
+        self, atoms: Set[int], bonds: Set[BondTuple]
+    ) -> AtomAndBondSet:
+        """Cap with methyl for fragments that ends with N, O or S. Otherwise cap with H
+
         Parameters
         ----------
-        atoms: set of ints
-            map indices of atom in fragment
-        bpnds: set of tuples of ints
-            map indices of bonds in fragment
-        target_bond: tuple of ints
-            bond map indices the fragment is for
+        atoms
+            The map indices of the atoms in the fragment being constructed.
+        bonds
+            The map indices of the bonds in the fragment being constructed.
         """
-        from openeye import oechem
 
         map_index_to_functional_group = {
             map_index: functional_group
@@ -654,25 +653,55 @@ class Fragmenter(abc.ABC):
             for map_index in self.functional_groups[functional_group][0]
         }
 
+        off_molecule = to_off_molecule(self.molecule)
+
         atoms_to_add = set()
         bonds_to_add = set()
-        for m in atoms:
-            a = self.molecule.GetAtom(oechem.OEHasMapIdx(m))
-            for nbr in a.GetAtoms():
-                nbr_m_idx = nbr.GetMapIdx()
-                if not nbr.IsHydrogen() and nbr_m_idx not in atoms:
-                    # This is a cut. If atom is N, O or S, it needs to be capped
-                    if (
-                        a.GetAtomicNum() in (7, 8, 16)
-                        or m in map_index_to_functional_group
-                    ):
-                        # Add all carbons bonded to this atom
-                        for nbr_2 in a.GetAtoms():
-                            if nbr_2.IsCarbon():
-                                atoms_to_add.add(nbr_2.GetMapIdx())
-                                bonds_to_add.add((a.GetMapIdx(), nbr_2.GetMapIdx()))
+
+        for map_index in atoms:
+
+            atom_index = get_atom_index(off_molecule, map_index)
+            atom = off_molecule.atoms[atom_index]
+
+            if (
+                atom.atomic_number not in (7, 8, 16)
+                and map_index not in map_index_to_functional_group
+            ):
+                continue
+
+            # If atom is N, O or S, it needs to be capped
+            should_cap = False
+
+            for neighbour in atom.bonded_atoms:
+
+                neighbour_map_index = get_map_index(
+                    off_molecule, neighbour.molecule_atom_index
+                )
+
+                if neighbour.atomic_number == 1 or neighbour_map_index in atoms:
+                    continue
+
+                should_cap = True
+                break
+
+            if not should_cap:
+                continue
+
+            for neighbour in atom.bonded_atoms:
+
+                if neighbour.atomic_number != 6:
+                    continue
+
+                neighbour_map_index = get_map_index(
+                    off_molecule, neighbour.molecule_atom_index
+                )
+
+                atoms_to_add.add(neighbour_map_index)
+                bonds_to_add.add((map_index, neighbour_map_index))
+
         atoms.update(atoms_to_add)
         bonds.update(bonds_to_add)
+
         return atoms, bonds
 
     def _get_bond(self, bond_tuple):
@@ -1016,7 +1045,7 @@ class WBOFragmenter(Fragmenter):
         # Cap open valence
         if cap:
             atom_map_idx, bond_tuples = self._cap_open_valence(
-                atom_map_idx, bond_tuples, bond_tuple
+                atom_map_idx, bond_tuples
             )
 
         fragment_mol = self._atom_bond_set_to_mol(atom_map_idx, bond_tuples)
@@ -1134,10 +1163,8 @@ class WBOFragmenter(Fragmenter):
                 bonds.update(self.functional_groups[fgroup][1])
             atoms.add(atom)
             bonds.add(bond)
+
             # Check new WBO
-            # cap open valence
-            # if cap:
-            #     atoms, bonds = self._cap_open_valence(atoms, bonds, target_bond)
             fragment_mol = self._atom_bond_set_to_mol(atoms, bonds)
 
             diff, fragment_mol = self._compare_wbo(fragment_mol, target_bond, **kwargs)
@@ -1178,7 +1205,7 @@ class PfizerFragmenter(Fragmenter):
 
             atoms, bonds = self._get_torsion_quartet(bond)
             atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
-            atoms, bonds = self._cap_open_valence(atoms, bonds, bond)
+            atoms, bonds = self._cap_open_valence(atoms, bonds)
 
             self.fragments[bond] = self._atom_bond_set_to_mol(
                 atoms, bonds, adjust_hcount=True

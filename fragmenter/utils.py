@@ -88,3 +88,31 @@ def get_map_index(
         raise KeyError(f"{atom_index} is not in the atom map ({atom_map}).")
 
     return 0 if atom_map_index is None else atom_map_index
+
+
+def get_atom_index(molecule: Molecule, map_index: int) -> int:
+    """Returns the atom index of the atom in a molecule which has the specified map
+    index.
+
+    Parameters
+    ----------
+    molecule
+        The molecule containing the atom.
+    map_index
+        The map index of the atom in the molecule.
+
+    Returns
+    -------
+        The corresponding atom index
+    """
+    inverse_atom_map = {
+        j: i for i, j in molecule.properties.get("atom_map", {}).items()
+    }
+
+    atom_index = inverse_atom_map.get(map_index, None)
+
+    assert (
+        atom_index is not None
+    ), f"{map_index} does not correspond to an atom in the molecule."
+
+    return atom_index
