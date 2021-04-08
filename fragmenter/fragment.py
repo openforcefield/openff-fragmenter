@@ -462,68 +462,32 @@ class Fragmenter(abc.ABC):
 
             # If any atoms are part of a functional group, include the other atoms in the
             # group in the ring system lists
-            map_indices = {
-                map_index
+            functional_groups = {
+                map_index_to_functional_group[map_index]
                 for map_index in ring_system_atoms[ring_index]
                 if map_index in map_index_to_functional_group
             }
 
-            functional_group_atoms = set()
-            functional_group_bonds = set()
-
-            for map_index in map_indices:
-
-                f_group = map_index_to_functional_group[map_index]
-
-                functional_group_atoms.update(self.functional_groups[f_group][0])
-                functional_group_bonds.update(self.functional_groups[f_group][1])
-
-            ring_system_atoms[ring_index].update(functional_group_atoms)
-            ring_system_bonds[ring_index].update(functional_group_bonds)
+            ring_system_atoms[ring_index].update(
+                map_index
+                for functional_group in functional_groups
+                for map_index in self.functional_groups[functional_group][0]
+            )
+            ring_system_bonds[ring_index].update(
+                map_tuple
+                for functional_group in functional_groups
+                for map_tuple in self.functional_groups[functional_group][1]
+            )
 
             if not keep_non_rotor_ring_substituents:
                 continue
 
-            # Check for non-rotor ring substituents
-            non_rotor_atoms = set()
-            non_rotor_bond = set()
-
-            rotatable_bonds = off_molecule.find_rotatable_bonds()
-
-            def heavy_degree(atom: Atom) -> int:
-                return sum(1 for atom in atom.bonded_atoms if atom.atomic_number != 1)
-
-            rotor_bonds = [
-                bond
-                for bond in rotatable_bonds
-                if heavy_degree(bond.atom1) >= 2 and heavy_degree(bond.atom2) >= 2
-            ]
-
-            for bond in off_molecule.bonds:
-
-                # Check if the bond is a rotor.
-                if bond in rotor_bonds:
-                    continue
-
-                if bond.atom1.atomic_number == 1 or bond.atom2.atomic_number == 1:
-                    continue
-
-                map_index_1 = get_map_index(off_molecule, bond.atom1_index)
-                map_index_2 = get_map_index(off_molecule, bond.atom2_index)
-
-                in_system_1 = map_index_1 in ring_system_atoms[ring_index]
-                in_system_2 = map_index_2 in ring_system_atoms[ring_index]
-
-                if (in_system_1 and in_system_2) or (
-                    not in_system_1 and not in_system_2
-                ):
-                    continue
-
-                non_rotor_atoms.update((map_index_1, map_index_2))
-                non_rotor_bond.add((map_index_1, map_index_2))
+            non_rotor_atoms, non_rotor_bonds = self._find_non_rotor_ring_substituents(
+                off_molecule, ring_index, ring_system_atoms
+            )
 
             ring_system_atoms[ring_index].update(non_rotor_atoms)
-            ring_system_bonds[ring_index].update(non_rotor_bond)
+            ring_system_bonds[ring_index].update(non_rotor_bonds)
 
         for ring_index in ring_system_atoms:
 
@@ -532,6 +496,48 @@ class Fragmenter(abc.ABC):
                 ring_system_bonds[ring_index],
             )
 
+    def _find_non_rotor_ring_substituents(
+        self, off_molecule, ring_index, ring_system_atoms
+    ):
+        """Find the non-rotor substituents attached to a particular ring system."""
+
+        rotatable_bonds = off_molecule.find_rotatable_bonds()
+
+        def heavy_degree(atom: Atom) -> int:
+            return sum(1 for atom in atom.bonded_atoms if atom.atomic_number != 1)
+
+        rotor_bonds = [
+            bond
+            for bond in rotatable_bonds
+            if heavy_degree(bond.atom1) >= 2 and heavy_degree(bond.atom2) >= 2
+        ]
+
+        non_rotor_atoms = set()
+        non_rotor_bonds = set()
+
+        for bond in off_molecule.bonds:
+
+            # Check if the bond is a rotor.
+            if bond in rotor_bonds:
+                continue
+
+            if bond.atom1.atomic_number == 1 or bond.atom2.atomic_number == 1:
+                continue
+
+            map_index_1 = get_map_index(off_molecule, bond.atom1_index)
+            map_index_2 = get_map_index(off_molecule, bond.atom2_index)
+
+            in_system_1 = map_index_1 in ring_system_atoms[ring_index]
+            in_system_2 = map_index_2 in ring_system_atoms[ring_index]
+
+            if (in_system_1 and in_system_2) or (not in_system_1 and not in_system_2):
+                continue
+
+            non_rotor_atoms.update((map_index_1, map_index_2))
+            non_rotor_bonds.add((map_index_1, map_index_2))
+
+        return non_rotor_atoms, non_rotor_bonds
+
     def _get_ring_and_fgroups(
         self, atoms: Set[int], bonds: Set[BondTuple]
     ) -> AtomAndBondSet:
@@ -539,9 +545,9 @@ class Fragmenter(abc.ABC):
 
         Parameters
         ----------
-        atoms: set of ints
+        atoms
             map indices of atom in fragment
-        bonds: set of tuples of ints
+        bonds
             map indices of bonds in fragment
 
         Returns
@@ -601,8 +607,8 @@ class Fragmenter(abc.ABC):
     def _find_ortho_substituents(
         self, molecule: Molecule, bonds: Set[BondTuple]
     ) -> AtomAndBondSet:
-        """Find ring substituents that are ortho to one of the rotatable bonds that the
-        fragment is being built around
+        """Find ring substituents that are ortho to one of the rotatable bonds specified
+        in a list of bonds.
 
         Parameters
         ----------
@@ -621,7 +627,7 @@ class Fragmenter(abc.ABC):
         matched_bonds = set()
 
         for match in molecule.chemical_environment_matches(
-            "[!#1:1]~!@[*:2]@[*:3]~&!@[!#1*:4]"
+            "[!#1:1]~&!@[*:2]@[*:3]~&!@[!#1*:4]"
         ):
 
             map_tuple = tuple(get_map_index(molecule, i) for i in match)
