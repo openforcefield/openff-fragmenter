@@ -1283,7 +1283,7 @@ class WBOFragmenter(Fragmenter):
         # the entire group should be included in the fragment.
         for group, group_atoms in self.functional_groups.items():
 
-            if neighbour_atom not in group_atoms:
+            if neighbour_atom not in group_atoms[0]:
                 continue
 
             atoms.update(self.functional_groups[group][0])
@@ -1291,7 +1291,7 @@ class WBOFragmenter(Fragmenter):
 
         for ring_index, ring_atoms in self.ring_systems.items():
 
-            if neighbour_atom not in ring_atoms:
+            if neighbour_atom not in ring_atoms[0]:
                 continue
 
             atoms.update(self.ring_systems[ring_index][0])
