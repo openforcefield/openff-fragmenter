@@ -579,6 +579,6 @@ def test_cap_open_valance(input, bond, output):
     f = fragmenter.fragment.PfizerFragmenter(mol)
     atoms, bonds = f._get_torsion_quartet(bond)
     atoms, bonds = f._get_ring_and_fgroups(atoms, bonds)
-    f._cap_open_valence(atoms, bonds, bond)
+    f._cap_open_valence(atoms, bonds)
     # Check that carbon bonded to N was added
     assert f.molecule.GetAtom(oechem.OEHasMapIdx(output))

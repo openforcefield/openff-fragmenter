@@ -3,7 +3,12 @@ from contextlib import nullcontext
 import pytest
 from openff.toolkit.topology import Molecule
 
-from fragmenter.utils import get_fgroup_smarts, get_fgroup_smarts_comb, get_map_index
+from fragmenter.utils import (
+    get_atom_index,
+    get_fgroup_smarts,
+    get_fgroup_smarts_comb,
+    get_map_index,
+)
 
 
 def test_get_fgroup_smarts():
@@ -52,3 +57,9 @@ def test_get_map_index_error(raise_error, expected_raises):
     with expected_raises:
         map_index = get_map_index(molecule, 0, error_on_missing=raise_error) == 5
         assert map_index == 0
+
+
+def test_get_atom_index():
+
+    molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
+    assert get_atom_index(molecule, 5) == 0
