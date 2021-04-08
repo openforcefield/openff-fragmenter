@@ -3,7 +3,7 @@ import logging
 import time
 import warnings
 from collections import defaultdict
-from typing import Dict, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import cmiles
 from cmiles.utils import (
@@ -245,12 +245,17 @@ class Fragmenter(abc.ABC):
 
                 self.functional_groups[f"{functional_group}_{i}"] = (atoms, bonds)
 
-    def _find_rotatable_bonds(self):
-        # ToDo: Add option to build fragments around terminal torsions (-OH, -NH2, -CH3)
-        """
-        Using SMARTS instead of OpenEye's built in IsRotor function so double bonds are also captured
-        This does not find terminal rotatable bonds such as -OH, -NH2 -CH3.
+    def _find_rotatable_bonds(self) -> List[BondTuple]:
+        """Finds the rotatable bonds in a molecule *including* rotatable double
+        bonds.
 
+        Notes
+        -----
+        * This does not find terminal rotatable bonds such as -OH, -NH2 -CH3.
+
+        Todos
+        -----
+        * Add the option to build fragments around terminal torsions (-OH, -NH2, -CH3)
 
         Returns
         -------
@@ -258,26 +263,31 @@ class Fragmenter(abc.ABC):
             list of rotatable bonds map indices [(m1, m2),...]
 
         """
-        from openeye import oechem
 
-        rotatable_bonds = []
-        smarts = "[!$(*#*)&!D1]-,=;!@[!$(*#*)&!D1]"
-        # Suppress H to avoid finding terminal bonds
-        copy_mol = oechem.OEMol(self.molecule)
-        oechem.OESuppressHydrogens(copy_mol)
-        oechem.OESuppressHydrogens(copy_mol)
-        qmol = oechem.OEQMol()
-        if not oechem.OEParseSmarts(qmol, smarts):
-            raise RuntimeError("Cannot parse SMARTS {}".format(smarts))
-        ss = oechem.OESubSearch(qmol)
-        oechem.OEPrepareSearch(copy_mol, ss)
-        unique = True
-        for match in ss.Match(copy_mol, unique):
-            b = []
-            for ma in match.GetAtoms():
-                b.append(ma.target.GetMapIdx())
-            rotatable_bonds.append(tuple(b))
-        return rotatable_bonds
+        off_molecule = to_off_molecule(self.molecule)
+
+        matches = off_molecule.chemical_environment_matches(
+            "[!$(*#*)&!D1:1]-,=;!@[!$(*#*)&!D1:2]"
+        )
+        unique_matches = {tuple(sorted(match)) for match in matches}
+
+        # Drop bonds without a heavy degree of at least 2 on each end to avoid finding
+        # terminal bonds
+        def heavy_degree(atom_index: int) -> int:
+            atom = off_molecule.atoms[atom_index]
+            return sum(1 for atom in atom.bonded_atoms if atom.atomic_number != 1)
+
+        unique_matches = {
+            match for match in unique_matches if all(heavy_degree(i) > 1 for i in match)
+        }
+
+        return [
+            (
+                get_map_index(off_molecule, match[0]),
+                get_map_index(off_molecule, match[1]),
+            )
+            for match in unique_matches
+        ]
 
     def _to_atom_bond_set(self, atoms, bonds):
         """
