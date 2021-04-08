@@ -254,7 +254,7 @@ def test_compare_wbo():
     f.calculate_wbo()
     f._get_rotor_wbo()
 
-    assert numpy.isclose(f._compare_wbo(fragment=mol, bond_tuple=(3, 4))[0], 0.0)
+    assert numpy.isclose(f._compare_wbo(fragment=mol, bond_tuple=(3, 4)), 0.0)
 
 
 @pytest.mark.parametrize(
@@ -376,7 +376,8 @@ def test_add_substituent():
             continue
         bonds.add((a1.GetMapIdx(), a2.GetMapIdx()))
 
-    mol = f._add_next_substituent(atoms, bonds, target_bond=(3, 5))
+    off_molecule = to_off_molecule(f.molecule)
+    mol = f._add_next_substituent(off_molecule, atoms, bonds, target_bond=(3, 5))
 
     assert mol_to_smiles(mol, mapped=False, explicit_hydrogen=False) == "CCCCCC"
 
