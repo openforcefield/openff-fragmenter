@@ -71,38 +71,43 @@ def test_keep_track_of_map():
 
 @using_openeye
 def test_tag_fgroups():
-    import itertools
 
     from openeye import oechem
 
     smiles = (
-        "[H:40][c:3]1[c:8]([c:20]2[n:30][c:12]([c:14]([n:32]2[n:31][c:11]1[H:48])[C:2]#[C:1][c:13]3[c:9]([c:15]([c:4]([c:5]([c:16]3[C:26]"
-        "([H:58])([H:59])[H:60])[H:42])[H:41])[C:21](=[O:36])[N:35]([H:66])[c:19]4[c:7]([c:6]([c:17]([c:18]([c:10]4[H:47])[C:29]([F:37])([F:38])"
-        "[F:39])[C:28]([H:64])([H:65])[N:34]5[C:24]([C:22]([N:33]([C:23]([C:25]5([H:56])[H:57])([H:52])[H:53])[C:27]([H:61])([H:62])[H:63])([H:50])"
-        "[H:51])([H:54])[H:55])[H:43])[H:44])[H:46])[H:49])[H:45]"
+        "[H:40][c:3]1[c:8]([c:20]2[n:30][c:12]([c:14]([n:32]2[n:31][c:11]1[H:48])[C:2]#"
+        "[C:1][c:13]3[c:9]([c:15]([c:4]([c:5]([c:16]3[C:26]([H:58])([H:59])[H:60])"
+        "[H:42])[H:41])[C:21](=[O:36])[N:35]([H:66])[c:19]4[c:7]([c:6]([c:17]([c:18]"
+        "([c:10]4[H:47])[C:29]([F:37])([F:38])[F:39])[C:28]([H:64])([H:65])[N:34]5"
+        "[C:24]([C:22]([N:33]([C:23]([C:25]5([H:56])[H:57])([H:52])[H:53])[C:27]"
+        "([H:61])([H:62])[H:63])([H:50])[H:51])([H:54])[H:55])[H:43])[H:44])[H:46])"
+        "[H:49])[H:45]"
     )
+
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
 
     functional_groups = get_fgroup_smarts_comb()
 
     frags = fragmenter.fragment.WBOFragmenter(mol, functional_groups=functional_groups)
-    fgroups = {}
-    fgroups["alkyne_0"] = [1, 2]
-    fgroups["carbonyl_0"] = [21, 36]
-    fgroups["amide_0"] = [35]
-    fgroups["tri_halide_0"] = [29, 37, 38, 39]
-    for group in fgroups:
-        for i in fgroups[group]:
-            a = frags.molecule.GetAtom(oechem.OEHasMapIdx(i))
-            assert a.GetData("fgroup") == group
-    for group in fgroups:
-        atoms = [frags.molecule.GetAtom(oechem.OEHasMapIdx(i)) for i in fgroups[group]]
-        for atom in itertools.combinations(atoms, 2):
-            # Check for bond
-            b = frags.molecule.GetBond(atom[0], atom[1])
-            if b:
-                assert b.GetData("fgroup") == group
+
+    functional_groups = {
+        "alkyne_0": {1, 2},
+        "carbonyl_0": {21, 36},
+        "amide_0": {35, 21, 36},
+        "tri_halide_0": {29, 37, 38, 39},
+    }
+
+    for group, atoms in functional_groups.items():
+        assert frags.functional_groups[group][0] == atoms
+
+        assert len(frags.functional_groups[group][1]) > 0
+
+        assert all(
+            index in atoms
+            for bond in frags.functional_groups[group][1]
+            for index in bond
+        )
 
 
 @using_openeye

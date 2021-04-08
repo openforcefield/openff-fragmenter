@@ -12,7 +12,7 @@ def test_get_fgroup_smarts():
     smarts = get_fgroup_smarts()
 
     assert "hydrazine" in smarts
-    assert smarts["hydrazine"] == "[NX3][NX3]"
+    assert smarts["hydrazine"] == "[NX3:1][NX3:2]"
 
     assert "phosphon" not in smarts
 
@@ -25,7 +25,7 @@ def test_get_fgroup_smarts_comb():
     smarts = get_fgroup_smarts_comb()
 
     assert "phosphon" in smarts
-    assert smarts["phosphon"] == "[PX4](=[OX1])([OX2])([OX2])"
+    assert smarts["phosphon"] == "[PX4:1](=[OX1:2])([OX2:3])([OX2:4])"
 
     assert "amide_2" not in smarts
 

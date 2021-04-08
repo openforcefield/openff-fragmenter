@@ -3,7 +3,7 @@ import logging
 import time
 import warnings
 from collections import defaultdict
-from typing import Set, Tuple
+from typing import Dict, Optional, Set, Tuple, Union
 
 import cmiles
 from cmiles.utils import (
@@ -202,57 +202,48 @@ class Fragmenter(abc.ABC):
             f"fixed."
         )
 
-    def _tag_functional_groups(self, functional_groups):
-        """
-        This function tags atoms and bonds of functional groups defined in fgroup_smarts. fgroup_smarts is a dictionary
-        that maps functional groups to their smarts pattern. It can be user generated or from yaml file.
+    def _tag_functional_groups(
+        self, functional_groups: Optional[Union[bool, Dict[str, str]]]
+    ):
+        """Tags atoms and bonds of functional groups specified by ``functional_groups``.
 
         Parameters
         ----------
-        functional_groups: dict, optional, default None.
-            fgroup_smarts is a dictionary of SMARTS of functional groups that should not be fragmented.
-            It can be user generated.
-            If it is None, fragmenter/fragmenter/data/fgroup_smarts.yaml will be used.
-            If False, no functional groups will be tagged and they will all be fragmented.
-
+        functional_groups
+            A dictionary of SMARTS of functional groups that should not be fragmented.
+            If it is None, ``fragmenter/fragmenter/data/fgroup_smarts.yaml`` will be
+            used. If False, no functional groups will be tagged and they will all be
+            fragmented.
         """
-        from openeye import oechem
 
-        if functional_groups:
-            fgroups_smarts = functional_groups
-        if functional_groups is None:
-            fgroups_smarts = get_fgroup_smarts()
-        elif functional_groups is False:
-            # Don't tag fgroups
+        if functional_groups is False:
             return
 
-        for f_group in fgroups_smarts:
-            qmol = oechem.OEQMol()
-            if not oechem.OEParseSmarts(qmol, fgroups_smarts[f_group]):
-                print("OEParseSmarts failed")
-            ss = oechem.OESubSearch(qmol)
-            oechem.OEPrepareSearch(self.molecule, ss)
+        if functional_groups is None:
+            functional_groups = get_fgroup_smarts()
 
-            for i, match in enumerate(ss.Match(self.molecule, True)):
-                fgroup_atoms = set()
-                for ma in match.GetAtoms():
-                    fgroup_atoms.add(ma.target.GetMapIdx())
-                    tag = oechem.OEGetTag("fgroup")
-                    ma.target.SetData(tag, "{}_{}".format(f_group, str(i)))
-                fgroup_bonds = set()
-                for ma in match.GetBonds():
-                    # if not ma.target.IsInRing():
-                    m1 = ma.target.GetBgn().GetMapIdx()
-                    m2 = ma.target.GetEnd().GetMapIdx()
-                    fgroup_bonds.add((m1, m2))
-                    # fgroup_bonds.add(ma.target.GetIdx())
-                    tag = oechem.OEGetTag("fgroup")
-                    ma.target.SetData(tag, "{}_{}".format(f_group, str(i)))
+        off_molecule = to_off_molecule(self.molecule)
 
-                self.functional_groups["{}_{}".format(f_group, str(i))] = (
-                    fgroup_atoms,
-                    fgroup_bonds,
+        for functional_group, smarts in functional_groups.items():
+
+            unique_matches = {
+                tuple(sorted(match))
+                for match in off_molecule.chemical_environment_matches(smarts)
+            }
+
+            for i, match in enumerate(unique_matches):
+
+                atoms = set(get_map_index(off_molecule, index) for index in match)
+                bonds = set(
+                    (
+                        get_map_index(off_molecule, bond.atom1_index),
+                        get_map_index(off_molecule, bond.atom2_index),
+                    )
+                    for bond in off_molecule.bonds
+                    if bond.atom1_index in match and bond.atom2_index in match
                 )
+
+                self.functional_groups[f"{functional_group}_{i}"] = (atoms, bonds)
 
     def _find_rotatable_bonds(self):
         # ToDo: Add option to build fragments around terminal torsions (-OH, -NH2, -CH3)
@@ -657,6 +648,12 @@ class Fragmenter(abc.ABC):
         """
         from openeye import oechem
 
+        map_index_to_functional_group = {
+            map_index: functional_group
+            for functional_group in self.functional_groups
+            for map_index in self.functional_groups[functional_group][0]
+        }
+
         atoms_to_add = set()
         bonds_to_add = set()
         for m in atoms:
@@ -665,7 +662,10 @@ class Fragmenter(abc.ABC):
                 nbr_m_idx = nbr.GetMapIdx()
                 if not nbr.IsHydrogen() and nbr_m_idx not in atoms:
                     # This is a cut. If atom is N, O or S, it needs to be capped
-                    if a.GetAtomicNum() in (7, 8, 16) or "fgroup" in a.GetData():
+                    if (
+                        a.GetAtomicNum() in (7, 8, 16)
+                        or m in map_index_to_functional_group
+                    ):
                         # Add all carbons bonded to this atom
                         for nbr_2 in a.GetAtoms():
                             if nbr_2.IsCarbon():
@@ -1059,6 +1059,11 @@ class WBOFragmenter(Fragmenter):
             for ring_system in self.ring_systems
             for map_index in self.ring_systems[ring_system][0]
         }
+        map_index_to_functional_group = {
+            map_index: functional_group
+            for functional_group in self.functional_groups
+            for map_index in self.functional_groups[functional_group][0]
+        }
 
         bond_atom_1 = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[0]))
         bond_atom_2 = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[1]))
@@ -1123,8 +1128,8 @@ class WBOFragmenter(Fragmenter):
                 ring_idx = map_index_to_ring_system[a.GetMapIdx()]
                 atoms.update(self.ring_systems[ring_idx][0])
                 bonds.update(self.ring_systems[ring_idx][1])
-            if "fgroup" in a.GetData():
-                fgroup = a.GetData("fgroup")
+            if a.GetMapIdx() in map_index_to_functional_group:
+                fgroup = map_index_to_functional_group[a.GetMapIdx()]
                 atoms.update(self.functional_groups[fgroup][0])
                 bonds.update(self.functional_groups[fgroup][1])
             atoms.add(atom)
