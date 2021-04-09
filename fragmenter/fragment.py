@@ -3,9 +3,10 @@ import logging
 import time
 import warnings
 from collections import defaultdict
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Literal, Optional, Set, Tuple, Union
 
 import cmiles
+import networkx
 from cmiles.utils import (
     add_atom_map,
     has_explicit_hydrogen,
@@ -33,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 BondTuple = Tuple[int, int]
 AtomAndBondSet = Tuple[Set[int], Set[BondTuple]]
+
+Heuristic = Literal["path_length", "wbo"]
 
 
 class Fragmenter(abc.ABC):
@@ -577,40 +580,33 @@ class Fragmenter(abc.ABC):
         # fragmented.
         ortho_atoms, ortho_bonds = self._find_ortho_substituents(off_molecule, bonds)
 
-        # Include the rings systems and functional groups connected to the current
-        # atom sets.
         atoms.update(ortho_atoms)
         bonds.update(ortho_bonds)
 
-        map_index_to_functional_group = {
-            map_index: functional_group
-            for functional_group in self.functional_groups
-            for map_index in self.functional_groups[functional_group][0]
-        }
-        map_index_to_ring_system = {
-            map_index: ring_system
-            for ring_system in self.ring_systems
-            for map_index in self.ring_systems[ring_system][0]
-        }
-
+        # Include the rings systems and functional groups connected to the current
+        # atom sets.
         new_atoms = set()
         new_bonds = set()
 
-        for map_index in atoms:
+        functional_groups = {
+            group
+            for group in self.functional_groups
+            if any(atom in self.functional_groups[group][0] for atom in atoms)
+        }
 
-            if map_index in map_index_to_functional_group:
+        for functional_group in functional_groups:
+            new_atoms.update(self.functional_groups[functional_group][0])
+            new_bonds.update(self.functional_groups[functional_group][1])
 
-                functional_group = map_index_to_functional_group[map_index]
+        ring_systems = {
+            ring_index
+            for ring_index in self.ring_systems
+            if any(atom in self.ring_systems[ring_index][0] for atom in atoms)
+        }
 
-                new_atoms.update(self.functional_groups[functional_group][0])
-                new_bonds.update(self.functional_groups[functional_group][1])
-
-            if map_index in map_index_to_ring_system:
-
-                ring_index = map_index_to_ring_system[map_index]
-
-                new_atoms.update(self.ring_systems[ring_index][0])
-                new_bonds.update(self.ring_systems[ring_index][1])
+        for ring_system in ring_systems:
+            new_atoms.update(self.ring_systems[ring_system][0])
+            new_bonds.update(self.ring_systems[ring_system][1])
 
         atoms.update(new_atoms)
         bonds.update(new_bonds)
@@ -991,30 +987,33 @@ class WBOFragmenter(Fragmenter):
             b = self._get_bond(bond)
             self.rotors_wbo[bond] = b.GetData("WibergBondOrder")
 
-    def _compare_wbo(self, fragment, bond_tuple, **kwargs):
-        """
-        Compare Wiberg Bond order of rotatable bond in fragment to parent
+    def _compare_wbo(self, fragment, bond_tuple: BondTuple, **kwargs):
+        """Compare Wiberg Bond order of rotatable bond in a fragment to the parent.
 
         Parameters
         ----------
-        fragment :
-        bond_tuple :
-        kwargs :
+        fragment
+            The fragment containing the rotatable bond.
+        bond_tuple
+            The map indices of the rotatable bond.
 
         Returns
         -------
-
+            The absolute difference between the fragment and parent WBOs.
         """
+
         from openeye import oechem
 
-        # Create new oemol because sometimes the molecule created from atom bond set is wonky and then the WBOs are not reproducible
+        # Create new oemol because sometimes the molecule created from atom bond set is
+        # wonky and then the WBOs are not reproducible
         smiles = oechem.OEMolToSmiles(fragment)
         mol = oechem.OEMol()
         oechem.OESmilesToMol(mol, smiles)
+
         try:
             charged_fragment = self.calculate_wbo(fragment=mol, **kwargs)
         except RuntimeError:
-            logger.warn(
+            logger.warning(
                 "Cannot calculate WBO for fragment {}. Continue growing fragment".format(
                     oechem.OEMolToSmiles(mol)
                 )
@@ -1047,164 +1046,262 @@ class WBOFragmenter(Fragmenter):
         frag_wbo = bond.GetData("WibergBondOrder")
         mol_wbo = self.rotors_wbo[bond_tuple]
 
-        return abs(mol_wbo - frag_wbo), charged_fragment
+        return abs(mol_wbo - frag_wbo)
 
-    def _build_fragment(self, bond_tuple, heuristic="path_length", cap=True, **kwargs):
-        """
-        Build fragment around bond
+    def _build_fragment(
+        self,
+        bond_tuple: BondTuple,
+        heuristic: Heuristic = "path_length",
+        cap: bool = True,
+        **kwargs,
+    ):
+        """Build a fragment around a specified bond.
+
         Parameters
         ----------
-        bond_tuple : tuple
-            tuple of atom maps of atoms in bond
-
-        Returns
-        -------
-
+        bond_tuple
+            The map indices specifying which bond to build the fragment around.
+        heuristic
+            The heuristic to use when building the fragment.
+        cap
+            Whether to cap open valences.
         """
+
+        off_molecule = to_off_molecule(self.molecule)
+
         # Capture options
         if "heuristic" not in self._options:
             self._options["heuristic"] = heuristic
+
         atoms, bonds = self._get_torsion_quartet(bond_tuple)
-        atom_map_idx, bond_tuples = self._get_ring_and_fgroups(atoms, bonds)
+        atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
 
         # Cap open valence
         if cap:
-            atom_map_idx, bond_tuples = self._cap_open_valence(
-                atom_map_idx, bond_tuples
-            )
+            atoms, bonds = self._cap_open_valence(atoms, bonds)
 
-        fragment_mol = self._atom_bond_set_to_mol(atom_map_idx, bond_tuples)
-        # #return fragment_mol
-        diff, fragment_mol = self._compare_wbo(fragment_mol, bond_tuple, **kwargs)
-        if diff <= self.threshold:
-            self.fragments[bond_tuple] = fragment_mol
-        if diff > self.threshold:
-            self._add_next_substituent(
-                atom_map_idx,
-                bond_tuples,
+        fragment = self._atom_bond_set_to_mol(atoms, bonds)
+
+        wbo_difference = self._compare_wbo(fragment, bond_tuple, **kwargs)
+
+        while fragment is not None and wbo_difference > self.threshold:
+
+            fragment = self._add_next_substituent(
+                off_molecule,
+                atoms,
+                bonds,
                 target_bond=bond_tuple,
                 heuristic=heuristic,
-                **kwargs,
             )
 
-    def _add_next_substituent(
-        self, atoms, bonds, target_bond, heuristic="path_length", cap=True, **kwargs
-    ):
-        """
-        If the difference between WBO in fragment and molecules is greater than threshold, add substituents to
-        fragment until difference is within threshold
+            if fragment is None:
+                break
+
+            wbo_difference = self._compare_wbo(fragment, bond_tuple, **kwargs)
+
+        # A work around for a known bug where if stereochemistry changes or gets removed,
+        # the WBOs can change more than the threshold (this will sometimes happen if a
+        # very small threshold is chosen) and even the parent will have a WBO difference
+        # greater than the threshold. In this case, return the molecule
+        if fragment is None:
+            fragment = self._atom_bond_set_to_mol(atoms, bonds)
+
+        self.fragments[bond_tuple] = fragment
+
+    def _select_neighbour_by_path_length(
+        self, molecule: Molecule, atoms: Set[int], target_bond: BondTuple
+    ) -> Optional[Tuple[int, BondTuple]]:
+
+        atom_indices = {get_atom_index(molecule, atom) for atom in atoms}
+
+        atoms_to_add = [
+            (atom_index, neighbour.molecule_atom_index)
+            for atom_index in atom_indices
+            for neighbour in molecule.atoms[atom_index].bonded_atoms
+            if neighbour.atomic_number != 1
+            and neighbour.molecule_atom_index not in atom_indices
+        ]
+        map_atoms_to_add = [
+            (
+                get_map_index(molecule, j),
+                (get_map_index(molecule, i), get_map_index(molecule, j)),
+            )
+            for i, j in atoms_to_add
+        ]
+
+        # Compute the distance from each neighbouring atom to each of the atoms in the
+        # target bond.
+        nx_molecule = molecule.to_networkx()
+
+        target_indices = [get_atom_index(molecule, atom) for atom in target_bond]
+
+        path_lengths_1, path_lengths_2 = zip(
+            *(
+                (
+                    networkx.shortest_path_length(
+                        nx_molecule, target_index, neighbour_index
+                    )
+                    for target_index in target_indices
+                )
+                for atom_index, neighbour_index in atoms_to_add
+            )
+        )
+
+        if len(path_lengths_1) == 0 and len(path_lengths_2) == 0:
+            return None
+
+        reverse = False
+
+        min_path_length_1 = min(path_lengths_1)
+        min_path_length_2 = min(path_lengths_2)
+
+        if min_path_length_1 < min_path_length_2:
+            sort_by = path_lengths_1
+        elif min_path_length_2 < min_path_length_1:
+            sort_by = path_lengths_2
+
+        else:
+
+            # If there are multiple neighbouring atoms the same path length away
+            # from the target bond fall back to sorting by the WBO.
+            map_atoms_to_add = [
+                map_tuple
+                for map_tuple, *path_length_tuple in zip(
+                    map_atoms_to_add, path_lengths_1, path_lengths_2
+                )
+                if min_path_length_1 in path_length_tuple
+            ]
+
+            sort_by = [
+                molecule.get_bond_between(
+                    get_atom_index(molecule, neighbour_bond[0]),
+                    get_atom_index(molecule, neighbour_bond[1]),
+                ).fractional_bond_order
+                for _, neighbour_bond in map_atoms_to_add
+            ]
+
+            reverse = True
+
+        sorted_atoms = [
+            a for _, a in sorted(zip(sort_by, map_atoms_to_add), reverse=reverse)
+        ]
+
+        return None if len(sorted_atoms) == 0 else sorted_atoms[0]
+
+    def _select_neighbour_by_wbo(
+        self, molecule: Molecule, atoms: Set[int]
+    ) -> Optional[Tuple[int, BondTuple]]:
+        """A function which return those atoms which neighbour those in the ``atoms``
+        list sorted by the WBO of the bond between the input atom and the neighbouring
+        atom from largest to smallest.
+
         Parameters
         ----------
-        atoms :
-        bonds :
-        target_bond :
-        threshold :
-        heuristic: str
-            How to add substituents. Choices are path_length or wbo
+        molecule
+            The original molecule being fragmented.
+        atoms
+            The map indices of the atoms currently in the fragment.
 
         Returns
         -------
-
+            The indices of the atoms to be added to the fragment sorted into the
+            order that they should be added in.
         """
-        from openeye import oechem
 
-        map_index_to_ring_system = {
-            map_index: ring_system
-            for ring_system in self.ring_systems
-            for map_index in self.ring_systems[ring_system][0]
-        }
-        map_index_to_functional_group = {
-            map_index: functional_group
-            for functional_group in self.functional_groups
-            for map_index in self.functional_groups[functional_group][0]
+        map_bond_orders = {
+            (
+                get_map_index(molecule, bond.atom1_index),
+                get_map_index(molecule, bond.atom2_index),
+            ): bond.fractional_bond_order
+            for bond in molecule.bonds
+            if bond.atom1.atomic_number != 1 and bond.atom2.atomic_number != 1
         }
 
-        bond_atom_1 = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[0]))
-        bond_atom_2 = self.molecule.GetAtom(oechem.OEHasMapIdx(target_bond[1]))
-        atoms_to_add = []
-        sort_by_1 = []
-        sort_by_2 = []
-        sort_by = []
-        for m_idx in atoms:
-            a = self.molecule.GetAtom(oechem.OEHasMapIdx(m_idx))
-            for nbr in a.GetAtoms():
-                nbr_m_idx = nbr.GetMapIdx()
-                if not nbr.IsHydrogen() and nbr_m_idx not in atoms:
-                    b = self.molecule.GetBond(a, nbr)
-                    atoms_to_add.append((nbr_m_idx, (m_idx, nbr_m_idx)))
-                    if heuristic == "wbo":
-                        sort_by.append(b.GetData("WibergBondOrder"))
-                        reverse = True
-                    elif heuristic == "path_length":
-                        sort_by_1.append(oechem.OEGetPathLength(bond_atom_1, nbr))
-                        sort_by_2.append(oechem.OEGetPathLength(bond_atom_2, nbr))
-                        reverse = False
-                    else:
-                        raise ValueError(
-                            "Only wbo and path_lenght are supported heuristics"
-                        )
-
-        # A work around for a known bug where if stereochemistry changes or gets removed, the WBOs can change more than
-        # the threshold (this will sometimes happen if a very small threshold is chosen) and even the parent will have
-        # a wBO difference greater than the threshold. In this case, return the molecule
-        if heuristic == "wbo" and len(sort_by) == 0:
-            fragment_mol = self._atom_bond_set_to_mol(atoms, bonds)
-            return fragment_mol
-        if heuristic == "path_length" and len(sort_by_1) == 0 and len(sort_by_2) == 0:
-            fragment_mol = self._atom_bond_set_to_mol(atoms, bonds)
-            return fragment_mol
-
-        if heuristic == "path_length":
-            min_1 = min(sort_by_1)
-            min_2 = min(sort_by_2)
-            if min_1 < min_2:
-                sort_by = sort_by_1
-            elif min_2 < min_1:
-                sort_by = sort_by_2
-            elif min_1 == min_2:
-                indices = []
-                for length_index in [sort_by_1, sort_by_2]:
-                    indices.extend(
-                        [i for i, x in enumerate(length_index) if x == min_1]
-                    )
-                atoms_to_add = [atoms_to_add[i] for i in indices]
-                for a, b in atoms_to_add:
-                    bond = self._get_bond(b)
-                    sort_by.append(bond.GetData("WibergBondOrder"))
-                    reverse = True
+        neighbour_bond_orders = {
+            (bond_order, (map_tuple[1 - i], map_tuple))
+            for i in range(2)
+            for map_tuple, bond_order in map_bond_orders.items()
+            if map_tuple[i] in atoms and map_tuple[1 - i] not in atoms
+        }
 
         sorted_atoms = [
-            a for _, a in sorted(zip(sort_by, atoms_to_add), reverse=reverse)
+            atom_to_add
+            for _, atom_to_add in sorted(
+                neighbour_bond_orders, key=lambda x: x[0], reverse=True
+            )
         ]
-        for atom, bond in sorted_atoms:
-            a = self.molecule.GetAtom(oechem.OEHasMapIdx(atom))
-            if a.GetMapIdx() in map_index_to_ring_system:
-                ring_idx = map_index_to_ring_system[a.GetMapIdx()]
-                atoms.update(self.ring_systems[ring_idx][0])
-                bonds.update(self.ring_systems[ring_idx][1])
-            if a.GetMapIdx() in map_index_to_functional_group:
-                fgroup = map_index_to_functional_group[a.GetMapIdx()]
-                atoms.update(self.functional_groups[fgroup][0])
-                bonds.update(self.functional_groups[fgroup][1])
-            atoms.add(atom)
-            bonds.add(bond)
 
-            # Check new WBO
-            fragment_mol = self._atom_bond_set_to_mol(atoms, bonds)
+        return None if len(sorted_atoms) == 0 else sorted_atoms[0]
 
-            diff, fragment_mol = self._compare_wbo(fragment_mol, target_bond, **kwargs)
+    def _add_next_substituent(
+        self,
+        molecule: Molecule,
+        atoms: Set[int],
+        bonds: Set[BondTuple],
+        target_bond: BondTuple,
+        heuristic: Heuristic = "path_length",
+    ):
+        """Expand the fragment to include the next set of substituents / ring systems.
 
-            if diff < self.threshold:
-                self.fragments[target_bond] = fragment_mol
-                return fragment_mol
-            else:
-                return self._add_next_substituent(
-                    atoms=atoms,
-                    bonds=bonds,
-                    target_bond=target_bond,
-                    heuristic=heuristic,
-                    **kwargs,
-                )
+        Parameters
+        ----------
+        molecule
+            The original molecule being fragmented.
+        atoms
+            The map indices of the atoms currently in the fragment.
+        bonds
+            The map indices of the bonds currently in the fragment.
+        target_bond
+            The bond the fragment is being built around.
+        heuristic
+            How to add substituents. The choices are `'path_length'` or `'wbo'`
+
+        Returns
+        -------
+            The expanded fragment.
+        """
+
+        # Select the next atom neighbour (and the groups / rings that it is part of)
+        # that should be added to the fragment.
+        if heuristic == "wbo":
+            neighbour_atom_and_bond = self._select_neighbour_by_wbo(molecule, atoms)
+        elif heuristic == "path_length":
+            neighbour_atom_and_bond = self._select_neighbour_by_path_length(
+                molecule, atoms, target_bond
+            )
+        else:
+            raise NotImplementedError(
+                "Only `'wbo'` and `'path_length'` are supported heuristics."
+            )
+
+        if neighbour_atom_and_bond is None:
+            return None
+
+        neighbour_atom, neighbour_bond = neighbour_atom_and_bond
+
+        # If the neighbour to include is part of a functional group / ring system
+        # the entire group should be included in the fragment.
+        for group, group_atoms in self.functional_groups.items():
+
+            if neighbour_atom not in group_atoms[0]:
+                continue
+
+            atoms.update(self.functional_groups[group][0])
+            bonds.update(self.functional_groups[group][1])
+
+        for ring_index, ring_atoms in self.ring_systems.items():
+
+            if neighbour_atom not in ring_atoms[0]:
+                continue
+
+            atoms.update(self.ring_systems[ring_index][0])
+            bonds.update(self.ring_systems[ring_index][1])
+
+        atoms.add(neighbour_atom)
+        bonds.add(neighbour_bond)
+
+        # Check new WBO
+        return self._atom_bond_set_to_mol(atoms, bonds)
 
 
 class PfizerFragmenter(Fragmenter):
