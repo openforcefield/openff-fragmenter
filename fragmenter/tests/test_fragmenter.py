@@ -170,44 +170,24 @@ def test_build_WBOfragment():
     assert f.fragments.keys() == f.rotors_wbo.keys()
 
 
-def test_to_atom_bond_set():
-    from openeye import oechem
-
-    smiles = "[H:38][c:1]1[c:2]([c:14]([n:28][c:5]([c:8]1[C:25]([H:64])([H:65])[N:33]2[C:17]([C:19]([N:34]([C:20]([C:18]2([H:46])[H:47])([H:50])[H:51])[C:26]([H:66])([H:67])[C:22]([H:55])([H:56])[H:57])([H:48])[H:49])([H:44])[H:45])[H:42])[N:35]([H:69])[c:16]3[n:29][c:6]([c:12]([c:13]([n:31]3)[c:7]4[c:3]([c:10]5[c:9]([c:11]([c:4]4[H:41])[F:36])[n:30][c:15]([n:32]5[C:27]([H:68])([C:23]([H:58])([H:59])[H:60])[C:24]([H:61])([H:62])[H:63])[C:21]([H:52])([H:53])[H:54])[H:40])[F:37])[H:43])[H:39]"
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
-    f = DummyFragmenter(mol, get_fgroup_smarts())
-    atoms = {17, 18, 19, 20, 22, 26, 33, 34, 66, 67}
-    bonds = {
-        (17, 19),
-        (17, 33),
-        (18, 20),
-        (18, 33),
-        (19, 34),
-        (20, 34),
-        (22, 26),
-        (26, 34),
-        (26, 66),
-        (26, 67),
-    }
-    atom_bond_set = f._to_atom_bond_set(atoms=atoms, bonds=bonds)
-    atoms_2 = set([a.GetMapIdx() for a in atom_bond_set.GetAtoms()])
-    assert atoms == atoms_2
-    bonds_2 = set()
-    for b in atom_bond_set.GetBonds():
-        a1 = b.GetBgn().GetMapIdx()
-        a2 = b.GetEnd().GetMapIdx()
-        bonds_2.add(tuple(sorted((a1, a2))))
-    assert bonds == bonds_2
-
-
 def test_atom_bond_set_to_mol():
     from openeye import oechem
 
-    smiles = "[H:38][c:1]1[c:2]([c:14]([n:28][c:5]([c:8]1[C:25]([H:64])([H:65])[N:33]2[C:17]([C:19]([N:34]([C:20]([C:18]2([H:46])[H:47])([H:50])[H:51])[C:26]([H:66])([H:67])[C:22]([H:55])([H:56])[H:57])([H:48])[H:49])([H:44])[H:45])[H:42])[N:35]([H:69])[c:16]3[n:29][c:6]([c:12]([c:13]([n:31]3)[c:7]4[c:3]([c:10]5[c:9]([c:11]([c:4]4[H:41])[F:36])[n:30][c:15]([n:32]5[C:27]([H:68])([C:23]([H:58])([H:59])[H:60])[C:24]([H:61])([H:62])[H:63])[C:21]([H:52])([H:53])[H:54])[H:40])[F:37])[H:43])[H:39]"
+    smiles = (
+        "[H:38][c:1]1[c:2]([c:14]([n:28][c:5]([c:8]1[C:25]([H:64])([H:65])[N:33]2"
+        "[C:17]([C:19]([N:34]([C:20]([C:18]2([H:46])[H:47])([H:50])[H:51])[C:26]"
+        "([H:66])([H:67])[C:22]([H:55])([H:56])[H:57])([H:48])[H:49])([H:44])[H:45])"
+        "[H:42])[N:35]([H:69])[c:16]3[n:29][c:6]([c:12]([c:13]([n:31]3)[c:7]4[c:3]"
+        "([c:10]5[c:9]([c:11]([c:4]4[H:41])[F:36])[n:30][c:15]([n:32]5[C:27]([H:68])"
+        "([C:23]([H:58])([H:59])[H:60])[C:24]([H:61])([H:62])[H:63])[C:21]([H:52])"
+        "([H:53])[H:54])[H:40])[F:37])[H:43])[H:39]"
+    )
+
     mol = oechem.OEMol()
     oechem.OESmilesToMol(mol, smiles)
+
     f = DummyFragmenter(mol, get_fgroup_smarts())
+
     atoms = {17, 18, 19, 20, 22, 26, 33, 34, 66, 67}
     bonds = {
         (17, 19),
@@ -221,10 +201,14 @@ def test_atom_bond_set_to_mol():
         (26, 66),
         (26, 67),
     }
+
     mol = f._atom_bond_set_to_mol(atoms=atoms, bonds=bonds)
+
     for b in mol.GetBonds():
+
         a1 = b.GetBgn()
         a2 = b.GetEnd()
+
         if not a1.IsHydrogen() and not a2.IsHydrogen():
             assert tuple(sorted((a1.GetMapIdx(), a2.GetMapIdx()))) in bonds
 

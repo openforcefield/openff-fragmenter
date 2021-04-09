@@ -12,9 +12,12 @@ from simtk import unit
 
 from fragmenter import chemi
 from fragmenter.chemi import (
+    _extract_oe_fragment,
+    _extract_rd_fragment,
     _find_oe_stereocenters,
     _find_rd_stereocenters,
     assign_elf10_am1_bond_orders,
+    extract_fragment,
     find_ring_systems,
     find_stereocenters,
 )
@@ -212,3 +215,35 @@ def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method)
 
     assert stereogenic_atoms == expected_atoms
     assert stereogenic_bonds == expected_bonds
+
+
+@pytest.mark.parametrize(
+    "smiles, atoms, bonds, expected",
+    [
+        ("[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])", {1}, set(), "C"),
+        (
+            r"[H:6]/[C:1](=[C:2](\[C:3]([H:7])([H:8])[H:9])/[Cl:5])/[Cl:4]",
+            {1, 2, 4, 5},
+            {(1, 2), (1, 4), (2, 5)},
+            r"Cl\C=C/Cl",
+        ),
+        (
+            "[H:7][C:1]([H:8])([C@:2]([F:3])([Cl:5])[Br:6])[Cl:4]",
+            {1, 2, 3, 5, 6},
+            {(1, 2), (2, 3), (2, 5), (2, 6)},
+            r"C[C@](F)(Cl)Br",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "extract_method", [_extract_rd_fragment, _extract_oe_fragment, extract_fragment]
+)
+def test_extract_fragment(smiles, atoms, bonds, expected, extract_method):
+
+    molecule = Molecule.from_mapped_smiles(smiles)
+    molecule.properties["atom_map"] = {i: i + 1 for i in range(molecule.n_atoms)}
+
+    fragment = extract_method(molecule, atoms, bonds)
+
+    expected_fragment = Molecule.from_smiles(expected)
+    assert Molecule.are_isomorphic(fragment, expected_fragment)
