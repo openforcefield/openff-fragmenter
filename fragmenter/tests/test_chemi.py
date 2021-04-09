@@ -1,4 +1,6 @@
 """Test chemi module"""
+import logging
+
 import numpy
 import pytest
 from openff.toolkit.topology import Molecule
@@ -21,7 +23,7 @@ from fragmenter.chemi import (
     find_ring_systems,
     find_stereocenters,
 )
-from fragmenter.tests.utils import global_toolkit_wrapper
+from fragmenter.tests.utils import global_toolkit_wrapper, using_openeye
 
 
 @pytest.mark.parametrize(
@@ -220,7 +222,22 @@ def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method)
 @pytest.mark.parametrize(
     "smiles, atoms, bonds, expected",
     [
-        ("[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])", {1}, set(), "C"),
+        (
+            "[C:1]([H:4])([H:5])([H:6])"
+            "[C:2]([H:7])([H:8])"
+            "[C:3]([H:9])([H:10])([H:11])",
+            {1, 2},
+            {(1, 2)},
+            "CC",
+        ),
+        (
+            "[C:1]([H:4])([H:5])([H:6])"
+            "[C:2]([H:7])([H:8])"
+            "[C:3]([H:9])([H:10])([H:11])",
+            {1, 2, 4},
+            {(1, 2), (1, 4)},
+            "CC",
+        ),
         (
             r"[H:6]/[C:1](=[C:2](\[C:3]([H:7])([H:8])[H:9])/[Cl:5])/[Cl:4]",
             {1, 2, 4, 5},
@@ -246,4 +263,28 @@ def test_extract_fragment(smiles, atoms, bonds, expected, extract_method):
     fragment = extract_method(molecule, atoms, bonds)
 
     expected_fragment = Molecule.from_smiles(expected)
-    assert Molecule.are_isomorphic(fragment, expected_fragment)
+
+    assert Molecule.are_isomorphic(
+        fragment, expected_fragment, bond_stereochemistry_matching=False
+    )[0]
+
+
+def test_extract_fragment_bonds_in_atoms():
+    """Tests that an exception is raised when the bonds set contains atoms not in the
+    atoms set."""
+
+    molecule = Molecule.from_smiles("[H:1][C:2]#[C:3][H:4]")
+
+    with pytest.raises(ValueError, match="set includes atoms not in the"):
+        extract_fragment(molecule, {2}, {(2, 3)})
+
+
+@using_openeye
+def test_extract_fragment_disconnected_fragment_warning(caplog):
+
+    molecule = Molecule.from_smiles("[C:1][C:2]")
+
+    with caplog.at_level(logging.WARNING):
+        extract_fragment(molecule, {1, 2}, set())
+
+    assert "Yikes!!! An atom that is not bonded to any other atom" in caplog.text

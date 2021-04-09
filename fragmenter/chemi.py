@@ -307,11 +307,14 @@ def _extract_rd_fragment(
 
     from rdkit import Chem
 
-    rd_molecule = molecule.to_rdkit()
+    rd_molecule = Chem.RWMol(molecule.to_rdkit())
+    rd_atoms_by_map: Dict[int, Chem.Atom] = {}
 
     # Restore the map indices as to_rdkit does not automatically add them.
     for atom in rd_molecule.GetAtoms():
         atom.SetAtomMapNum(get_map_index(molecule, atom.GetIdx()))
+
+        rd_atoms_by_map[atom.GetAtomMapNum()] = atom
 
     atoms_to_use = [get_atom_index(molecule, i) for i in atom_indices]
     bonds_to_use = [
@@ -321,10 +324,68 @@ def _extract_rd_fragment(
         for pair in bond_indices
     ]
 
-    fragment_smiles = Chem.MolFragmentToSmiles(rd_molecule, atoms_to_use, bonds_to_use)
+    # Make sure to include any Hs bonded to the included atom set otherwise radicals
+    # will form.
+    for map_index in atom_indices:
 
-    fragment = Molecule.from_smiles(fragment_smiles)
-    assert {*fragment.properties["atom_map"].values()} == atom_indices
+        for neighbour in rd_atoms_by_map[map_index].GetNeighbors():
+
+            if (
+                neighbour.GetAtomicNum() != 1
+                or neighbour.GetAtomMapNum() < 1
+                or neighbour.GetAtomMapNum() in atom_indices
+            ):
+                continue
+
+            atoms_to_use.append(neighbour.GetIdx())
+            bonds_to_use.append(
+                rd_molecule.GetBondBetweenAtoms(
+                    rd_atoms_by_map[map_index].GetIdx(), neighbour.GetIdx()
+                ).GetIdx()
+            )
+
+    # Add additional hydrogens to atoms where the total valence will change likewise to
+    # ensure the valence does not change.
+    rd_atoms_by_index = {atom.GetIdx(): atom for atom in rd_molecule.GetAtoms()}
+
+    for atom_index in [*atoms_to_use]:
+
+        atom = rd_atoms_by_index[atom_index]
+
+        old_valence = atom.GetTotalValence()
+        new_valence = atom.GetTotalValence()
+
+        for neighbour_bond in rd_atoms_by_index[atom_index].GetBonds():
+
+            if (
+                neighbour_bond.GetBeginAtomIdx() in atoms_to_use
+                and neighbour_bond.GetEndAtomIdx() in atoms_to_use
+            ):
+                continue
+
+            new_valence -= neighbour_bond.GetValenceContrib(atom)
+
+        if numpy.isclose(old_valence, new_valence):
+            # Skip the cases where the valence won't change
+            continue
+
+        # Add a hydrogen to the atom whose valence will change.
+        for _ in range(int(numpy.rint(old_valence - new_valence))):
+
+            new_atom = Chem.Atom(1)
+            new_atom_index = rd_molecule.AddAtom(new_atom)
+
+            rd_molecule.AddBond(atom_index, new_atom_index)
+
+            new_bond = rd_molecule.GetBondBetweenAtoms(atom_index, new_atom_index)
+            new_bond.SetBondType(Chem.BondType.SINGLE)
+            new_bond.SetIsAromatic(False)
+
+            atoms_to_use.append(new_atom_index)
+            bonds_to_use.append(new_bond.GetIdx())
+
+    fragment_smiles = Chem.MolFragmentToSmiles(rd_molecule, atoms_to_use, bonds_to_use)
+    fragment = Molecule.from_smiles(fragment_smiles, allow_undefined_stereo=True)
 
     return fragment
 
@@ -342,6 +403,24 @@ def _extract_oe_fragment(
 
         oe_atom = oe_molecule.GetAtom(oechem.OEHasAtomIdx(atom_index))
         oe_atom.SetMapIdx(map_index)
+
+    # Include any Hs bonded to the included atom set so we can retain their map
+    # indices.
+    for map_index in {*atom_indices}:
+
+        oe_atom = oe_molecule.GetAtom(oechem.OEHasMapIdx(map_index))
+
+        for neighbour in oe_atom.GetAtoms():
+
+            if (
+                neighbour.GetAtomicNum() != 1
+                or neighbour.GetMapIdx() < 1
+                or neighbour.GetMapIdx() in atom_indices
+            ):
+                continue
+
+            atom_indices.add(neighbour.GetMapIdx())
+            bond_indices.add((map_index, neighbour.GetMapIdx()))
 
     atom_bond_set = oechem.OEAtomBondSet()
 
@@ -370,16 +449,6 @@ def _extract_oe_fragment(
     oechem.OEAddExplicitHydrogens(fragment)
     oechem.OEPerceiveChiral(fragment)
 
-    # sanity check that all atoms are bonded
-    for atom in fragment.GetAtoms():
-        if not list(atom.GetBonds()):
-
-            logger.warning(
-                "Yikes!!! An atom that is not bonded to any other atom in the fragment. "
-                "You probably ran into a bug. Please report the input molecule to the "
-                "issue tracker"
-            )
-
     # Always restore map?
     # if restore_maps:
     # In some cases (symmetric molecules) this changes the atom map so skip it
@@ -390,7 +459,7 @@ def _extract_oe_fragment(
     oechem.OE3DToAtomStereo(fragment)
     oechem.OE3DToBondStereo(fragment)
 
-    return Molecule.from_openeye(fragment)
+    return Molecule.from_openeye(fragment, allow_undefined_stereo=True)
 
 
 def extract_fragment(
@@ -409,7 +478,8 @@ def extract_fragment(
         The *map* indices of the subset of bonds to retain.
     """
 
-    # Make sure that the bond and atom indices are self consistent.
+    # Make sure that the bond and atom indices are self consistent and that there
+    # are no disconnected bonds.
     if not all(i in atom_indices for map_tuple in bond_indices for i in map_tuple):
 
         raise ValueError(
@@ -420,6 +490,17 @@ def extract_fragment(
         fragment = _extract_oe_fragment(molecule, atom_indices, bond_indices)
     except (ModuleNotFoundError, ToolkitUnavailableException, LicenseError):
         fragment = _extract_rd_fragment(molecule, atom_indices, bond_indices)
+
+    # Sanity check that all atoms are still bonded
+    fragment_smiles = fragment.to_smiles()
+
+    if "." in fragment_smiles:
+
+        logger.warning(
+            "Yikes!!! An atom that is not bonded to any other atom in the fragment. "
+            "You probably ran into a bug. Please report the input molecule to the "
+            "issue tracker"
+        )
 
     return fragment
 
