@@ -1,6 +1,7 @@
 """functions to manipulate, read and write OpenEye and Psi4 molecules"""
 import copy
-from typing import Dict, List, Tuple
+import logging
+from typing import Dict, List, Set, Tuple
 
 import cmiles
 import networkx
@@ -8,7 +9,9 @@ import numpy
 from openff.toolkit.topology import Molecule
 from openff.toolkit.utils import LicenseError, ToolkitUnavailableException
 
-from fragmenter.utils import to_off_molecule
+from fragmenter.utils import get_atom_index, get_map_index, to_off_molecule
+
+logger = logging.getLogger(__name__)
 
 
 def assign_elf10_am1_bond_orders(molecule, max_confs=800):
@@ -296,6 +299,210 @@ def find_stereocenters(molecule: Molecule) -> Tuple[List[int], List[Tuple[int, i
         stereogenic_atoms, stereogenic_bonds = _find_rd_stereocenters(molecule)
 
     return stereogenic_atoms, stereogenic_bonds
+
+
+def _extract_rd_fragment(
+    molecule: Molecule, atom_indices: Set[int], bond_indices: Set[Tuple[int, int]]
+) -> Molecule:
+
+    from rdkit import Chem
+
+    rd_molecule = Chem.RWMol(molecule.to_rdkit())
+    rd_atoms_by_map: Dict[int, Chem.Atom] = {}
+
+    # Restore the map indices as to_rdkit does not automatically add them.
+    for atom in rd_molecule.GetAtoms():
+        atom.SetAtomMapNum(get_map_index(molecule, atom.GetIdx()))
+
+        rd_atoms_by_map[atom.GetAtomMapNum()] = atom
+
+    atoms_to_use = [get_atom_index(molecule, i) for i in atom_indices]
+    bonds_to_use = [
+        rd_molecule.GetBondBetweenAtoms(
+            get_atom_index(molecule, pair[0]), get_atom_index(molecule, pair[1])
+        ).GetIdx()
+        for pair in bond_indices
+    ]
+
+    # Make sure to include any Hs bonded to the included atom set otherwise radicals
+    # will form.
+    for map_index in atom_indices:
+
+        for neighbour in rd_atoms_by_map[map_index].GetNeighbors():
+
+            if (
+                neighbour.GetAtomicNum() != 1
+                or neighbour.GetAtomMapNum() < 1
+                or neighbour.GetAtomMapNum() in atom_indices
+            ):
+                continue
+
+            atoms_to_use.append(neighbour.GetIdx())
+            bonds_to_use.append(
+                rd_molecule.GetBondBetweenAtoms(
+                    rd_atoms_by_map[map_index].GetIdx(), neighbour.GetIdx()
+                ).GetIdx()
+            )
+
+    # Add additional hydrogens to atoms where the total valence will change likewise to
+    # ensure the valence does not change.
+    rd_atoms_by_index = {atom.GetIdx(): atom for atom in rd_molecule.GetAtoms()}
+
+    for atom_index in [*atoms_to_use]:
+
+        atom = rd_atoms_by_index[atom_index]
+
+        old_valence = atom.GetTotalValence()
+        new_valence = atom.GetTotalValence()
+
+        for neighbour_bond in rd_atoms_by_index[atom_index].GetBonds():
+
+            if (
+                neighbour_bond.GetBeginAtomIdx() in atoms_to_use
+                and neighbour_bond.GetEndAtomIdx() in atoms_to_use
+            ):
+                continue
+
+            new_valence -= neighbour_bond.GetValenceContrib(atom)
+
+        if numpy.isclose(old_valence, new_valence):
+            # Skip the cases where the valence won't change
+            continue
+
+        # Add a hydrogen to the atom whose valence will change.
+        for _ in range(int(numpy.rint(old_valence - new_valence))):
+
+            new_atom = Chem.Atom(1)
+            new_atom_index = rd_molecule.AddAtom(new_atom)
+
+            rd_molecule.AddBond(atom_index, new_atom_index)
+
+            new_bond = rd_molecule.GetBondBetweenAtoms(atom_index, new_atom_index)
+            new_bond.SetBondType(Chem.BondType.SINGLE)
+            new_bond.SetIsAromatic(False)
+
+            atoms_to_use.append(new_atom_index)
+            bonds_to_use.append(new_bond.GetIdx())
+
+    fragment_smiles = Chem.MolFragmentToSmiles(rd_molecule, atoms_to_use, bonds_to_use)
+    fragment = Molecule.from_smiles(fragment_smiles, allow_undefined_stereo=True)
+
+    return fragment
+
+
+def _extract_oe_fragment(
+    molecule: Molecule, atom_indices: Set[int], bond_indices: Set[Tuple[int, int]]
+) -> Molecule:
+
+    from openeye import oechem
+
+    oe_molecule = molecule.to_openeye()
+
+    # Restore the map indices as to_openeye does not automatically add them.
+    for atom_index, map_index in molecule.properties["atom_map"].items():
+
+        oe_atom = oe_molecule.GetAtom(oechem.OEHasAtomIdx(atom_index))
+        oe_atom.SetMapIdx(map_index)
+
+    # Include any Hs bonded to the included atom set so we can retain their map
+    # indices.
+    for map_index in {*atom_indices}:
+
+        oe_atom = oe_molecule.GetAtom(oechem.OEHasMapIdx(map_index))
+
+        for neighbour in oe_atom.GetAtoms():
+
+            if (
+                neighbour.GetAtomicNum() != 1
+                or neighbour.GetMapIdx() < 1
+                or neighbour.GetMapIdx() in atom_indices
+            ):
+                continue
+
+            atom_indices.add(neighbour.GetMapIdx())
+            bond_indices.add((map_index, neighbour.GetMapIdx()))
+
+    atom_bond_set = oechem.OEAtomBondSet()
+
+    for map_index in atom_indices:
+        atom = oe_molecule.GetAtom(oechem.OEHasMapIdx(map_index))
+        atom_bond_set.AddAtom(atom)
+
+    for map_index_1, map_index_2 in bond_indices:
+
+        atom_1 = oe_molecule.GetAtom(oechem.OEHasMapIdx(map_index_1))
+        atom_2 = oe_molecule.GetAtom(oechem.OEHasMapIdx(map_index_2))
+
+        bond = oe_molecule.GetBond(atom_1, atom_2)
+
+        if not bond:
+            raise ValueError(f"{(map_index_1, map_index_2)} is a disconnected bond")
+
+        atom_bond_set.AddBond(bond)
+
+    atom_predicate = oechem.OEIsAtomMember(atom_bond_set.GetAtoms())
+    bond_predicate = oechem.OEIsBondMember(atom_bond_set.GetBonds())
+
+    fragment = oechem.OEMol()
+    oechem.OESubsetMol(fragment, oe_molecule, atom_predicate, bond_predicate, True)
+
+    oechem.OEAddExplicitHydrogens(fragment)
+    oechem.OEPerceiveChiral(fragment)
+
+    # Always restore map?
+    # if restore_maps:
+    # In some cases (symmetric molecules) this changes the atom map so skip it
+    # restore_atom_map(fragment)
+    # atom map should be restored for combinatorial fragmentation
+    # Perceive stereo and check that defined stereo did not change
+    oechem.OEPerceiveChiral(fragment)
+    oechem.OE3DToAtomStereo(fragment)
+    oechem.OE3DToBondStereo(fragment)
+
+    return Molecule.from_openeye(fragment, allow_undefined_stereo=True)
+
+
+def extract_fragment(
+    molecule: Molecule, atom_indices: Set[int], bond_indices: Set[Tuple[int, int]]
+) -> Molecule:
+    """Returns a fragment which contains the specified atoms and bonds of a parent
+    molecule
+
+    Parameters
+    ----------
+    molecule
+        The parent molecule being fragmented.
+    atom_indices
+        The *map* indices of the subset of atoms to retain.
+    bond_indices
+        The *map* indices of the subset of bonds to retain.
+    """
+
+    # Make sure that the bond and atom indices are self consistent and that there
+    # are no disconnected bonds.
+    if not all(i in atom_indices for map_tuple in bond_indices for i in map_tuple):
+
+        raise ValueError(
+            "The ``bond_indices`` set includes atoms not in the ``atom_indices`` set."
+        )
+
+    try:
+        fragment = _extract_oe_fragment(molecule, atom_indices, bond_indices)
+    except (ModuleNotFoundError, ToolkitUnavailableException, LicenseError):
+        fragment = _extract_rd_fragment(molecule, atom_indices, bond_indices)
+
+    # Sanity check that all atoms are still bonded
+    fragment_smiles = fragment.to_smiles()
+
+    if "." in fragment_smiles:
+
+        logger.warning(
+            "Yikes!!! An atom that is not bonded to any other atom in the fragment. "
+            "You probably ran into a bug. Please report the input molecule to the "
+            "issue tracker"
+        )
+
+    return fragment
 
 
 def smiles_to_oemol(smiles, add_atom_map: bool = False):

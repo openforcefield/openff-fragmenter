@@ -1,4 +1,6 @@
 """Test chemi module"""
+import logging
+
 import numpy
 import pytest
 from openff.toolkit.topology import Molecule
@@ -12,13 +14,16 @@ from simtk import unit
 
 from fragmenter import chemi
 from fragmenter.chemi import (
+    _extract_oe_fragment,
+    _extract_rd_fragment,
     _find_oe_stereocenters,
     _find_rd_stereocenters,
     assign_elf10_am1_bond_orders,
+    extract_fragment,
     find_ring_systems,
     find_stereocenters,
 )
-from fragmenter.tests.utils import global_toolkit_wrapper
+from fragmenter.tests.utils import global_toolkit_wrapper, using_openeye
 
 
 @pytest.mark.parametrize(
@@ -212,3 +217,74 @@ def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method)
 
     assert stereogenic_atoms == expected_atoms
     assert stereogenic_bonds == expected_bonds
+
+
+@pytest.mark.parametrize(
+    "smiles, atoms, bonds, expected",
+    [
+        (
+            "[C:1]([H:4])([H:5])([H:6])"
+            "[C:2]([H:7])([H:8])"
+            "[C:3]([H:9])([H:10])([H:11])",
+            {1, 2},
+            {(1, 2)},
+            "CC",
+        ),
+        (
+            "[C:1]([H:4])([H:5])([H:6])"
+            "[C:2]([H:7])([H:8])"
+            "[C:3]([H:9])([H:10])([H:11])",
+            {1, 2, 4},
+            {(1, 2), (1, 4)},
+            "CC",
+        ),
+        (
+            r"[H:6]/[C:1](=[C:2](\[C:3]([H:7])([H:8])[H:9])/[Cl:5])/[Cl:4]",
+            {1, 2, 4, 5},
+            {(1, 2), (1, 4), (2, 5)},
+            r"Cl\C=C/Cl",
+        ),
+        (
+            "[H:7][C:1]([H:8])([C@:2]([F:3])([Cl:5])[Br:6])[Cl:4]",
+            {1, 2, 3, 5, 6},
+            {(1, 2), (2, 3), (2, 5), (2, 6)},
+            r"C[C@](F)(Cl)Br",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "extract_method", [_extract_rd_fragment, _extract_oe_fragment, extract_fragment]
+)
+def test_extract_fragment(smiles, atoms, bonds, expected, extract_method):
+
+    molecule = Molecule.from_mapped_smiles(smiles)
+    molecule.properties["atom_map"] = {i: i + 1 for i in range(molecule.n_atoms)}
+
+    fragment = extract_method(molecule, atoms, bonds)
+
+    expected_fragment = Molecule.from_smiles(expected)
+
+    assert Molecule.are_isomorphic(
+        fragment, expected_fragment, bond_stereochemistry_matching=False
+    )[0]
+
+
+def test_extract_fragment_bonds_in_atoms():
+    """Tests that an exception is raised when the bonds set contains atoms not in the
+    atoms set."""
+
+    molecule = Molecule.from_smiles("[H:1][C:2]#[C:3][H:4]")
+
+    with pytest.raises(ValueError, match="set includes atoms not in the"):
+        extract_fragment(molecule, {2}, {(2, 3)})
+
+
+@using_openeye
+def test_extract_fragment_disconnected_fragment_warning(caplog):
+
+    molecule = Molecule.from_smiles("[C:1][C:2]")
+
+    with caplog.at_level(logging.WARNING):
+        extract_fragment(molecule, {1, 2}, set())
+
+    assert "Yikes!!! An atom that is not bonded to any other atom" in caplog.text

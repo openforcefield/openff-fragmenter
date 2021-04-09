@@ -23,6 +23,7 @@ from fragmenter import torsions
 
 from .chemi import (
     assign_elf10_am1_bond_orders,
+    extract_fragment,
     find_ring_systems,
     find_stereocenters,
     generate_conformers,
@@ -292,43 +293,14 @@ class Fragmenter(abc.ABC):
             for match in unique_matches
         ]
 
-    def _to_atom_bond_set(self, atoms, bonds):
-        """
-        Convert sets of atom map indices and bond map indices tuples to OEAtomBondSet
+    def _atom_bond_set_to_mol(
+        self, atoms: Set[int], bonds: Set[BondTuple], adjust_hcount=True
+    ):
+        """Convert fragments to OEMol
+
         Parameters
         ----------
-        atoms : set of ints
-            set of map indices
-        bonds : set of tuples of ints
-            set of bond tuples (m1, m2)
-
-        Returns
-        -------
-        atom_bond_set: OEAtomBondSet with atoms and bonds specified in atoms bonds set
-
-        """
-        from openeye import oechem
-
-        atom_bond_set = oechem.OEAtomBondSet()
-        for a_mdx in atoms:
-            atom = self.molecule.GetAtom(oechem.OEHasMapIdx(a_mdx))
-            atom_bond_set.AddAtom(atom)
-        for b_tuple in bonds:
-            a1 = self.molecule.GetAtom(oechem.OEHasMapIdx(b_tuple[0]))
-            a2 = self.molecule.GetAtom(oechem.OEHasMapIdx(b_tuple[-1]))
-            bond = self.molecule.GetBond(a1, a2)
-            if not bond:
-                raise ValueError("{} is a disconnected bond".format(b_tuple))
-            atom_bond_set.AddBond(bond)
-
-        return atom_bond_set
-
-    def _atom_bond_set_to_mol(self, atoms, bonds, adjust_hcount=True):
-        """
-        Convert fragments (AtomBondSet) to OEMol
-        Parameters
-        ----------
-        atoms : set of ints
+        atoms
             set of map indices
         bonds : set of tuples of ints
             set of bond tuples (m1, m2)
@@ -339,40 +311,30 @@ class Fragmenter(abc.ABC):
         -------
         fragment: OEMol
         """
+
         from openeye import oechem
 
-        frag = self._to_atom_bond_set(atoms, bonds)
+        if not adjust_hcount:
 
-        fragatompred = oechem.OEIsAtomMember(frag.GetAtoms())
-        fragbondpred = oechem.OEIsBondMember(frag.GetBonds())
+            raise NotImplementedError(
+                "the ``adjust_hcount`` option must be set to true."
+            )
 
-        fragment = oechem.OEMol()
-        adjustHCount = adjust_hcount
-        oechem.OESubsetMol(
-            fragment, self.molecule, fragatompred, fragbondpred, adjustHCount
-        )
+        off_molecule = to_off_molecule(self.molecule)
 
-        oechem.OEAddExplicitHydrogens(fragment)
+        off_fragment = extract_fragment(off_molecule, atoms, bonds)
+
+        fragment = off_fragment.to_openeye()
+
+        # Restore the map indices as to_openeye does not automatically add them.
+        for atom_index, map_index in off_fragment.properties["atom_map"].items():
+            oe_atom = fragment.GetAtom(oechem.OEHasAtomIdx(atom_index))
+            oe_atom.SetMapIdx(map_index)
+
         oechem.OEPerceiveChiral(fragment)
-        # sanity check that all atoms are bonded
-        for atom in fragment.GetAtoms():
-            if not list(atom.GetBonds()):
-                warnings.warn(
-                    "Yikes!!! An atom that is not bonded to any other atom in the fragment. "
-                    "You probably ran into a bug. Please report the input molecule to the issue tracker"
-                )
-        # Always restore map?
-        # if restore_maps:
-        # In some cases (symmetric molecules) this changes the atom map so skip it
-        # restore_atom_map(fragment)
-        # atom map should be restored for combinatorial fragmentation
-        # Perceive stereo and check that defined stereo did not change
-        oechem.OEPerceiveChiral(fragment)
-        oechem.OE3DToAtomStereo(fragment)
-        oechem.OE3DToBondStereo(fragment)
-        if has_stereo_defined(fragment):
-            if not self._check_stereo(fragment):
-                fragment = self._fix_stereo(fragment)
+
+        if has_stereo_defined(fragment) and not self._check_stereo(fragment):
+            fragment = self._fix_stereo(fragment)
 
         return fragment
 
