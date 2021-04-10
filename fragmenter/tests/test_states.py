@@ -42,7 +42,7 @@ def test_enumerate_stereoisomers(smiles, force_flip, expected, toolkit_wrapper):
         molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
 
         stereoisomers = _enumerate_stereoisomers(
-            molecule.to_openeye(),
+            molecule,
             force_flip=force_flip,
             enum_nitrogen=True,
             verbose=False,
@@ -57,9 +57,7 @@ def test_enumerate_stereoisomers(smiles, force_flip, expected, toolkit_wrapper):
         for stereoisomer in expected
     }
     actual = {
-        Molecule.from_openeye(stereoisomer, allow_undefined_stereo=True).to_smiles(
-            explicit_hydrogens=False, isomeric=True, mapped=False
-        )
+        stereoisomer.to_smiles(explicit_hydrogens=False, isomeric=True, mapped=False)
         for stereoisomer in stereoisomers
     }
 

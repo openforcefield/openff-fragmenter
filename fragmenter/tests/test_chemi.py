@@ -22,6 +22,7 @@ from fragmenter.chemi import (
     extract_fragment,
     find_ring_systems,
     find_stereocenters,
+    smiles_to_molecule,
 )
 from fragmenter.tests.utils import global_toolkit_wrapper, using_openeye
 
@@ -37,32 +38,26 @@ def test_assign_elf10_am1_bond_orders(toolkit_wrapper):
 
     with global_toolkit_wrapper(toolkit_wrapper):
 
-        oe_molecule = Molecule.from_smiles("CCCC").to_openeye()
-        oe_molecule = assign_elf10_am1_bond_orders(oe_molecule)
+        molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("CCCC"))
 
-    for bond in oe_molecule.GetBonds():
-        assert "WibergBondOrder" in bond.GetData()
+    for bond in molecule.bonds:
+        assert bond.fractional_bond_order is not None
 
 
 def test_assign_elf10_am1_bond_orders_simple_parity():
 
     with global_toolkit_wrapper(OpenEyeToolkitWrapper()):
 
-        oe_molecule = Molecule.from_smiles("C").to_openeye()
-        oe_molecule = assign_elf10_am1_bond_orders(oe_molecule)
-
-        oe_orders = [bond.GetData("WibergBondOrder") for bond in oe_molecule.GetBonds()]
+        molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("C"))
+        oe_bond_orders = [bond.fractional_bond_order for bond in molecule.bonds]
 
     with global_toolkit_wrapper(
         ToolkitRegistry([AmberToolsToolkitWrapper(), OpenEyeToolkitWrapper()])
     ):
+        molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("C"))
+        at_bond_orders = [bond.fractional_bond_order for bond in molecule.bonds]
 
-        oe_molecule = Molecule.from_smiles("C").to_openeye()
-        oe_molecule = assign_elf10_am1_bond_orders(oe_molecule)
-
-        at_orders = [bond.GetData("WibergBondOrder") for bond in oe_molecule.GetBonds()]
-
-    assert numpy.allclose(oe_orders, at_orders, atol=1.0e-2)
+    assert numpy.allclose(oe_bond_orders, at_bond_orders, atol=1.0e-2)
 
 
 @pytest.mark.parametrize("smiles, max_confs", [("CCCCCCC", 1), ("CCCCCCC", 3)])
@@ -183,15 +178,16 @@ def test_find_ring_systems(smiles, toolkit_wrapper):
 @pytest.mark.parametrize(
     "toolkit_wrapper", [OpenEyeToolkitWrapper(), RDKitToolkitWrapper()]
 )
-def test_smiles_to_oemol(add_atom_map, expected, toolkit_wrapper):
-
-    from openeye import oechem
+def test_smiles_to_molecule(add_atom_map, expected, toolkit_wrapper):
 
     with global_toolkit_wrapper(toolkit_wrapper):
-        mol = chemi.smiles_to_oemol("CCCC", add_atom_map=add_atom_map)
+        molecule = smiles_to_molecule("CCCC", add_atom_map=add_atom_map)
 
-    assert isinstance(mol, oechem.OEMol)
-    assert oechem.OEMolToSmiles(mol) == expected
+    assert isinstance(molecule, Molecule)
+    assert (
+        molecule.to_smiles(explicit_hydrogens=add_atom_map, mapped=add_atom_map)
+        == expected
+    )
 
 
 @pytest.mark.parametrize(

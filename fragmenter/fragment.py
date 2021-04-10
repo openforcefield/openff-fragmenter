@@ -1,35 +1,22 @@
 import abc
 import logging
 import time
-import warnings
 from collections import defaultdict
-from typing import Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
-import cmiles
 import networkx
-from cmiles.utils import (
-    add_atom_map,
-    has_explicit_hydrogen,
-    has_stereo_defined,
-    is_missing_atom_map,
-    mol_to_map_ordered_qcschema,
-    mol_to_smiles,
-    restore_atom_map,
-    to_canonical_label,
-)
 from openff.toolkit.topology import Atom, Molecule
 
 from fragmenter import torsions
-
-from .chemi import (
+from fragmenter.chemi import (
     assign_elf10_am1_bond_orders,
     extract_fragment,
     find_ring_systems,
     find_stereocenters,
     generate_conformers,
 )
-from .states import _enumerate_stereoisomers
-from .utils import get_atom_index, get_fgroup_smarts, get_map_index, to_off_molecule
+from fragmenter.states import _enumerate_stereoisomers
+from fragmenter.utils import get_atom_index, get_fgroup_smarts, get_map_index
 
 logger = logging.getLogger(__name__)
 
@@ -42,40 +29,18 @@ Heuristic = Literal["path_length", "wbo"]
 class Fragmenter(abc.ABC):
     """Base fragmenter class."""
 
-    def __init__(self, molecule, functional_groups):
-        from openeye import oechem
+    def __init__(self, molecule: Molecule, functional_groups):
 
-        self.molecule = molecule
-
-        # Add explicit hydrogen
-        if not has_explicit_hydrogen(self.molecule):
-            oechem.OEAddExplicitHydrogens(self.molecule)
-
-        # Add canonical atom map
-        add_atom_map(self.molecule)
-
-        if is_missing_atom_map(self.molecule):
-            warnings.warn(
-                "Some atoms are missing atom maps. This might cause a problem at several points during "
-                "the fragmentation process. Make sure you know what you are doing. "
-            )
+        # Canonically order the molecule to try and make the fragmentation more
+        # deterministic.
+        self.molecule: Molecule = molecule.canonical_order_atoms()
+        self.molecule.properties["atom_map"] = {
+            i: i + 1 for i in range(self.molecule.n_atoms)
+        }
 
         # Keep track of stereo to make sure it does not flip
         self.stereo = {}
-        self._atom_stereo_map = {
-            oechem.OECIPAtomStereo_S: "S",
-            oechem.OECIPAtomStereo_R: "R",
-            oechem.OECIPAtomStereo_NotStereo: None,
-            oechem.OECIPAtomStereo_UnspecStereo: "unspecified",
-        }
-        self._bond_stereo_map = {
-            oechem.OECIPBondStereo_E: "E",
-            oechem.OECIPBondStereo_Z: "Z",
-        }
         self._find_stereo()
-
-        # keep track of fragments that form new stereocenters
-        self.new_stereo = []
 
         # For provenance
         self._options = {}
@@ -90,55 +55,56 @@ class Fragmenter(abc.ABC):
         self.ring_systems = {}
 
         # Fragments from fragmentation scheme for each rotatable bond
-        self.fragments = {}
+        self.fragments: Dict[BondTuple, Molecule] = {}
 
     def _find_stereo(self):
         """Find chiral atoms and bonds, store the chirality. This is needed to check if
         fragments flipped chirality. Currently this can happen and it is a bug
         """
 
-        off_molecule = to_off_molecule(self.molecule)
-
         atom_stereo = {
-            get_map_index(off_molecule, atom.molecule_atom_index): atom.stereochemistry
-            for atom in off_molecule.atoms
+            get_map_index(self.molecule, atom.molecule_atom_index): atom.stereochemistry
+            for atom in self.molecule.atoms
             if atom.stereochemistry is not None
         }
 
         bond_stereo = {
             (
-                get_map_index(off_molecule, bond.atom1_index),
-                get_map_index(off_molecule, bond.atom2_index),
+                get_map_index(self.molecule, bond.atom1_index),
+                get_map_index(self.molecule, bond.atom2_index),
             ): bond.stereochemistry
-            for bond in off_molecule.bonds
+            for bond in self.molecule.bonds
             if bond.stereochemistry is not None
         }
 
         self.stereo = {**atom_stereo, **bond_stereo}
 
-    def _check_stereo(self, fragment) -> bool:
+    def _check_stereo(self, fragment: Molecule) -> bool:
         """Check if stereo in fragment is different than stereo in parent.
 
         Parameters
         ----------
-        fragment : oemol
+        fragment
+            The fragment whose stereo should be compared to the parent.
+
+        Returns
+        -------
+            Whether the fragment has the same stereo as the parent.
         """
 
-        off_fragment = to_off_molecule(fragment)
-
-        atom_stereocenters, bond_stereocenters = find_stereocenters(off_fragment)
+        atom_stereocenters, bond_stereocenters = find_stereocenters(fragment)
 
         # Check for new / flipped chiral centers.
         for atom_index in atom_stereocenters:
 
-            map_index = get_map_index(off_fragment, atom_index)
+            map_index = get_map_index(fragment, atom_index)
 
             if map_index not in self.stereo:
 
                 logger.warning(f"A new stereocenter formed at atom {map_index}")
                 return False
 
-            fragment_stereo = off_fragment.atoms[atom_index].stereochemistry
+            fragment_stereo = fragment.atoms[atom_index].stereochemistry
             parent_stereo = self.stereo[map_index]
 
             if fragment_stereo != parent_stereo:
@@ -152,7 +118,7 @@ class Fragmenter(abc.ABC):
 
         for index_tuple in bond_stereocenters:
 
-            map_tuple = tuple(get_map_index(off_fragment, i) for i in index_tuple)
+            map_tuple = tuple(get_map_index(fragment, i) for i in index_tuple)
 
             map_tuple = (
                 map_tuple if map_tuple in self.stereo else tuple(reversed(map_tuple))
@@ -163,9 +129,7 @@ class Fragmenter(abc.ABC):
                 logger.warning(f"A new chiral bond formed at bond {map_tuple}")
                 return False
 
-            fragment_stereo = off_fragment.get_bond_between(
-                *index_tuple
-            ).stereochemistry
+            fragment_stereo = fragment.get_bond_between(*index_tuple).stereochemistry
 
             parent_stereo = self.stereo[map_tuple]
 
@@ -180,19 +144,18 @@ class Fragmenter(abc.ABC):
 
         return True
 
-    def _fix_stereo(self, fragment):
+    def _fix_stereo(self, fragment: Molecule) -> Molecule:
         """Flip all stereocenters and find the stereoisomer that matches the parent
 
         Parameters
         ----------
-        fragment : oemol
+        fragment
+            The fragment whose stereochemistry should be flipped to match the parent.
 
         Returns
         -------
-            oemol with same stereochemistry as parent molecule
+            A fragment with the same stereochemistry as parent molecule
         """
-
-        from openeye import oechem
 
         for stereoisomer in _enumerate_stereoisomers(fragment, 200, True, True):
 
@@ -202,8 +165,7 @@ class Fragmenter(abc.ABC):
             return stereoisomer
 
         raise RuntimeError(
-            f"The stereochemistry of {oechem.OEMolToSmiles(fragment)} could not be "
-            f"fixed."
+            f"The stereochemistry of {fragment.to_smiles()} could not be fixed."
         )
 
     def _tag_functional_groups(
@@ -226,24 +188,22 @@ class Fragmenter(abc.ABC):
         if functional_groups is None:
             functional_groups = get_fgroup_smarts()
 
-        off_molecule = to_off_molecule(self.molecule)
-
         for functional_group, smarts in functional_groups.items():
 
             unique_matches = {
                 tuple(sorted(match))
-                for match in off_molecule.chemical_environment_matches(smarts)
+                for match in self.molecule.chemical_environment_matches(smarts)
             }
 
             for i, match in enumerate(unique_matches):
 
-                atoms = set(get_map_index(off_molecule, index) for index in match)
+                atoms = set(get_map_index(self.molecule, index) for index in match)
                 bonds = set(
                     (
-                        get_map_index(off_molecule, bond.atom1_index),
-                        get_map_index(off_molecule, bond.atom2_index),
+                        get_map_index(self.molecule, bond.atom1_index),
+                        get_map_index(self.molecule, bond.atom2_index),
                     )
-                    for bond in off_molecule.bonds
+                    for bond in self.molecule.bonds
                     if bond.atom1_index in match and bond.atom2_index in match
                 )
 
@@ -268,9 +228,7 @@ class Fragmenter(abc.ABC):
 
         """
 
-        off_molecule = to_off_molecule(self.molecule)
-
-        matches = off_molecule.chemical_environment_matches(
+        matches = self.molecule.chemical_environment_matches(
             "[!$(*#*)&!D1:1]-,=;!@[!$(*#*)&!D1:2]"
         )
         unique_matches = {tuple(sorted(match)) for match in matches}
@@ -278,7 +236,7 @@ class Fragmenter(abc.ABC):
         # Drop bonds without a heavy degree of at least 2 on each end to avoid finding
         # terminal bonds
         def heavy_degree(atom_index: int) -> int:
-            atom = off_molecule.atoms[atom_index]
+            atom = self.molecule.atoms[atom_index]
             return sum(1 for atom in atom.bonded_atoms if atom.atomic_number != 1)
 
         unique_matches = {
@@ -287,15 +245,15 @@ class Fragmenter(abc.ABC):
 
         return [
             (
-                get_map_index(off_molecule, match[0]),
-                get_map_index(off_molecule, match[1]),
+                get_map_index(self.molecule, match[0]),
+                get_map_index(self.molecule, match[1]),
             )
             for match in unique_matches
         ]
 
     def _atom_bond_set_to_mol(
         self, atoms: Set[int], bonds: Set[BondTuple], adjust_hcount=True
-    ):
+    ) -> Molecule:
         """Convert fragments to OEMol
 
         Parameters
@@ -312,28 +270,15 @@ class Fragmenter(abc.ABC):
         fragment: OEMol
         """
 
-        from openeye import oechem
-
         if not adjust_hcount:
 
             raise NotImplementedError(
                 "the ``adjust_hcount`` option must be set to true."
             )
 
-        off_molecule = to_off_molecule(self.molecule)
+        fragment = extract_fragment(self.molecule, atoms, bonds)
 
-        off_fragment = extract_fragment(off_molecule, atoms, bonds)
-
-        fragment = off_fragment.to_openeye()
-
-        # Restore the map indices as to_openeye does not automatically add them.
-        for atom_index, map_index in off_fragment.properties["atom_map"].items():
-            oe_atom = fragment.GetAtom(oechem.OEHasAtomIdx(atom_index))
-            oe_atom.SetMapIdx(map_index)
-
-        oechem.OEPerceiveChiral(fragment)
-
-        if has_stereo_defined(fragment) and not self._check_stereo(fragment):
+        if not self._check_stereo(fragment):
             fragment = self._fix_stereo(fragment)
 
         return fragment
@@ -351,25 +296,23 @@ class Fragmenter(abc.ABC):
             The map indices of atoms in quartet and the bonds in quartet)
         """
 
-        off_molecule = to_off_molecule(self.molecule)
-
         atom_map_indices = {*bond}
         bond_map_indices = {bond}
 
         atoms = [
-            off_molecule.atoms[i]
-            for i, j in off_molecule.properties["atom_map"].items()
+            self.molecule.atoms[i]
+            for i, j in self.molecule.properties["atom_map"].items()
             if j in bond
         ]
 
         for atom in atoms:
 
-            map_index = get_map_index(off_molecule, atom.molecule_atom_index)
+            map_index = get_map_index(self.molecule, atom.molecule_atom_index)
 
             for neighbor in atom.bonded_atoms:
 
                 neighbour_map_index = get_map_index(
-                    off_molecule, neighbor.molecule_atom_index
+                    self.molecule, neighbor.molecule_atom_index
                 )
 
                 atom_map_indices.add(neighbour_map_index)
@@ -378,7 +321,7 @@ class Fragmenter(abc.ABC):
                 for next_neighbour in neighbor.bonded_atoms:
 
                     next_neighbour_map_index = get_map_index(
-                        off_molecule, next_neighbour.molecule_atom_index
+                        self.molecule, next_neighbour.molecule_atom_index
                     )
 
                     atom_map_indices.add(next_neighbour_map_index)
@@ -399,14 +342,12 @@ class Fragmenter(abc.ABC):
             benchmark, it is not necessary.
         """
 
-        off_molecule = to_off_molecule(self.molecule)
-
-        atom_to_ring_indices = find_ring_systems(off_molecule)
+        atom_to_ring_indices = find_ring_systems(self.molecule)
 
         # Find the map indices of the atoms involved in each ring system.
         ring_system_atoms = {
             ring_index: {
-                get_map_index(off_molecule, i)
+                get_map_index(self.molecule, i)
                 for i in atom_to_ring_indices
                 if atom_to_ring_indices[i] == ring_index
             }
@@ -416,7 +357,7 @@ class Fragmenter(abc.ABC):
         # Find the map indices of the bonds involved in each ring system.
         ring_system_bonds = defaultdict(set)
 
-        for bond in off_molecule.bonds:
+        for bond in self.molecule.bonds:
 
             ring_index_1 = atom_to_ring_indices.get(bond.atom1_index, -1)
             ring_index_2 = atom_to_ring_indices.get(bond.atom2_index, -2)
@@ -426,8 +367,8 @@ class Fragmenter(abc.ABC):
 
             ring_system_bonds[ring_index_1].add(
                 (
-                    get_map_index(off_molecule, bond.atom1_index),
-                    get_map_index(off_molecule, bond.atom2_index),
+                    get_map_index(self.molecule, bond.atom1_index),
+                    get_map_index(self.molecule, bond.atom2_index),
                 )
             )
 
@@ -464,7 +405,7 @@ class Fragmenter(abc.ABC):
                 continue
 
             non_rotor_atoms, non_rotor_bonds = self._find_non_rotor_ring_substituents(
-                off_molecule, ring_index, ring_system_atoms
+                ring_system_atoms[ring_index]
             )
 
             ring_system_atoms[ring_index].update(non_rotor_atoms)
@@ -477,12 +418,10 @@ class Fragmenter(abc.ABC):
                 ring_system_bonds[ring_index],
             )
 
-    def _find_non_rotor_ring_substituents(
-        self, off_molecule, ring_index, ring_system_atoms
-    ):
+    def _find_non_rotor_ring_substituents(self, ring_system_atoms: Set[int]):
         """Find the non-rotor substituents attached to a particular ring system."""
 
-        rotatable_bonds = off_molecule.find_rotatable_bonds()
+        rotatable_bonds = self.molecule.find_rotatable_bonds()
 
         def heavy_degree(atom: Atom) -> int:
             return sum(1 for atom in atom.bonded_atoms if atom.atomic_number != 1)
@@ -496,7 +435,7 @@ class Fragmenter(abc.ABC):
         non_rotor_atoms = set()
         non_rotor_bonds = set()
 
-        for bond in off_molecule.bonds:
+        for bond in self.molecule.bonds:
 
             # Check if the bond is a rotor.
             if bond in rotor_bonds:
@@ -505,11 +444,11 @@ class Fragmenter(abc.ABC):
             if bond.atom1.atomic_number == 1 or bond.atom2.atomic_number == 1:
                 continue
 
-            map_index_1 = get_map_index(off_molecule, bond.atom1_index)
-            map_index_2 = get_map_index(off_molecule, bond.atom2_index)
+            map_index_1 = get_map_index(self.molecule, bond.atom1_index)
+            map_index_2 = get_map_index(self.molecule, bond.atom2_index)
 
-            in_system_1 = map_index_1 in ring_system_atoms[ring_index]
-            in_system_2 = map_index_2 in ring_system_atoms[ring_index]
+            in_system_1 = map_index_1 in ring_system_atoms
+            in_system_2 = map_index_2 in ring_system_atoms
 
             if (in_system_1 and in_system_2) or (not in_system_1 and not in_system_2):
                 continue
@@ -536,11 +475,9 @@ class Fragmenter(abc.ABC):
             The updated set of atom and bond map indices to to retain.
         """
 
-        off_molecule = to_off_molecule(molecule=self.molecule)
-
         # Find the sets of atoms which are located ortho to one of the bonds being
         # fragmented.
-        ortho_atoms, ortho_bonds = self._find_ortho_substituents(off_molecule, bonds)
+        ortho_atoms, ortho_bonds = self._find_ortho_substituents(bonds)
 
         atoms.update(ortho_atoms)
         bonds.update(ortho_bonds)
@@ -578,16 +515,12 @@ class Fragmenter(abc.ABC):
 
         return atoms, bonds
 
-    def _find_ortho_substituents(
-        self, molecule: Molecule, bonds: Set[BondTuple]
-    ) -> AtomAndBondSet:
+    def _find_ortho_substituents(self, bonds: Set[BondTuple]) -> AtomAndBondSet:
         """Find ring substituents that are ortho to one of the rotatable bonds specified
         in a list of bonds.
 
         Parameters
         ----------
-        molecule
-            The molecule being fragmented.
         bonds
             The map indices of the rotatable bonds.
 
@@ -600,11 +533,11 @@ class Fragmenter(abc.ABC):
         matched_atoms = set()
         matched_bonds = set()
 
-        for match in molecule.chemical_environment_matches(
+        for match in self.molecule.chemical_environment_matches(
             "[!#1:1]~&!@[*:2]@[*:3]~&!@[!#1*:4]"
         ):
 
-            map_tuple = tuple(get_map_index(molecule, i) for i in match)
+            map_tuple = tuple(get_map_index(self.molecule, i) for i in match)
 
             if map_tuple[:2] not in bonds and map_tuple[:2][::-1] not in bonds:
                 continue
@@ -636,15 +569,13 @@ class Fragmenter(abc.ABC):
             for map_index in self.functional_groups[functional_group][0]
         }
 
-        off_molecule = to_off_molecule(self.molecule)
-
         atoms_to_add = set()
         bonds_to_add = set()
 
         for map_index in atoms:
 
-            atom_index = get_atom_index(off_molecule, map_index)
-            atom = off_molecule.atoms[atom_index]
+            atom_index = get_atom_index(self.molecule, map_index)
+            atom = self.molecule.atoms[atom_index]
 
             if (
                 atom.atomic_number not in (7, 8, 16)
@@ -658,7 +589,7 @@ class Fragmenter(abc.ABC):
             for neighbour in atom.bonded_atoms:
 
                 neighbour_map_index = get_map_index(
-                    off_molecule, neighbour.molecule_atom_index
+                    self.molecule, neighbour.molecule_atom_index
                 )
 
                 if neighbour.atomic_number == 1 or neighbour_map_index in atoms:
@@ -676,7 +607,7 @@ class Fragmenter(abc.ABC):
                     continue
 
                 neighbour_map_index = get_map_index(
-                    off_molecule, neighbour.molecule_atom_index
+                    self.molecule, neighbour.molecule_atom_index
                 )
 
                 atoms_to_add.add(neighbour_map_index)
@@ -687,38 +618,12 @@ class Fragmenter(abc.ABC):
 
         return atoms, bonds
 
-    def _get_bond(self, bond_tuple):
-        """
-        Get bond in molecule by atom indices of atom A and atom B
-
-        Parameters
-        ----------
-        bond_tuple : tuple
-            (mapidx, mapidx)
-
-        Returns
-        -------
-        bond: oechem.OEBondBase
-            The bond in the molecule given by the bond tuple
-
-        """
-        from openeye import oechem
-
-        if is_missing_atom_map(self.molecule):
-            restore_atom_map(self.molecule)
-        a1 = self.molecule.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
-        a2 = self.molecule.GetAtom(oechem.OEHasMapIdx(bond_tuple[-1]))
-        bond = self.molecule.GetBond(a1, a2)
-        if not bond:
-            raise ValueError("({}) atoms are not connected".format(bond_tuple))
-        return bond
-
     @abc.abstractmethod
     def fragment(self):
         """Fragment molecules."""
         raise NotImplementedError()
 
-    def get_provenance(self):
+    def get_provenance(self) -> Dict[str, Any]:
         """
         Get version of fragmenter and options used
 
@@ -727,13 +632,10 @@ class Fragmenter(abc.ABC):
         import socket
         import uuid
 
-        from openeye import oechem
-
         import fragmenter
 
         fragmenter_version = fragmenter.__version__
-        # Restore map to parent
-        restore_atom_map(self.molecule)
+
         provenance = {
             "creator": fragmenter.__package__,
             "job_id": str(uuid.uuid4()),
@@ -743,46 +645,58 @@ class Fragmenter(abc.ABC):
                 "fragment_molecule": {
                     "version": fragmenter_version,
                     "options": self._options,
-                    "parent_molecule": mol_to_smiles(
-                        self.molecule, mapped=False, explicit_hydrogen=False
+                    "parent_molecule": self.molecule.to_smiles(
+                        mapped=False, explicit_hydrogens=False
                     ),
-                    "parent_name": self.molecule.GetTitle(),
-                    "mapped_parent_smiles": oechem.OEMolToSmiles(self.molecule),
+                    "parent_name": self.molecule.name,
+                    "mapped_parent_smiles": self.molecule.to_smiles(mapped=True),
                 }
             },
         }
         return provenance
 
-    def _to_qcschema_mol(self, molecule, **kwargs):
-        """
-
-        Parameters
-        ----------
-        molecule : OEMol
-        kwargs :
+    def _to_qcschema_mol(self, molecule: Molecule, **kwargs) -> Dict[str, Any]:
+        """Map on OpenFF molecule to a QCSchema molecule.
 
         Returns
         -------
-        qcschema initial molecules, cmiles identifiers and provenance
-
+            The initial molecules, cmiles identifiers and provenance fields for a
+            QCSchema molecule
         """
-        from openeye import oechem
+        from cmiles.utils import mol_to_map_ordered_qcschema
 
         self._options.update(kwargs)
-        mol_copy = oechem.OEMol(molecule)
-        oechem.OEAddExplicitHydrogens(mol_copy)
-        explicit_h_smiles = mol_to_smiles(mol_copy, mapped=False)
-        cmiles_identifiers = cmiles.get_molecule_ids(explicit_h_smiles)
-        can_mapped_smiles = cmiles_identifiers[
+
+        cmiles_identifiers = {
+            "canonical_smiles": molecule.to_smiles(
+                isomeric=False, explicit_hydrogens=False, mapped=False
+            ),
+            "canonical_isomeric_smiles": molecule.to_smiles(
+                isomeric=True, explicit_hydrogens=False, mapped=False
+            ),
+            "canonical_explicit_hydrogen_smiles": molecule.to_smiles(
+                isomeric=False, explicit_hydrogens=True, mapped=False
+            ),
+            "canonical_isomeric_explicit_hydrogen_smiles": molecule.to_smiles(
+                isomeric=True, explicit_hydrogens=True, mapped=False
+            ),
+            "canonical_isomeric_explicit_hydrogen_mapped_smiles": molecule.to_smiles(
+                isomeric=True, explicit_hydrogens=True, mapped=True
+            ),
+            "molecular_formula": molecule.hill_formula,
+            "standard_inchi": molecule.to_inchi(fixed_hydrogens=False),
+            "inchi_key": molecule.to_inchikey(fixed_hydrogens=False),
+        }
+
+        conformers = generate_conformers(molecule, **kwargs)
+
+        canonical_mapped_smiles = cmiles_identifiers[
             "canonical_isomeric_explicit_hydrogen_mapped_smiles"
         ]
 
-        conformers = generate_conformers(
-            to_off_molecule(mol_copy), **kwargs
-        ).to_openeye()
         qcschema_mols = [
-            mol_to_map_ordered_qcschema(conf, can_mapped_smiles)
-            for conf in conformers.GetConfs()
+            mol_to_map_ordered_qcschema(conf, canonical_mapped_smiles)
+            for conf in conformers.to_openeye().GetConfs()
         ]
 
         return {
@@ -791,44 +705,47 @@ class Fragmenter(abc.ABC):
             "provenance": self.get_provenance(),
         }
 
-    def to_torsiondrive_json(self, **kwargs):
-        """
-        Generates torsiondrive input JSON for QCArchive
+    def to_torsiondrive_json(self, **kwargs) -> Dict[str, Any]:
+        """Generates torsiondrive input JSON for QCArchive
 
         Returns
         -------
-        torsiondrive_json_dict: dict
-            dictionary with the QCArchive job label as keys that maps to the torsiondrive input for each fragment
-
+            A dictionary with the QCArchive job label as keys that maps to the
+            torsiondrive input for each fragment
         """
-        from openeye import oechem
+        from cmiles.utils import to_canonical_label
 
         # capture options
         self._options.update(kwargs)
+
         torsiondrive_json_dict = {}
+
         for bond in self.fragments:
+
             # find torsion around bond in fragment
             molecule = self.fragments[bond]
-            mapped_smiles = oechem.OEMolToSmiles(molecule)
+
+            mapped_smiles = molecule.to_smiles(mapped=True)
+
             torsion_map_idx = torsions.find_torsion_around_bond(molecule, bond)
-            torsiondrive_job_label = to_canonical_label(mapped_smiles, torsion_map_idx)
+            torsiondrive_job_label = to_canonical_label(
+                mapped_smiles, tuple(torsion_map_idx)
+            )
             torsiondrive_json_dict[torsiondrive_job_label] = {}
 
             # prepare torsiondrive input
-            mol_copy = oechem.OEMol(molecule)
+            molecule_copy = molecule.canonical_order_atoms()
 
             # Map torsion to canonical ordered molecule
             # First canonical order the molecule
             # Note: potential bug - add explicit hydrogen before order atoms
-            oechem.OEAddExplicitHydrogens(mol_copy)
-            cmiles._cmiles_oe.canonical_order_atoms(mol_copy)
             dih = []
+
             for m_idx in torsion_map_idx:
-                atom = mol_copy.GetAtom(oechem.OEHasMapIdx(m_idx + 1))
-                dih.append(atom.GetIdx())
+                dih.append(get_atom_index(molecule_copy, m_idx + 1))
 
             torsiondrive_json_dict[torsiondrive_job_label] = self._to_qcschema_mol(
-                mol_copy, **kwargs
+                molecule_copy, **kwargs
             )
             torsiondrive_json_dict[torsiondrive_job_label].update(
                 {"dihedral": [dih], "grid": [15], "provenance": self.get_provenance()}
@@ -845,9 +762,10 @@ class WBOFragmenter(Fragmenter):
     molecule : OEMol
         Molecule to fragment.
     functional_groups : dict, optional, default None
-        `{f_group: SMARTS}`. Dictionary that maps the name of a functional group to its SMARTS pattern.
-        These functional groups, if they exist in the molecule, will be tagged so they are not fragmented.
-        If None, will use internal list of functional group. If False, will not tag any functional groups.
+        `{f_group: SMARTS}`. Dictionary that maps the name of a functional group to its
+        SMARTS pattern. These functional groups, if they exist in the molecule, will be
+        tagged so they are not fragmented. If None, will use internal list of functional
+        group. If False, will not tag any functional groups.
 
     """
 
@@ -871,16 +789,17 @@ class WBOFragmenter(Fragmenter):
 
         Parameters
         ----------
+        threshold : float, optional, default 0.01
+            The threshold for the central bond WBO. If the fragment WBO is below this
+            threshold, fragmenter will grow out the fragment one bond at a time via the
+            path specified by the heuristic option
         keep_non_rotor_ring_substituents: bool
-            If True, will always keep all non rotor substiuents on ring. If False, will only add them
-            if they are ortho to rotatable bond or if it's needed for WBO to be within the threshold
+            If True, will always keep all non rotor substiuents on ring. If False, will
+            only add them if they are ortho to rotatable bond or if it's needed for WBO
+            to be within the threshold
         **heuristic : str, optional, default 'path_length'
-            The path fragmenter should take when fragment needs to be grown out. The other option is
-            'wbo'
-        **threshold : float, optional, default 0.01
-            The threshold for the central bond WBO. If the fragment WBO is below this threshold, fragmenter
-            will grow out the fragment one bond at a time via the path specified by the heuristic option
-
+            The path fragmenter should take when fragment needs to be grown out. The
+            other option is 'wbo'
         """
         # Capture options used
         self._options[
@@ -904,52 +823,62 @@ class WBOFragmenter(Fragmenter):
         for bond in self.rotors_wbo:
             self._build_fragment(bond, **kwargs)
 
-    def calculate_wbo(self, fragment=None, **kwargs):
-        """
-        Calculate WBO
+    def calculate_wbo(
+        self, fragment: Optional[Molecule] = None, **kwargs
+    ) -> Optional[Molecule]:
+        """Calculate the WBOs on either a parent or fragment molecule.
 
         Parameters
         ----------
-        fragment : oechem.OEMol
-            fragment to recalculate WBO. When fragment is None, fragmenter assumes it's the full molecule and saves the
-            calculated values in self.molecule
+        fragment
+            The fragment to recalculate the WBO for. When fragment is ``None``,
+            fragmenter assumes it's the full molecule and saves the calculated values
+            in self.molecule
 
         Returns
         -------
-        fragment with WBOs
-
+            The fragment with WBOs.
         """
         if not fragment:
+
             time1 = time.time()
             self.molecule = assign_elf10_am1_bond_orders(self.molecule, **kwargs)
             time2 = time.time()
             if self.verbose:
                 logger.info("WBO took {} seconds to calculate".format(time2 - time1))
+
         else:
+
             time1 = time.time()
             fragment = assign_elf10_am1_bond_orders(fragment, **kwargs)
             time2 = time.time()
             if self.verbose:
                 logger.info("WBO took {} seconds to calculate".format(time2 - time1))
+
         return fragment
 
     def _get_rotor_wbo(self):
-        """
-        Cache WBO for each rotatable bond
-        """
+        """Cache the WBO of each rotatable bond"""
 
-        if (
-            "nrotor" not in self.molecule.GetData()
-            and "cputime" not in self.molecule.GetData()
-        ):
+        if any(bond.fractional_bond_order is None for bond in self.molecule.bonds):
+
             logger.info("WBO was not calculated for this molecule. Calculating WBO...")
             self.calculate_wbo()
-        rotatable_bonds = self._find_rotatable_bonds()
-        for bond in rotatable_bonds:
-            b = self._get_bond(bond)
-            self.rotors_wbo[bond] = b.GetData("WibergBondOrder")
 
-    def _compare_wbo(self, fragment, bond_tuple: BondTuple, **kwargs):
+        rotatable_bonds = self._find_rotatable_bonds()
+
+        for bond_indices in rotatable_bonds:
+
+            bond = self.molecule.get_bond_between(
+                get_atom_index(self.molecule, bond_indices[0]),
+                get_atom_index(self.molecule, bond_indices[1]),
+            )
+
+            self.rotors_wbo[bond_indices] = bond.fractional_bond_order
+
+    def _compare_wbo(
+        self, fragment: Molecule, bond_tuple: BondTuple, **kwargs
+    ) -> float:
         """Compare Wiberg Bond order of rotatable bond in a fragment to the parent.
 
         Parameters
@@ -964,51 +893,43 @@ class WBOFragmenter(Fragmenter):
             The absolute difference between the fragment and parent WBOs.
         """
 
-        from openeye import oechem
+        # Create new fragment object because sometimes the molecule created from atom
+        # bond set is wonky and then the WBOs are not reproducible
+        fragment = Molecule.from_smiles(
+            fragment.to_smiles(mapped=True), allow_undefined_stereo=True
+        )
 
-        # Create new oemol because sometimes the molecule created from atom bond set is
-        # wonky and then the WBOs are not reproducible
-        smiles = oechem.OEMolToSmiles(fragment)
-        mol = oechem.OEMol()
-        oechem.OESmilesToMol(mol, smiles)
+        fragment_map = fragment.properties.pop("atom_map", None)
 
         try:
-            charged_fragment = self.calculate_wbo(fragment=mol, **kwargs)
+            fragment = self.calculate_wbo(fragment=fragment, **kwargs)
+
         except RuntimeError:
+
+            # Most of the time it fails because it is either missing parameters or a
+            # functional group that should not be fragmented was fragmented
             logger.warning(
-                "Cannot calculate WBO for fragment {}. Continue growing fragment".format(
-                    oechem.OEMolToSmiles(mol)
-                )
+                f"Cannot calculate WBO for fragment {fragment.to_smiles()}. Continue "
+                f"growing fragment"
             )
-            # Most of the time it fails because it is either missing parameters or a functional group that should not
-            # be fragmented was fragmented
-            # ToDo:  hanlde different kinds of failures instead of just continuing to grow until the fialure goes away
-            # Some fail because there are functional groups that should not be fragmented.
-            return 1
 
-        # Get new WBO
-        restore_atom_map(charged_fragment)
-        a1 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[0]))
-        a2 = charged_fragment.GetAtom(oechem.OEHasMapIdx(bond_tuple[-1]))
-        bond = charged_fragment.GetBond(a1, a2)
-        if bond is None:
-            raise RuntimeError(
-                "{} with _idx {} and {} with map_idx {} are not bonded".format(
-                    a1, bond_tuple[0], a2, bond_tuple[1]
-                )
-            )
-        if "WibergBondOrder" not in bond.GetData():
-            logger.warn(
-                "Cannot calculate WBO for fragment {}. Continue growing fragment".format(
-                    oechem.OEMolToSmiles(charged_fragment)
-                )
-            )
-            return 1
+            # TODO: handle different kinds of failures instead of just continuing to
+            #      grow until the failure goes away. Some fail because there are
+            #      functional groups that should not be fragmented.
+            return 1.0
 
-        frag_wbo = bond.GetData("WibergBondOrder")
-        mol_wbo = self.rotors_wbo[bond_tuple]
+        if fragment_map is not None:
+            fragment.properties["atom_map"] = fragment_map
 
-        return abs(mol_wbo - frag_wbo)
+        bond = fragment.get_bond_between(
+            get_atom_index(fragment, bond_tuple[0]),
+            get_atom_index(fragment, bond_tuple[1]),
+        )
+
+        fragment_wbo = bond.fractional_bond_order
+        parent_wbo = self.rotors_wbo[bond_tuple]
+
+        return abs(parent_wbo - fragment_wbo)
 
     def _build_fragment(
         self,
@@ -1029,8 +950,6 @@ class WBOFragmenter(Fragmenter):
             Whether to cap open valences.
         """
 
-        off_molecule = to_off_molecule(self.molecule)
-
         # Capture options
         if "heuristic" not in self._options:
             self._options["heuristic"] = heuristic
@@ -1049,7 +968,7 @@ class WBOFragmenter(Fragmenter):
         while fragment is not None and wbo_difference > self.threshold:
 
             fragment = self._add_next_substituent(
-                off_molecule,
+                self.molecule,
                 atoms,
                 bonds,
                 target_bond=bond_tuple,
@@ -1070,8 +989,9 @@ class WBOFragmenter(Fragmenter):
 
         self.fragments[bond_tuple] = fragment
 
+    @classmethod
     def _select_neighbour_by_path_length(
-        self, molecule: Molecule, atoms: Set[int], target_bond: BondTuple
+        cls, molecule: Molecule, atoms: Set[int], target_bond: BondTuple
     ) -> Optional[Tuple[int, BondTuple]]:
 
         atom_indices = {get_atom_index(molecule, atom) for atom in atoms}
@@ -1150,8 +1070,9 @@ class WBOFragmenter(Fragmenter):
 
         return None if len(sorted_atoms) == 0 else sorted_atoms[0]
 
+    @classmethod
     def _select_neighbour_by_wbo(
-        self, molecule: Molecule, atoms: Set[int]
+        cls, molecule: Molecule, atoms: Set[int]
     ) -> Optional[Tuple[int, BondTuple]]:
         """A function which return those atoms which neighbour those in the ``atoms``
         list sorted by the WBO of the bond between the input atom and the neighbouring
@@ -1267,16 +1188,18 @@ class WBOFragmenter(Fragmenter):
 
 
 class PfizerFragmenter(Fragmenter):
-    """
-    Fragment engine for fragmenting molecules using Pfizer's protocol (doi: 10.1021/acs.jcim.9b00373)
-
-    Parameters
-    ----------
-    molecule : OEMol
-        Molecule to fragment.
+    """Fragment engine for fragmenting molecules using Pfizer's protocol
+    (doi: 10.1021/acs.jcim.9b00373)
     """
 
-    def __init__(self, molecule):
+    def __init__(self, molecule: Molecule):
+        """
+
+        Parameters
+        ----------
+        molecule
+            The molecule to fragment.
+        """
         super().__init__(molecule, get_fgroup_smarts())
         self._find_ring_systems(keep_non_rotor_ring_substituents=False)
 
@@ -1285,6 +1208,7 @@ class PfizerFragmenter(Fragmenter):
         Fragment molecules according to Pfizer protocol
         """
         rotatable_bonds = self._find_rotatable_bonds()
+
         for bond in rotatable_bonds:
 
             atoms, bonds = self._get_torsion_quartet(bond)

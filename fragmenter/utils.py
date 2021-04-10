@@ -46,22 +46,6 @@ def get_fgroup_smarts_comb() -> Dict[str, str]:
     return functional_groups
 
 
-def to_off_molecule(molecule) -> Molecule:
-    """Returns a copy of either a native OE or RDKit molecule as an OFF molecule. This
-    is a temporary method added while OpenFF toolkit issue #890 is unresolved."""
-
-    if "oechem" in molecule.__class__.__module__:
-        from openeye import oechem
-
-        return Molecule.from_openeye(
-            oechem.OEMol(molecule), allow_undefined_stereo=True
-        )
-    elif "rdkit" in molecule.__class__.__module__:
-        return Molecule.from_rdkit(molecule, allow_undefined_stereo=True)
-
-    raise NotImplementedError()
-
-
 def get_map_index(
     molecule: Molecule, atom_index: int, error_on_missing: bool = True
 ) -> int:
