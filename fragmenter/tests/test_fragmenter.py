@@ -272,28 +272,28 @@ def test_add_substituent():
     assert fragment.to_smiles(mapped=False, explicit_hydrogens=False) == "CCCCCC"
 
 
-def test_to_qcscheme_mol():
-
-    fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
-    fragmenter.fragment()
-
-    qcschema_mol = fragmenter._to_qcschema_mol(fragmenter.fragments[(3, 5)])
-
-    assert "initial_molecule" in qcschema_mol
-    assert "geometry" in qcschema_mol["initial_molecule"][0]
-    assert "symbols" in qcschema_mol["initial_molecule"][0]
-    assert "connectivity" in qcschema_mol["initial_molecule"][0]
-    assert "identifiers" in qcschema_mol
-    assert "provenance" in qcschema_mol
-
-
-def test_td_inputs():
-
-    fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
-    fragmenter.fragment()
-
-    td_inputs = fragmenter.to_torsiondrive_json()
-    assert len(td_inputs) == 2
+# def test_to_qcscheme_mol():
+#
+#     fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
+#     fragmenter.fragment()
+#
+#     qcschema_mol = fragmenter._to_qcschema_mol(fragmenter.fragments[(3, 5)])
+#
+#     assert "initial_molecule" in qcschema_mol
+#     assert "geometry" in qcschema_mol["initial_molecule"][0]
+#     assert "symbols" in qcschema_mol["initial_molecule"][0]
+#     assert "connectivity" in qcschema_mol["initial_molecule"][0]
+#     assert "identifiers" in qcschema_mol
+#     assert "provenance" in qcschema_mol
+#
+#
+# def test_td_inputs():
+#
+#     fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
+#     fragmenter.fragment()
+#
+#     td_inputs = fragmenter.to_torsiondrive_json()
+#     assert len(td_inputs) == 2
 
 
 @pytest.mark.parametrize(

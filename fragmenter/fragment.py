@@ -7,13 +7,11 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 import networkx
 from openff.toolkit.topology import Atom, Molecule
 
-from fragmenter import torsions
 from fragmenter.chemi import (
     assign_elf10_am1_bond_orders,
     extract_fragment,
     find_ring_systems,
     find_stereocenters,
-    generate_conformers,
 )
 from fragmenter.states import _enumerate_stereoisomers
 from fragmenter.utils import get_atom_index, get_fgroup_smarts, get_map_index
@@ -655,102 +653,82 @@ class Fragmenter(abc.ABC):
         }
         return provenance
 
-    def _to_qcschema_mol(self, molecule: Molecule, **kwargs) -> Dict[str, Any]:
-        """Map on OpenFF molecule to a QCSchema molecule.
-
-        Returns
-        -------
-            The initial molecules, cmiles identifiers and provenance fields for a
-            QCSchema molecule
-        """
-        from cmiles.utils import mol_to_map_ordered_qcschema
-
-        self._options.update(kwargs)
-
-        cmiles_identifiers = {
-            "canonical_smiles": molecule.to_smiles(
-                isomeric=False, explicit_hydrogens=False, mapped=False
-            ),
-            "canonical_isomeric_smiles": molecule.to_smiles(
-                isomeric=True, explicit_hydrogens=False, mapped=False
-            ),
-            "canonical_explicit_hydrogen_smiles": molecule.to_smiles(
-                isomeric=False, explicit_hydrogens=True, mapped=False
-            ),
-            "canonical_isomeric_explicit_hydrogen_smiles": molecule.to_smiles(
-                isomeric=True, explicit_hydrogens=True, mapped=False
-            ),
-            "canonical_isomeric_explicit_hydrogen_mapped_smiles": molecule.to_smiles(
-                isomeric=True, explicit_hydrogens=True, mapped=True
-            ),
-            "molecular_formula": molecule.hill_formula,
-            "standard_inchi": molecule.to_inchi(fixed_hydrogens=False),
-            "inchi_key": molecule.to_inchikey(fixed_hydrogens=False),
-        }
-
-        conformers = generate_conformers(molecule, **kwargs)
-
-        canonical_mapped_smiles = cmiles_identifiers[
-            "canonical_isomeric_explicit_hydrogen_mapped_smiles"
-        ]
-
-        qcschema_mols = [
-            mol_to_map_ordered_qcschema(conf, canonical_mapped_smiles)
-            for conf in conformers.to_openeye().GetConfs()
-        ]
-
-        return {
-            "initial_molecule": qcschema_mols,
-            "identifiers": cmiles_identifiers,
-            "provenance": self.get_provenance(),
-        }
-
-    def to_torsiondrive_json(self, **kwargs) -> Dict[str, Any]:
-        """Generates torsiondrive input JSON for QCArchive
-
-        Returns
-        -------
-            A dictionary with the QCArchive job label as keys that maps to the
-            torsiondrive input for each fragment
-        """
-        from cmiles.utils import to_canonical_label
-
-        # capture options
-        self._options.update(kwargs)
-
-        torsiondrive_json_dict = {}
-
-        for bond in self.fragments:
-
-            # find torsion around bond in fragment
-            molecule = self.fragments[bond]
-
-            mapped_smiles = molecule.to_smiles(mapped=True)
-
-            torsion_map_idx = torsions.find_torsion_around_bond(molecule, bond)
-            torsiondrive_job_label = to_canonical_label(
-                mapped_smiles, tuple(torsion_map_idx)
-            )
-            torsiondrive_json_dict[torsiondrive_job_label] = {}
-
-            # prepare torsiondrive input
-            molecule_copy = molecule.canonical_order_atoms()
-
-            # Map torsion to canonical ordered molecule
-            # First canonical order the molecule
-            # Note: potential bug - add explicit hydrogen before order atoms
-            dih = []
-
-            for m_idx in torsion_map_idx:
-                dih.append(get_atom_index(molecule_copy, m_idx + 1))
-
-            torsiondrive_json_dict[torsiondrive_job_label] = self._to_qcschema_mol(
-                molecule_copy, **kwargs
-            )
-            torsiondrive_json_dict[torsiondrive_job_label].update(
-                {"dihedral": [dih], "grid": [15], "provenance": self.get_provenance()}
-            )
-        return torsiondrive_json_dict
+    # def _to_qcschema_mol(self, molecule, **kwargs):
+    #     """
+    #     Parameters
+    #     ----------
+    #     molecule : OEMol
+    #     kwargs :
+    #     Returns
+    #     -------
+    #     qcschema initial molecules, cmiles identifiers and provenance
+    #     """
+    #     from openeye import oechem
+    #
+    #     self._options.update(kwargs)
+    #     mol_copy = oechem.OEMol(molecule)
+    #     oechem.OEAddExplicitHydrogens(mol_copy)
+    #     explicit_h_smiles = mol_to_smiles(mol_copy, mapped=False)
+    #     cmiles_identifiers = cmiles.get_molecule_ids(explicit_h_smiles)
+    #     can_mapped_smiles = cmiles_identifiers[
+    #         "canonical_isomeric_explicit_hydrogen_mapped_smiles"
+    #     ]
+    #
+    #     conformers = generate_conformers(
+    #         to_off_molecule(mol_copy), **kwargs
+    #     ).to_openeye()
+    #     qcschema_mols = [
+    #         mol_to_map_ordered_qcschema(conf, can_mapped_smiles)
+    #         for conf in conformers.GetConfs()
+    #     ]
+    #
+    #     return {
+    #         "initial_molecule": qcschema_mols,
+    #         "identifiers": cmiles_identifiers,
+    #         "provenance": self.get_provenance(),
+    #     }
+    #
+    # def to_torsiondrive_json(self, **kwargs):
+    #     """
+    #     Generates torsiondrive input JSON for QCArchive
+    #     Returns
+    #     -------
+    #     torsiondrive_json_dict: dict
+    #         dictionary with the QCArchive job label as keys that maps to the torsiondrive input for each fragment
+    #     """
+    #     from openeye import oechem
+    #
+    #     # capture options
+    #     self._options.update(kwargs)
+    #     torsiondrive_json_dict = {}
+    #     for bond in self.fragments:
+    #         # find torsion around bond in fragment
+    #         molecule = self.fragments[bond]
+    #         mapped_smiles = oechem.OEMolToSmiles(molecule)
+    #         torsion_map_idx = torsions.find_torsion_around_bond(molecule, bond)
+    #         torsiondrive_job_label = to_canonical_label(mapped_smiles, torsion_map_idx)
+    #         torsiondrive_json_dict[torsiondrive_job_label] = {}
+    #
+    #         # prepare torsiondrive input
+    #         mol_copy = oechem.OEMol(molecule)
+    #
+    #         # Map torsion to canonical ordered molecule
+    #         # First canonical order the molecule
+    #         # Note: potential bug - add explicit hydrogen before order atoms
+    #         oechem.OEAddExplicitHydrogens(mol_copy)
+    #         cmiles._cmiles_oe.canonical_order_atoms(mol_copy)
+    #         dih = []
+    #         for m_idx in torsion_map_idx:
+    #             atom = mol_copy.GetAtom(oechem.OEHasMapIdx(m_idx + 1))
+    #             dih.append(atom.GetIdx())
+    #
+    #         torsiondrive_json_dict[torsiondrive_job_label] = self._to_qcschema_mol(
+    #             mol_copy, **kwargs
+    #         )
+    #         torsiondrive_json_dict[torsiondrive_job_label].update(
+    #             {"dihedral": [dih], "grid": [15], "provenance": self.get_provenance()}
+    #         )
+    #     return torsiondrive_json_dict
 
 
 class WBOFragmenter(Fragmenter):
