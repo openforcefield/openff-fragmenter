@@ -372,20 +372,15 @@ class Fragmenter(abc.ABC):
 
         # Scan the neighbours of the ring system atoms for any functional groups
         # / non-rotor substituents which should be included in the ring systems.
-        map_index_to_functional_group = {
-            map_index: f_group
-            for f_group in self.functional_groups
-            for map_index in self.functional_groups[f_group][0]
-        }
-
         for ring_index in ring_system_atoms:
 
             # If any atoms are part of a functional group, include the other atoms in the
             # group in the ring system lists
             functional_groups = {
-                map_index_to_functional_group[map_index]
+                functional_group
                 for map_index in ring_system_atoms[ring_index]
-                if map_index in map_index_to_functional_group
+                for functional_group in self.functional_groups
+                if map_index in self.functional_groups[functional_group][0]
             }
 
             ring_system_atoms[ring_index].update(
