@@ -3,25 +3,23 @@ import copy
 import logging
 from typing import Dict, List, Set, Tuple
 
-import cmiles
 import networkx
 import numpy
 from openff.toolkit.topology import Molecule
 from openff.toolkit.utils import LicenseError, ToolkitUnavailableException
 
-from fragmenter.utils import get_atom_index, get_map_index, to_off_molecule
+from fragmenter.utils import get_atom_index, get_map_index
 
 logger = logging.getLogger(__name__)
 
 
-def assign_elf10_am1_bond_orders(molecule, max_confs=800):
-    """Generate ELF10 AM1 WBOs for an OpenEye OEMol molecule.
+def assign_elf10_am1_bond_orders(molecule: Molecule, max_confs: int = 800) -> Molecule:
+    """Generate ELF10 AM1 WBOs for a molecule.
 
     Parameters
     ----------
-    molecule : OEMol
-        Molecule for which to generate conformers.
-        Omega will be used to generate max_confs conformations.
+    molecule
+        The molecule to compute WBOs for.
     max_confs : int, optional, default=800
         Max number of conformers to generate
 
@@ -30,53 +28,35 @@ def assign_elf10_am1_bond_orders(molecule, max_confs=800):
         A molecule which contains ELF10 AM1 Wiberg Bond orders.
     """
 
-    from openeye import oechem
-
-    off_molecule = to_off_molecule(oechem.OEMol(molecule))
+    molecule = copy.deepcopy(molecule)
 
     # Store the atom map separately in case it gets removed by a TK.
-    atom_map = off_molecule.properties.pop("atom_map", None)
+    atom_map = molecule.properties.pop("atom_map", None)
 
     # Generate a set of ELF10 conformers.
-    off_molecule = generate_conformers(off_molecule, max_confs)
-    off_molecule.apply_elf_conformer_selection()
+    molecule = generate_conformers(molecule, max_confs)
+    molecule.apply_elf_conformer_selection()
 
     per_conformer_bond_orders = []
 
-    for conformer in off_molecule.conformers:
+    for conformer in molecule.conformers:
 
-        off_molecule.assign_fractional_bond_orders(
-            "am1-wiberg", use_conformers=[conformer]
-        )
+        molecule.assign_fractional_bond_orders("am1-wiberg", use_conformers=[conformer])
 
         per_conformer_bond_orders.append(
-            [bond.fractional_bond_order for bond in off_molecule.bonds]
+            [bond.fractional_bond_order for bond in molecule.bonds]
         )
 
     bond_orders = [*numpy.mean(per_conformer_bond_orders, axis=0)]
 
-    for bond, bond_order in zip(off_molecule.bonds, bond_orders):
+    for bond, bond_order in zip(molecule.bonds, bond_orders):
         bond.fractional_bond_order = bond_order
 
     # Restore the atom map.
     if atom_map is not None:
-        off_molecule.properties["atom_map"] = atom_map
+        molecule.properties["atom_map"] = atom_map
 
-    # TODO: Return an OFF molecule object once the refactor is further along. Below
-    #       this line is temporary code.
-    oe_molecule = oechem.OEMol(molecule)
-
-    if atom_map is not None:
-
-        for oe_atom in oe_molecule.GetAtoms():
-            oe_atom.SetMapIdx(atom_map[oe_atom.GetIdx()])
-
-    for oe_bond in oe_molecule.GetBonds():
-
-        bond = off_molecule.get_bond_between(oe_bond.GetBgnIdx(), oe_bond.GetEndIdx())
-        oe_bond.SetData("WibergBondOrder", bond.fractional_bond_order)
-
-    return oe_molecule
+    return molecule
 
 
 def generate_conformers(
@@ -101,31 +81,31 @@ def generate_conformers(
 
     from simtk import unit
 
-    off_molecule = copy.deepcopy(molecule)
+    molecule = copy.deepcopy(molecule)
 
     # Store the atom map separately in case it gets removed / mangled by a TK.
-    atom_map = off_molecule.properties.pop("atom_map", None)
+    atom_map = molecule.properties.pop("atom_map", None)
 
     # Canonically order the atoms in the molecule before generating the conformer.
     # This helps ensure the same conformers are generated for the same molecules
     # independently of their atom order.
-    canonical_molecule = off_molecule.canonical_order_atoms()
+    canonical_molecule = molecule.canonical_order_atoms()
 
     canonical_molecule.generate_conformers(
         n_conformers=max_confs, rms_cutoff=rms_threshold * unit.angstrom
     )
 
     _, canonical_map = Molecule.are_isomorphic(
-        canonical_molecule, off_molecule, return_atom_map=True
+        canonical_molecule, molecule, return_atom_map=True
     )
 
-    off_molecule = canonical_molecule.remap(canonical_map)
+    molecule = canonical_molecule.remap(canonical_map)
 
     # Restore the atom map.
     if atom_map is not None:
-        off_molecule.properties["atom_map"] = atom_map
+        molecule.properties["atom_map"] = atom_map
 
-    return off_molecule
+    return molecule
 
 
 def find_ring_systems(molecule: Molecule) -> Dict[int, int]:
@@ -505,8 +485,9 @@ def extract_fragment(
     return fragment
 
 
-def smiles_to_oemol(smiles, add_atom_map: bool = False):
-    """Create an OE molecule object from an input SMILES pattern.
+def smiles_to_molecule(smiles, add_atom_map: bool = False) -> Molecule:
+    """Create a molecule object from an input SMILES pattern.
+
     Parameters
     ----------
     smiles : str
@@ -516,19 +497,15 @@ def smiles_to_oemol(smiles, add_atom_map: bool = False):
 
     Returns
     -------
-    molecule : OEMol
         A normalized molecule with desired smiles string.
     """
 
-    from openeye import oechem
-
-    off_molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
-    oe_molecule = off_molecule.to_openeye()
-
-    oechem.OEPerceiveChiral(oe_molecule)
+    molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
 
     # Add canonical ordered atom maps
     if add_atom_map:
-        cmiles.utils.add_atom_map(oe_molecule)
 
-    return oe_molecule
+        molecule = molecule.canonical_order_atoms()
+        molecule.properties["atom_map"] = {i: i + 1 for i in range(molecule.n_atoms)}
+
+    return molecule

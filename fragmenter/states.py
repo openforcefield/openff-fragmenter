@@ -1,40 +1,41 @@
 import logging
+from typing import List
 
-from fragmenter.utils import to_off_molecule
+from openff.toolkit.topology import Molecule
 
 logger = logging.getLogger(__name__)
 
 
 def _enumerate_stereoisomers(
-    molecule,
-    max_states=200,
-    force_flip=True,
-    enum_nitrogen=True,
-    warts=False,
-    verbose=True,
-):
+    molecule: Molecule,
+    max_states: int = 200,
+    force_flip: bool = True,
+    enum_nitrogen: bool = True,
+    warts: bool = False,
+    verbose: bool = True,
+) -> List[Molecule]:
     """Enumerate stereoisomers
 
     Parameters
     ----------
-    molecule : OEMol
-    max_states : int, optional, default 200
-        max number of states to enumerate
-    force_flip : bool, optional, default True
-        If True, will flip all steocenters. If False, will only flip centers that are undefined
-    enum_nitrogen : bool, optional, default True
+    molecule
+        The molecule to enumerate the stereoisomers of.
+    max_states
+        The max number of states to enumerate
+    force_flip
+        If True, will flip all steocenters. If False, will only flip centers that are
+        undefined
+    enum_nitrogen
         Invert non-planar nitrogen
-    warts : bool, optional, default True
+    warts
         If True, add int to molecule name
-    verbose : bool, optional, default True
+    verbose
 
     Returns
     -------
     stereoisomers: list of oemols
 
     """
-
-    off_molecule = to_off_molecule(molecule)
 
     if max_states > 200:
 
@@ -57,29 +58,35 @@ def _enumerate_stereoisomers(
 
     # Check if the input molecule has any undefined stereochemistry. If it does not
     # then it should be included in the list of returned stereoisomers.
-    off_stereoisomers = off_molecule.enumerate_stereoisomers(
+    stereoisomers = molecule.enumerate_stereoisomers(
         undefined_only=not force_flip,
         max_isomers=max_states,
         rationalise=False,
     )
 
-    if len(off_stereoisomers) == 0:
+    if len(stereoisomers) == 0:
         # Handle the case where the input molecule does not have any stereoisomers.
         return [molecule]
+
+    # Attach the atom map to any stereoisomers.
+    if "atom_map" in molecule.properties:
+
+        for stereoisomer in stereoisomers:
+            stereoisomer.properties["atom_map"] = molecule.properties["atom_map"]
 
     # Check to see if the original molecule had undefined stereochemistry.
     undefined_atom_stereochemistry = any(
         atom_old.stereochemistry is None and atom_new.stereochemistry is not None
-        for atom_old, atom_new in zip(off_molecule.atoms, off_stereoisomers[0].atoms)
+        for atom_old, atom_new in zip(molecule.atoms, stereoisomers[0].atoms)
     )
     undefined_bond_stereochemistry = any(
         bond_old.stereochemistry is None and bond_new.stereochemistry is not None
-        for bond_old, bond_new in zip(off_molecule.bonds, off_stereoisomers[0].bonds)
+        for bond_old, bond_new in zip(molecule.bonds, stereoisomers[0].bonds)
     )
 
     # If the input molecule had all of the input stereochemistry defined make sure to
     # return it in addition to the newly found stereoisomers.
     if not undefined_atom_stereochemistry and not undefined_bond_stereochemistry:
-        off_stereoisomers = [off_molecule] + off_stereoisomers[: max_states - 1]
+        stereoisomers = [molecule] + stereoisomers[: max_states - 1]
 
-    return [off_stereoisomer.to_openeye() for off_stereoisomer in off_stereoisomers]
+    return stereoisomers

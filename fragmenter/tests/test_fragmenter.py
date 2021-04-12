@@ -4,92 +4,39 @@ Unit and regression test for the fragmenter package.
 
 # Import package, test suite, and other packages as needed
 import logging
-import sys
 
 import numpy
 import pytest
-from cmiles.utils import mol_to_smiles, remove_atom_map
+from openff.toolkit.topology import Molecule
 
-import fragmenter
-from fragmenter import chemi
+from fragmenter.chemi import smiles_to_molecule
+from fragmenter.fragment import Fragmenter, PfizerFragmenter, WBOFragmenter
 from fragmenter.tests.utils import using_openeye
-from fragmenter.utils import get_fgroup_smarts, get_fgroup_smarts_comb, to_off_molecule
+from fragmenter.utils import get_fgroup_smarts, get_fgroup_smarts_comb, get_map_index
 
 
-class DummyFragmenter(fragmenter.fragment.Fragmenter):
+class DummyFragmenter(Fragmenter):
     """A mock fragmenter class used for testing"""
 
     def fragment(self):
         return
 
 
-def test_fragmenter_imported():
-    """Sample test, will always pass so long as import statement worked"""
-    assert "fragmenter" in sys.modules
-
-
-@using_openeye
-@pytest.mark.parametrize(
-    "smiles, forceflip, enum_n, output",
-    [("CN(CC=CC1=CC=CC=C1)CC1=CC=CC2=CC=CC=C12", True, True, 4)],
-)
-def test_expand_stereoisomers(smiles, forceflip, enum_n, output):
-    from openeye import oechem
-
-    oemol = oechem.OEMol()
-    oechem.OESmilesToMol(oemol, smiles)
-    stereo = fragmenter.states._enumerate_stereoisomers(
-        oemol, force_flip=forceflip, enum_nitrogen=enum_n, verbose=False
-    )
-    assert len(stereo) == output
-
-
-@using_openeye
-@pytest.mark.xfail(reason="combination fragmenter only?")
 def test_keep_track_of_map():
-    from openeye import oechem
 
-    smiles = "c1ccc(cc1)Nc2ncccn2"
-    mapped_mol = oechem.OEMol()
-    oechem.OESmilesToMol(mapped_mol, smiles)
+    fragments = WBOFragmenter(Molecule.from_smiles("c1ccc(cc1)Nc2ncccn2"))
+    fragments.fragment()
 
-    frags = fragmenter.fragment.WBOFragmenter(mapped_mol)
-    frags.fragment()
-    # frags._fragment_all_bonds_not_in_ring_systems()
-    # frags._combine_fragments(min_rotors=1, max_rotors=frags.n_rotors+1, restore_maps=True)
-
-    keys = list(frags.fragments.keys())
-    assert (
-        oechem.OEMolToSmiles(frags.fragments[keys[0]][0])
-        == "[H:14][c:1]1[c:2]([c:4]([c:9]([c:5]([c:3]1[H:16])[H:18])[NH:13][H:22])[H:17])[H:15]"
-    )
-    assert (
-        oechem.OEMolToSmiles(frags.fragments[keys[1]][0])
-        == "[H:19][c:6]1[c:7]([n:11][c:10]([n:12][c:8]1[H:21])[NH:13][H:22])[H:20]"
+    assert all(
+        "atom_map" in fragment.properties for fragment in fragments.fragments.values()
     )
 
 
-@using_openeye
-def test_tag_fgroups():
-
-    from openeye import oechem
-
-    smiles = (
-        "[H:40][c:3]1[c:8]([c:20]2[n:30][c:12]([c:14]([n:32]2[n:31][c:11]1[H:48])[C:2]#"
-        "[C:1][c:13]3[c:9]([c:15]([c:4]([c:5]([c:16]3[C:26]([H:58])([H:59])[H:60])"
-        "[H:42])[H:41])[C:21](=[O:36])[N:35]([H:66])[c:19]4[c:7]([c:6]([c:17]([c:18]"
-        "([c:10]4[H:47])[C:29]([F:37])([F:38])[F:39])[C:28]([H:64])([H:65])[N:34]5"
-        "[C:24]([C:22]([N:33]([C:23]([C:25]5([H:56])[H:57])([H:52])[H:53])[C:27]"
-        "([H:61])([H:62])[H:63])([H:50])[H:51])([H:54])[H:55])[H:43])[H:44])[H:46])"
-        "[H:49])[H:45]"
-    )
-
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
+def test_tag_fgroups(potanib):
 
     functional_groups = get_fgroup_smarts_comb()
 
-    frags = fragmenter.fragment.WBOFragmenter(mol, functional_groups=functional_groups)
+    frags = DummyFragmenter(potanib, functional_groups=functional_groups)
 
     functional_groups = {
         "alkyne_0": {1, 2},
@@ -110,83 +57,57 @@ def test_tag_fgroups():
         )
 
 
-@using_openeye
-def test_rotor_wbo():
-    from openeye import oechem
+def test_rotor_wbo(butane):
 
-    smiles = "[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]"
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    assert f.rotors_wbo == {}
-    f._get_rotor_wbo()
-    assert list(f.rotors_wbo.keys()) == [(3, 4)]
-    assert round(f.rotors_wbo[(3, 4)], ndigits=3) == 0.986
+    fragmenter = WBOFragmenter(butane)
+    assert fragmenter.rotors_wbo == {}
 
+    fragmenter._get_rotor_wbo()
 
-@using_openeye
-def test_get_bond():
-    from openeye import oechem
-
-    smiles = "[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]"
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    bond = f._get_bond(bond_tuple=(3, 4))
-    assert bond.IsRotor()
+    assert list(fragmenter.rotors_wbo.keys()) == [(3, 4)]
+    assert round(fragmenter.rotors_wbo[(3, 4)], ndigits=3) == 0.986
 
 
 def test_build_fragment():
-    from openeye import oechem
 
-    smiles = "CCCCCC"
-    mol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f.calculate_wbo()
-    f._get_rotor_wbo()
-    setattr(f, "threshold", 0.05)
-    for bond in f.rotors_wbo:
-        f._build_fragment(bond)
-    assert len(f.fragments) == 3
-    remove_atom_map(f.fragments[(3, 5)])
-    assert oechem.OEMolToSmiles(f.fragments[(3, 5)]) == "CCCCC"
-    remove_atom_map(f.fragments[(4, 6)])
-    assert oechem.OEMolToSmiles(f.fragments[(4, 6)]) == "CCCCC"
-    remove_atom_map(f.fragments[(5, 6)])
-    assert oechem.OEMolToSmiles(f.fragments[(5, 6)]) == "CCCCCC"
+    fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
+    fragmenter.calculate_wbo()
+    fragmenter._get_rotor_wbo()
 
+    fragmenter.threshold = 0.05
 
-@using_openeye
-def test_build_WBOfragment():
-    """ Test build fragment"""
-    from openeye import oechem
+    for bond in fragmenter.rotors_wbo:
+        fragmenter._build_fragment(bond)
 
-    smiles = "CCCCC"
-    mol = chemi.smiles_to_oemol(smiles)
-    oechem.OESmilesToMol(mol, smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f.fragment()
-    assert len(f.fragments) == len(f.rotors_wbo)
-    assert f.fragments.keys() == f.rotors_wbo.keys()
+    assert len(fragmenter.fragments) == 3
 
-
-def test_atom_bond_set_to_mol():
-    from openeye import oechem
-
-    smiles = (
-        "[H:38][c:1]1[c:2]([c:14]([n:28][c:5]([c:8]1[C:25]([H:64])([H:65])[N:33]2"
-        "[C:17]([C:19]([N:34]([C:20]([C:18]2([H:46])[H:47])([H:50])[H:51])[C:26]"
-        "([H:66])([H:67])[C:22]([H:55])([H:56])[H:57])([H:48])[H:49])([H:44])[H:45])"
-        "[H:42])[N:35]([H:69])[c:16]3[n:29][c:6]([c:12]([c:13]([n:31]3)[c:7]4[c:3]"
-        "([c:10]5[c:9]([c:11]([c:4]4[H:41])[F:36])[n:30][c:15]([n:32]5[C:27]([H:68])"
-        "([C:23]([H:58])([H:59])[H:60])[C:24]([H:61])([H:62])[H:63])[C:21]([H:52])"
-        "([H:53])[H:54])[H:40])[F:37])[H:43])[H:39]"
+    assert (
+        fragmenter.fragments[(3, 5)].to_smiles(explicit_hydrogens=False, mapped=False)
+        == "CCCCC"
+    )
+    assert (
+        fragmenter.fragments[(4, 6)].to_smiles(explicit_hydrogens=False, mapped=False)
+        == "CCCCC"
+    )
+    assert (
+        fragmenter.fragments[(5, 6)].to_smiles(explicit_hydrogens=False, mapped=False)
+        == "CCCCCC"
     )
 
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
 
-    f = DummyFragmenter(mol, get_fgroup_smarts())
+def test_wbo_fragment():
+    """ Test build fragment"""
+
+    fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCC"))
+    fragmenter.fragment()
+
+    assert len(fragmenter.fragments) == len(fragmenter.rotors_wbo)
+    assert fragmenter.fragments.keys() == fragmenter.rotors_wbo.keys()
+
+
+def test_atom_bond_set_to_mol(abemaciclib):
+
+    fragmenter = DummyFragmenter(abemaciclib, get_fgroup_smarts())
 
     atoms = {17, 18, 19, 20, 22, 26, 33, 34, 66, 67}
     bonds = {
@@ -202,193 +123,177 @@ def test_atom_bond_set_to_mol():
         (26, 67),
     }
 
-    mol = f._atom_bond_set_to_mol(atoms=atoms, bonds=bonds)
+    fragment = fragmenter._atom_bond_set_to_mol(atoms=atoms, bonds=bonds)
 
-    for b in mol.GetBonds():
+    for bond in fragment.bonds:
 
-        a1 = b.GetBgn()
-        a2 = b.GetEnd()
+        if bond.atom1.atomic_number == 1 or bond.atom2.atomic_number == 1:
+            continue
 
-        if not a1.IsHydrogen() and not a2.IsHydrogen():
-            assert tuple(sorted((a1.GetMapIdx(), a2.GetMapIdx()))) in bonds
+        map_index_1 = get_map_index(fragment, bond.atom1_index)
+        map_index_2 = get_map_index(fragment, bond.atom2_index)
+
+        assert tuple(sorted((map_index_1, map_index_2))) in bonds
 
 
 def test_calculate_wbo():
-    smiles = "CCCC"
-    oemol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(oemol)
-    mol = f.calculate_wbo()
-    assert not mol
-    for bond in f.molecule.GetBonds():
-        assert "WibergBondOrder" in bond.GetData()
 
-    mol = f.calculate_wbo(f.molecule)
-    assert mol
-    for bond in mol.GetBonds():
-        assert "WibergBondOrder" in bond.GetData()
+    fragmenter = WBOFragmenter(Molecule.from_smiles("CCCC"))
+
+    molecule = fragmenter.calculate_wbo()
+    assert not molecule
+
+    for bond in fragmenter.molecule.bonds:
+        assert bond.fractional_bond_order is not None
+
+    molecule = fragmenter.calculate_wbo(fragmenter.molecule)
+    assert molecule
+
+    for bond in molecule.bonds:
+        assert bond.fractional_bond_order is not None
 
 
-def test_compare_wbo():
-    from openeye import oechem
+def test_compare_wbo(butane):
 
-    smiles = "[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]"
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f.calculate_wbo()
-    f._get_rotor_wbo()
+    fragmenter = WBOFragmenter(butane)
+    fragmenter.calculate_wbo()
+    fragmenter._get_rotor_wbo()
 
-    assert numpy.isclose(f._compare_wbo(fragment=mol, bond_tuple=(3, 4)), 0.0)
+    assert numpy.isclose(
+        fragmenter._compare_wbo(fragment=butane, bond_tuple=(3, 4)), 0.0
+    )
 
 
 @pytest.mark.parametrize(
-    "input, output", [("CCCC", 0), ("c1ccccc1", 1), ("c1ccccc1C", 1)]
+    "input_smiles, n_output", [("CCCC", 0), ("c1ccccc1", 1), ("c1ccccc1C", 1)]
 )
-def test_find_ring_systems(input, output):
-    mol = chemi.smiles_to_oemol(input)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f._find_ring_systems()
-    assert len(f.ring_systems) == output
+def test_find_ring_systems(input_smiles, n_output):
 
+    fragmenter = WBOFragmenter(Molecule.from_smiles(input_smiles))
+    fragmenter._find_ring_systems()
 
-@pytest.mark.parametrize("input, output", [(True, 7), (False, 6)])
-def test_keep_non_rotor(input, output):
-    mol = chemi.smiles_to_oemol("c1ccccc1C")
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f._find_ring_systems(keep_non_rotor_ring_substituents=input)
-    assert len(f.ring_systems[1][0]) == output
+    assert len(fragmenter.ring_systems) == n_output
 
 
 @pytest.mark.parametrize(
-    "input, output",
+    "keep_non_rotor_ring_substituents, n_output", [(True, 7), (False, 6)]
+)
+def test_keep_non_rotor(keep_non_rotor_ring_substituents, n_output):
+
+    fragmenter = WBOFragmenter(Molecule.from_smiles("c1ccccc1C"))
+    fragmenter._find_ring_systems(
+        keep_non_rotor_ring_substituents=keep_non_rotor_ring_substituents
+    )
+
+    assert len(fragmenter.ring_systems[1][0]) == n_output
+
+
+@pytest.mark.parametrize(
+    "input_smiles, n_output",
     [
         (
-            "[H:42][N:19]([C@H:11]1[C@@H:13]2[N:18]([C:7]1=[O:22])[CH2:12][C:14]([S:26]2)([CH3:15])[CH3:16])[C:9](=[O:24])[CH3:17]",
+            "[H:42][N:19]([C@H:11]1[C@@H:13]2[N:18]([C:7]1=[O:22])[CH2:12][C:14]"
+            "([S:26]2)([CH3:15])[CH3:16])[C:9](=[O:24])[CH3:17]",
             8,
         )
     ],
 )
-def test_ring_fgroups(input, output):
-    mol = chemi.smiles_to_oemol(input)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f._find_ring_systems()
-    assert len(f.ring_systems[1][0]) == output
+def test_ring_fgroups(input_smiles, n_output):
+
+    fragmenter = WBOFragmenter(Molecule.from_smiles(input_smiles))
+    fragmenter._find_ring_systems()
+
+    assert len(fragmenter.ring_systems[1][0]) == n_output
 
 
-# ToDo add test to test adding substituent directly bonded to rotatable bond
-def test_find_ortho_substituents():
-    from openeye import oechem
+def test_find_ortho_substituents(dasatanib):
 
-    smiles = (
-        "[H:34][c:1]1[c:2]([c:6]([c:7]([c:8]([c:3]1[H:36])[Cl:33])[N:28]([H:57])[C:14]"
-        "(=[O:30])[c:9]2[c:5]([n:23][c:13]([s:32]2)[N:29]([H:58])[c:11]3[c:4]([c:10]"
-        "([n:24][c:12]([n:25]3)[C:20]([H:50])([H:51])[H:52])[N:26]4[C:15]([C:17]([N:27]"
-        "([C:18]([C:16]4([H:41])[H:42])([H:45])[H:46])[C:21]([H:53])([H:54])[C:22]"
-        "([H:55])([H:56])[O:31][H:59])([H:43])[H:44])([H:39])[H:40])[H:37])[H:38])"
-        "[C:19]([H:47])([H:48])[H:49])[H:35]"
-    )
+    # TODO: add test to test adding substituent directly bonded to rotatable bond
+    fragmenter = WBOFragmenter(dasatanib)
+    fragmenter._find_ring_systems(keep_non_rotor_ring_substituents=False)
 
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
-
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f._find_ring_systems(keep_non_rotor_ring_substituents=False)
-
-    ortho_atoms, ortho_bonds = f._find_ortho_substituents(
-        to_off_molecule(mol), bonds={(7, 28)}
-    )
+    ortho_atoms, ortho_bonds = fragmenter._find_ortho_substituents(bonds={(6, 28)})
 
     assert ortho_atoms == {19, 28, 33}
-    assert ortho_bonds == {(6, 19), (7, 28), (8, 33)}
+    assert ortho_bonds == {(5, 19), (6, 28), (7, 33)}
 
 
-def test_find_rotatable_bonds():
-    from openeye import oechem
+def test_find_rotatable_bonds(abemaciclib):
 
-    smiles = (
-        "[H:38][c:1]1[c:2]([c:14]([n:28][c:5]([c:8]1[C:25]([H:64])([H:65])[N:33]2[C:17]"
-        "([C:19]([N:34]([C:20]([C:18]2([H:46])[H:47])([H:50])[H:51])[C:26]([H:66])"
-        "([H:67])[C:22]([H:55])([H:56])[H:57])([H:48])[H:49])([H:44])[H:45])[H:42])"
-        "[N:35]([H:69])[c:16]3[n:29][c:6]([c:12]([c:13]([n:31]3)[c:7]4[c:3]([c:10]5"
-        "[c:9]([c:11]([c:4]4[H:41])[F:36])[n:30][c:15]([n:32]5[C:27]([H:68])([C:23]"
-        "([H:58])([H:59])[H:60])[C:24]([H:61])([H:62])[H:63])[C:21]([H:52])([H:53])"
-        "[H:54])[H:40])[F:37])[H:43])[H:39]"
-    )
-
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, smiles)
-
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    rotatable_bonds = f._find_rotatable_bonds()
+    fragmenter = WBOFragmenter(abemaciclib)
+    rotatable_bonds = fragmenter._find_rotatable_bonds()
 
     assert len(rotatable_bonds) == 7
 
     expected_rotatable_bonds = {
-        (14, 35),
+        (7, 13),
         (8, 25),
         (25, 33),
         (26, 34),
-        (16, 35),
-        (7, 13),
+        (14, 35),
         (27, 32),
+        (15, 35),
     }
 
     assert {*rotatable_bonds} == expected_rotatable_bonds
 
 
 def test_add_substituent():
-    smiles = "CCCCCC"
-    mol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f.fragment()
+
+    fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
+    fragmenter.fragment()
+
     assert (
-        mol_to_smiles(f.fragments[(3, 5)], mapped=False, explicit_hydrogen=False)
+        fragmenter.fragments[(3, 5)].to_smiles(mapped=False, explicit_hydrogens=False)
         == "CCCCC"
     )
 
-    mol = f.fragments[(3, 5)]
-    atoms = set()
-    bonds = set()
-    for a in mol.GetAtoms():
-        if a.IsHydrogen():
-            continue
-        atoms.add(a.GetMapIdx())
-    for b in mol.GetBonds():
-        a1 = b.GetBgn()
-        a2 = b.GetEnd()
-        if a1.IsHydrogen() or a2.IsHydrogen():
-            continue
-        bonds.add((a1.GetMapIdx(), a2.GetMapIdx()))
+    fragment = fragmenter.fragments[(3, 5)]
 
-    off_molecule = to_off_molecule(f.molecule)
-    mol = f._add_next_substituent(off_molecule, atoms, bonds, target_bond=(3, 5))
+    atoms = set(
+        get_map_index(fragment, i)
+        for i in range(fragment.n_atoms)
+        if fragment.atoms[i].atomic_number != 1
+    )
 
-    assert mol_to_smiles(mol, mapped=False, explicit_hydrogen=False) == "CCCCCC"
+    bonds = set(
+        (
+            get_map_index(fragment, bond.atom1_index),
+            get_map_index(fragment, bond.atom2_index),
+        )
+        for bond in fragment.bonds
+        if bond.atom1.atomic_number != 1 and bond.atom2.atomic_number != 1
+    )
 
+    fragment = fragmenter._add_next_substituent(
+        fragmenter.molecule, atoms, bonds, target_bond=(3, 5)
+    )
 
-def test_to_qcscheme_mol():
-    smiles = "CCCCCC"
-    mol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f.fragment()
-
-    qcschema_mol = f._to_qcschema_mol(f.fragments[(3, 5)])
-    assert "initial_molecule" in qcschema_mol
-    assert "geometry" in qcschema_mol["initial_molecule"][0]
-    assert "symbols" in qcschema_mol["initial_molecule"][0]
-    assert "connectivity" in qcschema_mol["initial_molecule"][0]
-    assert "identifiers" in qcschema_mol
-    assert "provenance" in qcschema_mol
+    assert fragment.to_smiles(mapped=False, explicit_hydrogens=False) == "CCCCCC"
 
 
-def test_td_inputs():
-    smiles = "CCCCCC"
-    mol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f.fragment()
-
-    td_inputs = f.to_torsiondrive_json()
-    assert len(td_inputs) == 2
+# def test_to_qcscheme_mol():
+#
+#     fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
+#     fragmenter.fragment()
+#
+#     qcschema_mol = fragmenter._to_qcschema_mol(fragmenter.fragments[(3, 5)])
+#
+#     assert "initial_molecule" in qcschema_mol
+#     assert "geometry" in qcschema_mol["initial_molecule"][0]
+#     assert "symbols" in qcschema_mol["initial_molecule"][0]
+#     assert "connectivity" in qcschema_mol["initial_molecule"][0]
+#     assert "identifiers" in qcschema_mol
+#     assert "provenance" in qcschema_mol
+#
+#
+# def test_td_inputs():
+#
+#     fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
+#     fragmenter.fragment()
+#
+#     td_inputs = fragmenter.to_torsiondrive_json()
+#     assert len(td_inputs) == 2
 
 
 @pytest.mark.parametrize(
@@ -407,14 +312,15 @@ def test_td_inputs():
     ],
 )
 def test_find_stereo(smiles, output):
-    mol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f._find_stereo()
-    assert f.stereo == output
+
+    fragmenter = WBOFragmenter(Molecule.from_smiles(smiles))
+    fragmenter._find_stereo()
+
+    assert fragmenter.stereo == output
 
 
 @pytest.mark.parametrize(
-    "smiles, frag, output, warning",
+    "smiles, fragment_smiles, output, warning",
     [
         ("C[C@@](F)(Cl)I", "C[C@@](F)(Cl)I", True, None),
         ("C[C@@](F)(Cl)I", "C[C@](F)(Cl)I", False, "Stereochemistry for atom "),
@@ -424,14 +330,15 @@ def test_find_stereo(smiles, output):
         ("CC=C(C)C", r"C\C=C(C)\CC", False, "A new chiral bond formed at"),
     ],
 )
-def test_check_stereo(smiles, frag, output, warning, caplog):
-    mol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f._find_stereo()
-    frag = chemi.smiles_to_oemol(frag, add_atom_map=True)
+def test_check_stereo(smiles, fragment_smiles, output, warning, caplog):
+
+    fragmenter = WBOFragmenter(Molecule.from_smiles(smiles))
+    fragmenter._find_stereo()
+
+    fragment = smiles_to_molecule(fragment_smiles, add_atom_map=True)
 
     with caplog.at_level(logging.WARNING):
-        assert f._check_stereo(frag) == output
+        assert fragmenter._check_stereo(fragment) == output
 
     if warning is None:
         assert len(caplog.records) == 0
@@ -441,7 +348,7 @@ def test_check_stereo(smiles, frag, output, warning, caplog):
 
 
 @pytest.mark.parametrize(
-    "smiles, frag",
+    "smiles, fragment_smiles",
     [
         ("C[C@@](F)(Cl)I", "C[C@@](F)(Cl)I"),
         ("C[C@@](F)(Cl)I", "C[C@](F)(Cl)I"),
@@ -449,37 +356,34 @@ def test_check_stereo(smiles, frag, output, warning, caplog):
         (r"C/C=C\C", r"C\C=C\C"),
     ],
 )
-def tet_fix_stereo(smiles, frag):
-    mol = chemi.smiles_to_oemol(smiles)
-    f = fragmenter.fragment.WBOFragmenter(mol)
-    f._find_stereo()
-    frag = chemi.smiles_to_oemol(frag, add_atom_map=True)
-    fixed = f._fix_stereo(frag)
-    assert f._check_stereo(fixed) is True
+def test_fix_stereo(smiles, fragment_smiles):
 
+    fragmenter = WBOFragmenter(Molecule.from_smiles(smiles))
+    fragmenter._find_stereo()
 
-def test_new_stereo_center():
-    pass
+    fragment = smiles_to_molecule(fragment_smiles, add_atom_map=True)
+    fixed = fragmenter._fix_stereo(fragment)
 
-
-@using_openeye
-@pytest.mark.parametrize("input, output", [("CCCCCCC", 4)])
-def test_pfizer_fragmenter(input, output):
-    mol = chemi.smiles_to_oemol(input)
-    f = fragmenter.fragment.PfizerFragmenter(mol)
-    f.fragment()
-    assert len(f.fragments) == output
+    assert fragmenter._check_stereo(fixed) is True
 
 
 @using_openeye
-@pytest.mark.parametrize("input, output", [("CCCCCCC", (14, 20))])
-def test_get_torsion_quartet(input, output):
-    from openeye import oechem
+@pytest.mark.parametrize("input_smiles, n_output", [("CCCCCCC", 4)])
+def test_pfizer_fragmenter(input_smiles, n_output):
 
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, input)
-    f = fragmenter.fragment.PfizerFragmenter(mol)
-    atoms, bonds = f._get_torsion_quartet((3, 5))
+    fragmenter = PfizerFragmenter(Molecule.from_smiles(input_smiles))
+    fragmenter.fragment()
+
+    assert len(fragmenter.fragments) == n_output
+
+
+@using_openeye
+@pytest.mark.parametrize("input_smiles, output", [("CCCCCCC", (14, 20))])
+def test_get_torsion_quartet(input_smiles, output):
+
+    fragmenter = PfizerFragmenter(Molecule.from_smiles(input_smiles))
+    atoms, bonds = fragmenter._get_torsion_quartet((3, 5))
+
     # This also includes explicit hydrogen
     assert len(atoms) == output[0]
     assert len(bonds) == output[1]
@@ -487,22 +391,20 @@ def test_get_torsion_quartet(input, output):
 
 @using_openeye
 @pytest.mark.parametrize(
-    "input, bond, output", [("CCCCCCC", (3, 5), True), ("CCCCc1ccccc1", (9, 10), False)]
+    "input_smiles, bond, output",
+    [("CCCCCCC", (3, 5), True), ("CCCCc1ccccc1", (9, 10), False)],
 )
-def test_get_ring_and_fgroup(input, bond, output):
+def test_get_ring_and_fgroup(input_smiles, bond, output):
 
-    mol = chemi.smiles_to_oemol(input)
+    fragmenter = PfizerFragmenter(Molecule.from_smiles(input_smiles))
+    atoms, bonds = fragmenter._get_torsion_quartet(bond)
 
-    f = fragmenter.fragment.PfizerFragmenter(mol)
-    atoms, bonds = f._get_torsion_quartet(bond)
-
-    # Remove duplicates from the bonds.
     bonds = {tuple(sorted(bond)) for bond in bonds}
 
     l_atoms = len(atoms)
     l_bonds = len(bonds)
 
-    atoms_2, bonds_2 = f._get_ring_and_fgroups(atoms, bonds)
+    atoms_2, bonds_2 = fragmenter._get_ring_and_fgroups(atoms, bonds)
 
     assert (l_atoms == len(atoms_2)) == output
     assert (l_bonds == len(bonds_2)) == output
@@ -510,7 +412,7 @@ def test_get_ring_and_fgroup(input, bond, output):
 
 @using_openeye
 @pytest.mark.parametrize(
-    "input, bond, expected_atoms, expected_bonds",
+    "input_smiles, bond, expected_atoms, expected_bonds",
     [
         (
             "[H:11][c:1]1[c:2]([c:4]([c:6]([c:5]([c:3]1[H:13])[C:7](=[O:10])[H:15])"
@@ -550,31 +452,33 @@ def test_get_ring_and_fgroup(input, bond, output):
         ),
     ],
 )
-def test_get_ring_and_fgroup_ortho(input, bond, expected_atoms, expected_bonds):
+def test_get_ring_and_fgroup_ortho(input_smiles, bond, expected_atoms, expected_bonds):
     """Ensure that FGs and rings attached to ortho groups are correctly
     detected.
 
     The expected values were generated using fragmenter=0.0.7
     """
-    mol = chemi.smiles_to_oemol(input)
 
-    f = fragmenter.fragment.PfizerFragmenter(mol)
+    fragmenter = PfizerFragmenter(Molecule.from_smiles(input_smiles))
 
-    atoms, bonds = f._get_torsion_quartet(bond)
-    atoms, bonds = f._get_ring_and_fgroups(atoms, bonds)
+    atoms, bonds = fragmenter._get_torsion_quartet(bond)
+    atoms, bonds = fragmenter._get_ring_and_fgroups(atoms, bonds)
 
     assert atoms == expected_atoms
     assert bonds == expected_bonds
 
 
-@pytest.mark.parametrize("input, bond, output", [("CNCCc1ccccc1", (6, 8), 7)])
-def test_cap_open_valance(input, bond, output):
-    from openeye import oechem
+@pytest.mark.parametrize("input_smiles, bond, output", [("CNCCc1ccccc1", (6, 8), 7)])
+def test_cap_open_valance(input_smiles, bond, output):
 
-    mol = chemi.smiles_to_oemol(input)
-    f = fragmenter.fragment.PfizerFragmenter(mol)
-    atoms, bonds = f._get_torsion_quartet(bond)
-    atoms, bonds = f._get_ring_and_fgroups(atoms, bonds)
-    f._cap_open_valence(atoms, bonds)
+    # TODO: This test doesn't test anything?
+
+    fragmenter = PfizerFragmenter(Molecule.from_smiles(input_smiles))
+
+    atoms, bonds = fragmenter._get_torsion_quartet(bond)
+    atoms, bonds = fragmenter._get_ring_and_fgroups(atoms, bonds)
+
+    fragmenter._cap_open_valence(atoms, bonds)
+
     # Check that carbon bonded to N was added
-    assert f.molecule.GetAtom(oechem.OEHasMapIdx(output))
+    assert get_map_index(fragmenter.molecule, output)
