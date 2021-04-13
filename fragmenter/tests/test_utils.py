@@ -3,12 +3,7 @@ from contextlib import nullcontext
 import pytest
 from openff.toolkit.topology import Molecule
 
-from fragmenter.utils import (
-    get_atom_index,
-    get_fgroup_smarts,
-    get_fgroup_smarts_comb,
-    get_map_index,
-)
+from fragmenter.utils import get_atom_index, get_fgroup_smarts, get_map_index
 
 
 def test_get_fgroup_smarts():
@@ -22,19 +17,6 @@ def test_get_fgroup_smarts():
     assert "phosphon" not in smarts
 
     assert len(smarts) == 21
-
-
-def test_get_fgroup_smarts_comb():
-    """Tests that the `get_fgroup_smarts_comb` utility returns correctly."""
-
-    smarts = get_fgroup_smarts_comb()
-
-    assert "phosphon" in smarts
-    assert smarts["phosphon"] == "[PX4:1](=[OX1:2])([OX2:3])([OX2:4])"
-
-    assert "amide_2" not in smarts
-
-    assert len(smarts) == 12
 
 
 def test_get_map_index():

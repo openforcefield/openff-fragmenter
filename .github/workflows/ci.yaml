@@ -23,7 +23,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python-version: [3.8]
-        openeye: [true]
+        openeye: [false, true]
 
     env:
       OE_LICENSE: ${{ github.workspace }}/oe_license.txt
@@ -37,17 +37,18 @@ jobs:
         python-version: ${{ matrix.python-version }}
         environment-file: devtools/conda-envs/meta.yaml
 
-        channels: openeye,conda-forge,defaults
+        channels: conda-forge,defaults
 
         activate-environment: test
         auto-update-conda: true
         auto-activate-base: false
         show-channel-urls: true
 
-    - name: License OpenEye
+    - name: Install OpenEye
       if: matrix.openeye
       shell: bash -l {0}
       run: |
+        conda install --yes -c openeye openeye-toolkits
         echo "${SECRET_OE_LICENSE}" > ${OE_LICENSE}
         python -c "from openeye import oechem; assert oechem.OEChemIsLicensed()"
       env:
