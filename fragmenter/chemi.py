@@ -349,6 +349,20 @@ def _extract_rd_fragment(
             # Skip the cases where the valence won't change
             continue
 
+        if (
+            atom.GetAtomicNum() == 6
+            and atom.GetIsAromatic()
+            and sum(
+                1 for bond_tuple in bond_indices if atom.GetAtomMapNum() in bond_tuple
+            )
+            == 1
+        ):
+
+            # This is likely a cap carbon which was retained from an existing ring. It's
+            # aromaticity needs to be cleared before calling ``MolFragmentToSmiles``
+            # otherwise will (understandably) be confused and throw an exception.
+            atom.SetIsAromatic(False)
+
         # Add a hydrogen to the atom whose valence will change.
         for _ in range(int(numpy.rint(old_valence - new_valence))):
 
