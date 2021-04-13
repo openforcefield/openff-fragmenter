@@ -1,7 +1,6 @@
 name: test
 
 channels:
-  - openeye
   - conda-forge
   - defaults
 
@@ -28,7 +27,6 @@ dependencies:
   - networkx
 
     # Optional dependencies
-  - openeye-toolkits
   - rdkit
 
     # Testing

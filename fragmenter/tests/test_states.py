@@ -1,9 +1,7 @@
 import pytest
 from openff.toolkit.topology import Molecule
-from openff.toolkit.utils import OpenEyeToolkitWrapper, RDKitToolkitWrapper
 
 from fragmenter.states import _enumerate_stereoisomers
-from fragmenter.tests.utils import global_toolkit_wrapper
 
 
 @pytest.mark.parametrize(
@@ -32,21 +30,16 @@ from fragmenter.tests.utils import global_toolkit_wrapper
         ("Cl/C=C/Br", True, [r"Cl/C=C/Br", r"Cl\C=C/Br"]),
     ],
 )
-@pytest.mark.parametrize(
-    "toolkit_wrapper", [OpenEyeToolkitWrapper(), RDKitToolkitWrapper()]
-)
-def test_enumerate_stereoisomers(smiles, force_flip, expected, toolkit_wrapper):
+def test_enumerate_stereoisomers(smiles, force_flip, expected):
 
-    with global_toolkit_wrapper(toolkit_wrapper):
+    molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
 
-        molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
-
-        stereoisomers = _enumerate_stereoisomers(
-            molecule,
-            force_flip=force_flip,
-            enum_nitrogen=True,
-            verbose=False,
-        )
+    stereoisomers = _enumerate_stereoisomers(
+        molecule,
+        force_flip=force_flip,
+        enum_nitrogen=True,
+        verbose=False,
+    )
 
     assert len(stereoisomers) == len(expected)
 

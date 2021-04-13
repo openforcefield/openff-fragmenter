@@ -26,26 +26,6 @@ def get_fgroup_smarts() -> Dict[str, str]:
     return functional_groups
 
 
-def get_fgroup_smarts_comb() -> Dict[str, str]:
-    """Returns a dictionary containing the SMARTS representations of different
-    functional groups loaded from the internal ``fgroup_smarts_comb.yml`` file.
-
-    Returns
-    -------
-        A dictionary where each key is the name of a functional group and each value
-        the corresponding SMARTS pattern.
-    """
-
-    file_name = resource_filename(
-        "fragmenter", os.path.join("data", "fgroup_smarts_comb.yml")
-    )
-
-    with open(file_name, "r") as file:
-        functional_groups = yaml.safe_load(file)
-
-    return functional_groups
-
-
 def get_map_index(
     molecule: Molecule, atom_index: int, error_on_missing: bool = True
 ) -> int:
