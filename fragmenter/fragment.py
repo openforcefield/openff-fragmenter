@@ -1,10 +1,13 @@
 import abc
+import copy
+import importlib
 import logging
 import time
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 import networkx
+from cmiles.utils import to_canonical_label
 from openff.toolkit.topology import Atom, Molecule
 
 from fragmenter.chemi import (
@@ -12,8 +15,10 @@ from fragmenter.chemi import (
     extract_fragment,
     find_ring_systems,
     find_stereocenters,
+    generate_conformers,
 )
 from fragmenter.states import _enumerate_stereoisomers
+from fragmenter.torsions import find_torsion_around_bond
 from fragmenter.utils import get_atom_index, get_fgroup_smarts, get_map_index
 
 logger = logging.getLogger(__name__)
@@ -648,82 +653,122 @@ class Fragmenter(abc.ABC):
         }
         return provenance
 
-    # def _to_qcschema_mol(self, molecule, **kwargs):
-    #     """
-    #     Parameters
-    #     ----------
-    #     molecule : OEMol
-    #     kwargs :
-    #     Returns
-    #     -------
-    #     qcschema initial molecules, cmiles identifiers and provenance
-    #     """
-    #     from openeye import oechem
-    #
-    #     self._options.update(kwargs)
-    #     mol_copy = oechem.OEMol(molecule)
-    #     oechem.OEAddExplicitHydrogens(mol_copy)
-    #     explicit_h_smiles = mol_to_smiles(mol_copy, mapped=False)
-    #     cmiles_identifiers = cmiles.get_molecule_ids(explicit_h_smiles)
-    #     can_mapped_smiles = cmiles_identifiers[
-    #         "canonical_isomeric_explicit_hydrogen_mapped_smiles"
-    #     ]
-    #
-    #     conformers = generate_conformers(
-    #         to_off_molecule(mol_copy), **kwargs
-    #     ).to_openeye()
-    #     qcschema_mols = [
-    #         mol_to_map_ordered_qcschema(conf, can_mapped_smiles)
-    #         for conf in conformers.GetConfs()
-    #     ]
-    #
-    #     return {
-    #         "initial_molecule": qcschema_mols,
-    #         "identifiers": cmiles_identifiers,
-    #         "provenance": self.get_provenance(),
-    #     }
-    #
-    # def to_torsiondrive_json(self, **kwargs):
-    #     """
-    #     Generates torsiondrive input JSON for QCArchive
-    #     Returns
-    #     -------
-    #     torsiondrive_json_dict: dict
-    #         dictionary with the QCArchive job label as keys that maps to the torsiondrive input for each fragment
-    #     """
-    #     from openeye import oechem
-    #
-    #     # capture options
-    #     self._options.update(kwargs)
-    #     torsiondrive_json_dict = {}
-    #     for bond in self.fragments:
-    #         # find torsion around bond in fragment
-    #         molecule = self.fragments[bond]
-    #         mapped_smiles = oechem.OEMolToSmiles(molecule)
-    #         torsion_map_idx = torsions.find_torsion_around_bond(molecule, bond)
-    #         torsiondrive_job_label = to_canonical_label(mapped_smiles, torsion_map_idx)
-    #         torsiondrive_json_dict[torsiondrive_job_label] = {}
-    #
-    #         # prepare torsiondrive input
-    #         mol_copy = oechem.OEMol(molecule)
-    #
-    #         # Map torsion to canonical ordered molecule
-    #         # First canonical order the molecule
-    #         # Note: potential bug - add explicit hydrogen before order atoms
-    #         oechem.OEAddExplicitHydrogens(mol_copy)
-    #         cmiles._cmiles_oe.canonical_order_atoms(mol_copy)
-    #         dih = []
-    #         for m_idx in torsion_map_idx:
-    #             atom = mol_copy.GetAtom(oechem.OEHasMapIdx(m_idx + 1))
-    #             dih.append(atom.GetIdx())
-    #
-    #         torsiondrive_json_dict[torsiondrive_job_label] = self._to_qcschema_mol(
-    #             mol_copy, **kwargs
-    #         )
-    #         torsiondrive_json_dict[torsiondrive_job_label].update(
-    #             {"dihedral": [dih], "grid": [15], "provenance": self.get_provenance()}
-    #         )
-    #     return torsiondrive_json_dict
+    def _to_qcschema_mol(self, molecule: Molecule, **kwargs) -> Dict[str, Any]:
+
+        self._options.update(kwargs)
+
+        cmiles_identifiers = {
+            "canonical_smiles": molecule.to_smiles(
+                isomeric=False, explicit_hydrogens=False, mapped=False
+            ),
+            "canonical_isomeric_smiles": molecule.to_smiles(
+                isomeric=True, explicit_hydrogens=False, mapped=False
+            ),
+            "canonical_explicit_hydrogen_smiles": molecule.to_smiles(
+                isomeric=False, explicit_hydrogens=True, mapped=False
+            ),
+            "canonical_isomeric_explicit_hydrogen_smiles": molecule.to_smiles(
+                isomeric=True, explicit_hydrogens=True, mapped=False
+            ),
+            "canonical_isomeric_explicit_hydrogen_mapped_smiles": molecule.to_smiles(
+                isomeric=True, explicit_hydrogens=True, mapped=True
+            ),
+            "molecular_formula": molecule.hill_formula,
+            "standard_inchi": molecule.to_inchi(fixed_hydrogens=False),
+            "inchi_key": molecule.to_inchikey(fixed_hydrogens=False),
+        }
+
+        molecule = generate_conformers(molecule, **kwargs)
+
+        initial_molecules = []
+
+        for i in range(molecule.n_conformers):
+
+            qcschema_molecule = molecule.to_qcschema(conformer=i).dict()
+
+            initial_molecules.append(
+                {
+                    "symbols": qcschema_molecule["symbols"].tolist(),
+                    "geometry": qcschema_molecule["geometry"].flatten().tolist(),
+                    "connectivity": qcschema_molecule["connectivity"],
+                    "molecular_charge": qcschema_molecule["molecular_charge"],
+                    "molecular_multiplicity": qcschema_molecule[
+                        "molecular_multiplicity"
+                    ],
+                }
+            )
+
+        return {
+            "initial_molecule": initial_molecules,
+            "identifiers": cmiles_identifiers,
+            "provenance": self.get_provenance(),
+        }
+
+    def to_torsiondrive_json(self, **kwargs) -> Dict[str, Any]:
+        """Generates ``torsiondrive`` input JSON for QCArchive
+
+        Returns
+        -------
+            A dictionary with the QCArchive job label as keys that maps to the
+            ``torsiondrive`` input for each fragment
+        """
+
+        # capture options
+        self._options.update(kwargs)
+
+        return_value = defaultdict(dict)
+
+        for bond in self.fragments:
+
+            # Find the torsion around bond in fragment
+            fragment = copy.deepcopy(self.fragments[bond])
+
+            torsion_map_indices = find_torsion_around_bond(fragment, bond)
+
+            try:
+                importlib.import_module("openeye.oechem")
+
+                job_label = to_canonical_label(
+                    fragment.to_smiles(mapped=True),
+                    torsion_map_indices,
+                    toolkit="openeye",
+                )
+
+            except ImportError:
+
+                job_label = to_canonical_label(
+                    fragment.to_smiles(mapped=True),
+                    torsion_map_indices,
+                    toolkit="rdkit",
+                )
+
+            # Prepare the torsiondrive input
+            canonical_fragment = fragment.canonical_order_atoms()
+            canonical_fragment.properties["atom_map"] = {
+                i: i + 1 for i in range(canonical_fragment.n_atoms)
+            }
+
+            _, canonical_map = Molecule.are_isomorphic(
+                fragment, canonical_fragment, return_atom_map=True
+            )
+
+            dihedral = [
+                canonical_map[get_atom_index(fragment, torsion_map_index + 1)] + 1
+                for torsion_map_index in torsion_map_indices
+            ]
+
+            return_value[job_label] = self._to_qcschema_mol(
+                canonical_fragment, **kwargs
+            )
+            return_value[job_label].update(
+                {
+                    "dihedral": [dihedral],
+                    "grid": [15],
+                    "provenance": self.get_provenance(),
+                }
+            )
+
+        return return_value
 
 
 class WBOFragmenter(Fragmenter):

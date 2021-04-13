@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple
+from typing import Tuple
 
 from openff.toolkit.topology import Molecule
 
@@ -8,7 +8,7 @@ from fragmenter.utils import get_map_index
 logger = logging.getLogger(__name__)
 
 
-def find_torsion_around_bond(molecule: Molecule, bond: Tuple[int, int]) -> List[int]:
+def find_torsion_around_bond(molecule: Molecule, bond: Tuple[int, int]) -> Tuple[int]:
     """Find the torsion around a given central bond. When multiple torsions are found,
     the torsion with the heaviest end groups (i.e. with the largest mass_0 + mass_3)
     is returned.
@@ -54,4 +54,4 @@ def find_torsion_around_bond(molecule: Molecule, bond: Tuple[int, int]) -> List[
 
     assert found_torsion is not None, "map indices should always be found."
 
-    return found_torsion
+    return tuple(found_torsion)
