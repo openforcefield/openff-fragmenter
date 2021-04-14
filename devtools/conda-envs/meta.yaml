@@ -25,6 +25,7 @@ dependencies:
   - cmiles-base
   - pyyaml
   - networkx
+  - jinja2
 
     # Optional dependencies
   - rdkit
