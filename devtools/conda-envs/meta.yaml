@@ -28,7 +28,6 @@ dependencies:
 
     # Optional dependencies
   - rdkit
-  - qcelemental
 
     # Testing
   - pytest
