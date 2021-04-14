@@ -1,0 +1,78 @@
+<html>
+
+  <head>
+    <title>Fragmentation Report</title>
+
+    <style>
+      main, body {
+        width: 100vw;
+        height: 100vh;
+
+        margin: 0;
+        padding: 0;
+      }
+
+      .report {
+        display: flex;
+
+        flex-direction: column;
+        justify-content: center;
+
+        padding: 50px;
+      }
+
+      .report-header {
+
+        display: flex;
+
+        flex-direction: column;
+        justify-content: center;
+
+        border: 1px solid #ded2d2;
+      }
+
+      .report-header img {
+        margin: auto;
+
+        width: 572px;
+        height: 198px
+      }
+
+      .report-body {
+        display: flex;
+        flex-wrap: wrap;
+
+        width: 100%;
+
+        justify-content: center;
+        align-items: center;
+
+        margin-top: 20px;
+      }
+
+      .report-body img {
+        width: 283px;
+        height: 169px
+      }
+
+    </style>
+  </head>
+
+  <body>
+
+    <div class="report">
+
+      <div class="report-header">
+        <img src="{{ parent }}" ></img>
+      </div>
+
+      <div class="report-body">
+        {% for fragment in fragments %}
+          <img src="{{ fragment }}" ></img>
+        {% endfor %}
+      </div>
+
+    </div>
+
+  </body>
+</html>
