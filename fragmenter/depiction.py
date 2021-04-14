@@ -309,21 +309,21 @@ def depict_fragments(
         The name of the file to write out to.
     """
 
-    # try:
-    #
-    #     header_svg = _oe_render_parent(parent, [*fragments])
-    #     fragment_svg = [
-    #         _oe_render_fragment(parent, fragment, bond_tuple)
-    #         for bond_tuple, fragment in fragments.items()
-    #     ]
-    #
-    # except ModuleNotFoundError:
+    try:
 
-    header_svg = _rd_render_parent(parent)
-    fragment_svg = [
-        _rd_render_fragment(parent, fragment, bond_tuple)
-        for bond_tuple, fragment in fragments.items()
-    ]
+        header_svg = _oe_render_parent(parent, [*fragments])
+        fragment_svg = [
+            _oe_render_fragment(parent, fragment, bond_tuple)
+            for bond_tuple, fragment in fragments.items()
+        ]
+
+    except ModuleNotFoundError:
+
+        header_svg = _rd_render_parent(parent)
+        fragment_svg = [
+            _rd_render_fragment(parent, fragment, bond_tuple)
+            for bond_tuple, fragment in fragments.items()
+        ]
 
     template_path = resource_filename(
         "fragmenter", os.path.join("data", "report-template.html")
