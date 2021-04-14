@@ -10,7 +10,7 @@ dependencies:
   - python
 
     # ---- openff-toolkit deps ----
-#  - openff-toolkit
+#  - openff-toolkit-base
   - numpy
   - smirnoff99frosst
   - openff-forcefields
@@ -18,17 +18,16 @@ dependencies:
   - networkx
   - mdtraj
   - xmltodict
-  - ambertools
-  - rdkit
     # ---- openff-toolkit deps ----
 
-  - cmiles-base
+  - numpy
   - pyyaml
   - networkx
   - jinja2
 
     # Optional dependencies
   - rdkit
+  - ambertools
 
     # Testing
   - pytest
