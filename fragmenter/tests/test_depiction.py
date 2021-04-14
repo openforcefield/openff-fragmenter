@@ -15,7 +15,10 @@ from fragmenter.depiction import (
 @pytest.mark.parametrize("draw_function", [_oe_render_parent, _rd_render_parent])
 def test_xx_render_parent(draw_function):
 
-    svg_contents = draw_function(Molecule.from_smiles("[C:1][C:2][C:3][C:4]"))
+    try:
+        svg_contents = draw_function(Molecule.from_smiles("[C:1][C:2][C:3][C:4]"))
+    except ModuleNotFoundError as e:
+        pytest.skip(str(e))
 
     assert isinstance(svg_contents, str)
     assert "svg" in svg_contents
@@ -24,11 +27,16 @@ def test_xx_render_parent(draw_function):
 @pytest.mark.parametrize("draw_function", [_oe_render_fragment, _rd_render_fragment])
 def test_xx_render_fragment(draw_function):
 
-    svg_contents = draw_function(
-        Molecule.from_smiles("[C:1][C:2][C:3][C:4]"),
-        Molecule.from_smiles("[C:1][C:2]"),
-        (1, 2),
-    )
+    try:
+
+        svg_contents = draw_function(
+            Molecule.from_smiles("[C:1][C:2][C:3][C:4]"),
+            Molecule.from_smiles("[C:1][C:2]"),
+            (1, 2),
+        )
+
+    except ModuleNotFoundError as e:
+        pytest.skip(str(e))
 
     assert isinstance(svg_contents, str)
     assert "svg" in svg_contents

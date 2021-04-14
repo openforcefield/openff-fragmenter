@@ -79,7 +79,7 @@ def _oe_wbo_label_display(bond_tuples: Collection[BondTuple]):
 
 def _oe_render_parent(
     parent: Molecule,
-    rotor_bonds: Optional[Collection[BondTuple]],
+    rotor_bonds: Optional[Collection[BondTuple]] = None,
     image_width: int = 572,
     image_height: int = 198,
 ) -> str:
