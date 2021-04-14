@@ -1,20 +1,23 @@
 name: fragmenter
 channels:
-  - openeye
-  - rdkit
   - conda-forge
 
 dependencies:
 
-    # Base Depends
+  # Base depends
   - python
   - setuptools
-  - openeye-toolkits
-  - rdkit
+
+  # Sphinx specific
+  - nbsphinx
+  - nbsphinx-link
+  - sphinx_rtd_theme
+  - sphinxcontrib-bibtex
+  - pandoc
+  - ipython
+
+    # Standard dependencies
+  - numpy
   - pyyaml
   - networkx
-  - pip
-  - numpydoc
-    # Pip depends
-  - pip:
-    - git+git://github.com/openforcefield/cmiles.git@v0.1.5#egg=cmiles
+  - jinja2
