@@ -362,30 +362,6 @@ def test_cap_open_valance():
     assert expected_atom in atoms
 
 
-# def test_to_qcscheme_mol():
-#
-#     fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
-#     fragmenter.fragment()
-#
-#     qcschema_mol = fragmenter._to_qcschema_mol(fragmenter.fragments[(3, 5)])
-#
-#     assert "initial_molecule" in qcschema_mol
-#     assert "geometry" in qcschema_mol["initial_molecule"][0]
-#     assert "symbols" in qcschema_mol["initial_molecule"][0]
-#     assert "connectivity" in qcschema_mol["initial_molecule"][0]
-#     assert "identifiers" in qcschema_mol
-#     assert "provenance" in qcschema_mol
-#
-#
-# def test_td_inputs():
-#
-#     fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
-#     fragmenter.fragment()
-#
-#     td_inputs = fragmenter.to_torsiondrive_json()
-#     assert len(td_inputs) == 2
-
-
 def test_wbo_fragment():
     """ Test build fragment"""
 
