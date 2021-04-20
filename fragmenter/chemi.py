@@ -488,13 +488,11 @@ def extract_fragment(
     # Sanity check that all atoms are still bonded
     fragment_smiles = fragment.to_smiles()
 
-    if "." in fragment_smiles:
-
-        logger.warning(
-            "Yikes!!! An atom that is not bonded to any other atom in the fragment. "
-            "You probably ran into a bug. Please report the input molecule to the "
-            "issue tracker"
-        )
+    assert "." not in fragment_smiles, (
+        "An atom that is not bonded to any other atom in the fragment. "
+        "You probably ran into a bug. Please report the input molecule to the "
+        "issue tracker"
+    )
 
     return fragment
 

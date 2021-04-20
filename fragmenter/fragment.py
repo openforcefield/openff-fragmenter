@@ -2,10 +2,11 @@ import abc
 import logging
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import networkx
 from openff.toolkit.topology import Atom, Molecule
+from typing_extensions import Literal
 
 from fragmenter.chemi import (
     assign_elf10_am1_bond_orders,
@@ -155,7 +156,7 @@ class Fragmenter(abc.ABC):
             A fragment with the same stereochemistry as parent molecule
         """
 
-        for stereoisomer in _enumerate_stereoisomers(fragment, 200, True, True):
+        for stereoisomer in _enumerate_stereoisomers(fragment, 200, True):
 
             if not self._check_stereo(stereoisomer):
                 continue
@@ -249,30 +250,20 @@ class Fragmenter(abc.ABC):
             for match in unique_matches
         ]
 
-    def _atom_bond_set_to_mol(
-        self, atoms: Set[int], bonds: Set[BondTuple], adjust_hcount=True
-    ) -> Molecule:
-        """Convert fragments to OEMol
+    def _atom_bond_set_to_mol(self, atoms: Set[int], bonds: Set[BondTuple]) -> Molecule:
+        """Extracts a subset of a molecule based on a set of atom and bond indices.
 
         Parameters
         ----------
         atoms
             set of map indices
-        bonds : set of tuples of ints
+        bonds
             set of bond tuples (m1, m2)
-        adjust_hcount: bool, optional, default True
-            If False, hydrogen counts will not be adjusted. Not recommended.
 
         Returns
         -------
-        fragment: OEMol
+            The subset molecule.
         """
-
-        if not adjust_hcount:
-
-            raise NotImplementedError(
-                "the ``adjust_hcount`` option must be set to true."
-            )
 
         fragment = extract_fragment(self.molecule, atoms, bonds)
 
@@ -411,7 +402,9 @@ class Fragmenter(abc.ABC):
                 ring_system_bonds[ring_index],
             )
 
-    def _find_non_rotor_ring_substituents(self, ring_system_atoms: Set[int]) -> AtomAndBondSet:
+    def _find_non_rotor_ring_substituents(
+        self, ring_system_atoms: Set[int]
+    ) -> AtomAndBondSet:
         """Find the non-rotor substituents attached to a particular ring system."""
 
         rotatable_bonds = self.molecule.find_rotatable_bonds()
@@ -678,14 +671,17 @@ class WBOFragmenter(Fragmenter):
         self.threshold = None
 
     def fragment(
-        self, threshold=0.03, keep_non_rotor_ring_substituents=False, **kwargs
+        self,
+        threshold: float = 0.03,
+        keep_non_rotor_ring_substituents: bool = False,
+        **kwargs,
     ):
         """
         Fragment molecules using the Wiberg Bond Order as a surrogate
 
         Parameters
         ----------
-        threshold : float, optional, default 0.01
+        threshold
             The threshold for the central bond WBO. If the fragment WBO is below this
             threshold, fragmenter will grow out the fragment one bond at a time via the
             path specified by the heuristic option
@@ -705,7 +701,7 @@ class WBOFragmenter(Fragmenter):
             self._options["threshold"] = threshold
 
         # Add threshold as attribute because it is used in more than one function
-        setattr(self, "threshold", threshold)
+        self.threshold = threshold
         self._options.update(kwargs)
         # Calculate WBO for molecule
         self.calculate_wbo(**kwargs)
@@ -1111,6 +1107,4 @@ class PfizerFragmenter(Fragmenter):
             atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
             atoms, bonds = self._cap_open_valence(atoms, bonds)
 
-            self.fragments[bond] = self._atom_bond_set_to_mol(
-                atoms, bonds, adjust_hcount=True
-            )
+            self.fragments[bond] = self._atom_bond_set_to_mol(atoms, bonds)

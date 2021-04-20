@@ -24,6 +24,7 @@ dependencies:
   - pyyaml
   - networkx
   - jinja2
+  - typing-extensions # py<3.8
 
     # Optional dependencies
   - rdkit

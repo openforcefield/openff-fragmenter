@@ -1,6 +1,4 @@
 """Test chemi module"""
-import logging
-
 import numpy
 import pytest
 from openff.toolkit.topology import Molecule
@@ -236,11 +234,9 @@ def test_extract_fragment_bonds_in_atoms():
 
 
 @using_openeye
-def test_extract_fragment_disconnected_fragment_warning(caplog):
+def test_extract_fragment_disconnected_fragment_warning():
 
     molecule = Molecule.from_smiles("[C:1][C:2]")
 
-    with caplog.at_level(logging.WARNING):
+    with pytest.raises(AssertionError, match="An atom that is not bonded"):
         extract_fragment(molecule, {1, 2}, set())
-
-    assert "Yikes!!! An atom that is not bonded to any other atom" in caplog.text

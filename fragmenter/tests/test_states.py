@@ -34,12 +34,7 @@ def test_enumerate_stereoisomers(smiles, force_flip, expected):
 
     molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
 
-    stereoisomers = _enumerate_stereoisomers(
-        molecule,
-        force_flip=force_flip,
-        enum_nitrogen=True,
-        verbose=False,
-    )
+    stereoisomers = _enumerate_stereoisomers(molecule, force_flip=force_flip)
 
     assert len(stereoisomers) == len(expected)
 

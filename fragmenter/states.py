@@ -10,9 +10,6 @@ def _enumerate_stereoisomers(
     molecule: Molecule,
     max_states: int = 200,
     force_flip: bool = True,
-    enum_nitrogen: bool = True,
-    warts: bool = False,
-    verbose: bool = True,
 ) -> List[Molecule]:
     """Enumerate stereoisomers
 
@@ -25,16 +22,11 @@ def _enumerate_stereoisomers(
     force_flip
         If True, will flip all stereocenters. If False, will only flip centers that are
         undefined
-    enum_nitrogen
-        Invert non-planar nitrogen
-    warts
-        If True, add int to molecule name
-    verbose
 
     Returns
     -------
-    stereoisomers: list of oemols
-
+        The stereoisomers including the input molecule if it had full stereochemistry
+        defined.
     """
 
     if max_states > 200:
@@ -43,18 +35,6 @@ def _enumerate_stereoisomers(
             "The max states must currently be less than 200 due to a hard coded maximum "
             "value in the OpenFF toolkit"
         )
-
-    if not enum_nitrogen:
-
-        raise NotImplementedError(
-            "Non-planer nitrogens will always be enumerated where possible."
-        )
-
-    if warts is True:
-        raise NotImplementedError("The ``warts`` argument is no longer supported.")
-
-    if verbose:
-        logger.debug("Enumerating stereoisomers...")
 
     # Check if the input molecule has any undefined stereochemistry. If it does not
     # then it should be included in the list of returned stereoisomers.
