@@ -411,7 +411,7 @@ class Fragmenter(abc.ABC):
                 ring_system_bonds[ring_index],
             )
 
-    def _find_non_rotor_ring_substituents(self, ring_system_atoms: Set[int]):
+    def _find_non_rotor_ring_substituents(self, ring_system_atoms: Set[int]) -> AtomAndBondSet:
         """Find the non-rotor substituents attached to a particular ring system."""
 
         rotatable_bonds = self.molecule.find_rotatable_bonds()
@@ -465,7 +465,7 @@ class Fragmenter(abc.ABC):
 
         Returns
         -------
-            The updated set of atom and bond map indices to to retain.
+            The updated set of atom and bond map indices to retain.
         """
 
         # Find the sets of atoms which are located ortho to one of the bonds being
@@ -690,7 +690,7 @@ class WBOFragmenter(Fragmenter):
             threshold, fragmenter will grow out the fragment one bond at a time via the
             path specified by the heuristic option
         keep_non_rotor_ring_substituents: bool
-            If True, will always keep all non rotor substiuents on ring. If False, will
+            If True, will always keep all non rotor substituents on ring. If False, will
             only add them if they are ortho to rotatable bond or if it's needed for WBO
             to be within the threshold
         **heuristic : str, optional, default 'path_length'
@@ -1019,7 +1019,7 @@ class WBOFragmenter(Fragmenter):
         bonds: Set[BondTuple],
         target_bond: BondTuple,
         heuristic: Heuristic = "path_length",
-    ):
+    ) -> Molecule:
         """Expand the fragment to include the next set of substituents / ring systems.
 
         Parameters

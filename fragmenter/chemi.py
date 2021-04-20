@@ -25,7 +25,7 @@ def assign_elf10_am1_bond_orders(molecule: Molecule, max_confs: int = 800) -> Mo
 
     Returns
     -------
-        A molecule which contains ELF10 AM1 Wiberg Bond orders.
+        A new molecule which contains ELF10 AM1 Wiberg Bond orders.
     """
 
     molecule = copy.deepcopy(molecule)
@@ -76,7 +76,7 @@ def generate_conformers(
 
     Returns
     -------
-        A multi-conformer molecule with up to max_confs conformers.
+        A new multi-conformer molecule with up to max_confs conformers.
     """
 
     from simtk import unit

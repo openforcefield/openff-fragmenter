@@ -23,7 +23,7 @@ def _enumerate_stereoisomers(
     max_states
         The max number of states to enumerate
     force_flip
-        If True, will flip all steocenters. If False, will only flip centers that are
+        If True, will flip all stereocenters. If False, will only flip centers that are
         undefined
     enum_nitrogen
         Invert non-planar nitrogen
