@@ -532,9 +532,9 @@ class Fragmenter(abc.ABC):
     @classmethod
     def _get_ring_and_fgroups(
         cls,
-        molecule: Molecule,
-        functional_groups: FunctionalGroups,
-        ring_systems: RingSystems,
+        parent: Molecule,
+        parent_groups: FunctionalGroups,
+        parent_rings: RingSystems,
         atoms: Set[int],
         bonds: Set[BondTuple],
     ) -> AtomAndBondSet:
@@ -543,12 +543,12 @@ class Fragmenter(abc.ABC):
 
         Parameters
         ----------
-        molecule
+        parent
             The molecule being fragmented.
-        functional_groups
+        parent_groups
             A dictionary of the functional groups on the molecule which should not
             be fragmented.
-        ring_systems
+        parent_rings
             A dictionary of the ring systems in the molecule which should not
             be fragmented.
         atoms
@@ -563,7 +563,7 @@ class Fragmenter(abc.ABC):
 
         # Find the sets of atoms which are located ortho to one of the bonds being
         # fragmented.
-        ortho_atoms, ortho_bonds = cls._find_ortho_substituents(molecule, bonds)
+        ortho_atoms, ortho_bonds = cls._find_ortho_substituents(parent, bonds)
 
         atoms.update(ortho_atoms)
         bonds.update(ortho_bonds)
@@ -573,25 +573,25 @@ class Fragmenter(abc.ABC):
         new_atoms = set()
         new_bonds = set()
 
-        fragment_functional_groups = {
+        fragment_groups = {
             group
-            for group in functional_groups
-            if any(atom in functional_groups[group][0] for atom in atoms)
+            for group in parent_groups
+            if any(atom in parent_groups[group][0] for atom in atoms)
         }
 
-        for functional_group in fragment_functional_groups:
-            new_atoms.update(functional_groups[functional_group][0])
-            new_bonds.update(functional_groups[functional_group][1])
+        for functional_group in fragment_groups:
+            new_atoms.update(parent_groups[functional_group][0])
+            new_bonds.update(parent_groups[functional_group][1])
 
-        fragment_ring_systems = {
+        fragment_rings = {
             ring_index
-            for ring_index in ring_systems
-            if any(atom in ring_systems[ring_index][0] for atom in atoms)
+            for ring_index in parent_rings
+            if any(atom in parent_rings[ring_index][0] for atom in atoms)
         }
 
-        for ring_system in fragment_ring_systems:
-            new_atoms.update(ring_systems[ring_system][0])
-            new_bonds.update(ring_systems[ring_system][1])
+        for ring_system in fragment_rings:
+            new_atoms.update(parent_rings[ring_system][0])
+            new_bonds.update(parent_rings[ring_system][1])
 
         atoms.update(new_atoms)
         bonds.update(new_bonds)
@@ -603,15 +603,15 @@ class Fragmenter(abc.ABC):
 
     @classmethod
     def _find_ortho_substituents(
-        cls, molecule: Molecule, bonds: Set[BondTuple]
+        cls, parent: Molecule, bonds: Set[BondTuple]
     ) -> AtomAndBondSet:
         """Find ring substituents that are ortho to one of the rotatable bonds specified
         in a list of bonds.
 
         Parameters
         ----------
-        molecule
-            The molecule being fragmented.
+        parent
+            The parent molecule being fragmented.
         bonds
             The map indices of the rotatable bonds.
 
@@ -624,11 +624,11 @@ class Fragmenter(abc.ABC):
         matched_atoms = set()
         matched_bonds = set()
 
-        for match in molecule.chemical_environment_matches(
+        for match in parent.chemical_environment_matches(
             "[!#1:1]~&!@[*:2]@[*:3]~&!@[!#1*:4]"
         ):
 
-            map_tuple = tuple(get_map_index(molecule, i) for i in match)
+            map_tuple = tuple(get_map_index(parent, i) for i in match)
 
             if map_tuple[:2] not in bonds and map_tuple[:2][::-1] not in bonds:
                 continue
@@ -644,8 +644,8 @@ class Fragmenter(abc.ABC):
     @classmethod
     def _cap_open_valence(
         cls,
-        molecule: Molecule,
-        functional_groups: FunctionalGroups,
+        parent: Molecule,
+        parent_groups: FunctionalGroups,
         atoms: Set[int],
         bonds: Set[BondTuple],
     ) -> AtomAndBondSet:
@@ -653,9 +653,9 @@ class Fragmenter(abc.ABC):
 
         Parameters
         ----------
-        molecule
+        parent
             The molecule being fragmented.
-        functional_groups
+        parent_groups
             A dictionary of the functional groups on the molecule which should not
             be fragmented.
         atoms
@@ -666,8 +666,8 @@ class Fragmenter(abc.ABC):
 
         map_index_to_functional_group = {
             map_index: functional_group
-            for functional_group in functional_groups
-            for map_index in functional_groups[functional_group][0]
+            for functional_group in parent_groups
+            for map_index in parent_groups[functional_group][0]
         }
 
         atoms_to_add = set()
@@ -675,8 +675,8 @@ class Fragmenter(abc.ABC):
 
         for map_index in atoms:
 
-            atom_index = get_atom_index(molecule, map_index)
-            atom = molecule.atoms[atom_index]
+            atom_index = get_atom_index(parent, map_index)
+            atom = parent.atoms[atom_index]
 
             if (
                 atom.atomic_number not in (7, 8, 16)
@@ -690,7 +690,7 @@ class Fragmenter(abc.ABC):
             for neighbour in atom.bonded_atoms:
 
                 neighbour_map_index = get_map_index(
-                    molecule, neighbour.molecule_atom_index
+                    parent, neighbour.molecule_atom_index
                 )
 
                 if neighbour.atomic_number == 1 or neighbour_map_index in atoms:
@@ -708,7 +708,7 @@ class Fragmenter(abc.ABC):
                     continue
 
                 neighbour_map_index = get_map_index(
-                    molecule, neighbour.molecule_atom_index
+                    parent, neighbour.molecule_atom_index
                 )
 
                 atoms_to_add.add(neighbour_map_index)
