@@ -6,7 +6,7 @@ from jinja2 import Template
 from openff.toolkit.topology import Molecule
 from pkg_resources import resource_filename
 
-from fragmenter.fragment import BondTuple
+from fragmenter.fragment import BondTuple, FragmentationResult
 from fragmenter.utils import get_map_index
 
 
@@ -291,6 +291,25 @@ def _compress_svg(svg_contents: str) -> str:
 
     encoded_image = base64.b64encode(svg_contents.encode()).decode()
     return f"data:image/svg+xml;base64,{encoded_image}"
+
+
+def depict_fragmentation_result(result: FragmentationResult, output_file: str):
+    """Generates a HTML report of fragments for a parent molecule with the rotatable
+    bond highlighted.
+
+    Parameters
+    ----------
+    result
+        The result of fragmenting a molecule with a fragmentation engine.
+    output_file : str
+        The name of the file to write out to.
+    """
+
+    depict_fragments(
+        result.parent_molecule,
+        {fragment.bond_indices: fragment.molecule for fragment in result.fragments},
+        output_file,
+    )
 
 
 def depict_fragments(

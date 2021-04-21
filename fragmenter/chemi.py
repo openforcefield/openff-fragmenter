@@ -13,7 +13,9 @@ from fragmenter.utils import get_atom_index, get_map_index
 logger = logging.getLogger(__name__)
 
 
-def assign_elf10_am1_bond_orders(molecule: Molecule, max_confs: int = 800) -> Molecule:
+def assign_elf10_am1_bond_orders(
+    molecule: Molecule, max_confs: int = 800, rms_threshold: float = 1.0
+) -> Molecule:
     """Generate ELF10 AM1 WBOs for a molecule.
 
     Parameters
@@ -22,6 +24,9 @@ def assign_elf10_am1_bond_orders(molecule: Molecule, max_confs: int = 800) -> Mo
         The molecule to compute WBOs for.
     max_confs : int, optional, default=800
         Max number of conformers to generate
+    rms_threshold
+        The minimum RMS value [Angstrom] at which two conformers are considered redundant
+        and one is deleted.
 
     Returns
     -------
@@ -34,7 +39,7 @@ def assign_elf10_am1_bond_orders(molecule: Molecule, max_confs: int = 800) -> Mo
     atom_map = molecule.properties.pop("atom_map", None)
 
     # Generate a set of ELF10 conformers.
-    molecule = generate_conformers(molecule, max_confs)
+    molecule = _generate_conformers(molecule, max_confs, rms_threshold)
     molecule.apply_elf_conformer_selection()
 
     per_conformer_bond_orders = []
@@ -59,7 +64,7 @@ def assign_elf10_am1_bond_orders(molecule: Molecule, max_confs: int = 800) -> Mo
     return molecule
 
 
-def generate_conformers(
+def _generate_conformers(
     molecule: Molecule, max_confs: int = 800, rms_threshold: float = 1.0
 ) -> Molecule:
     """Generate conformations for the supplied molecule.

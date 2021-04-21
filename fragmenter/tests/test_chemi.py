@@ -52,7 +52,7 @@ def test_assign_elf10_am1_bond_orders_simple_parity():
 @pytest.mark.parametrize("smiles, max_confs", [("CCCCCCC", 1), ("CCCCCCC", 3)])
 def test_generate_conformers(smiles, max_confs):
 
-    returned_molecule = chemi.generate_conformers(
+    returned_molecule = chemi._generate_conformers(
         Molecule.from_smiles(smiles), max_confs=max_confs
     )
 
@@ -63,7 +63,7 @@ def test_generate_conformers_ordering():
 
     original_molecule = Molecule.from_smiles("CCCC")
 
-    returned_molecule = chemi.generate_conformers(original_molecule, max_confs=1)
+    returned_molecule = chemi._generate_conformers(original_molecule, max_confs=1)
     assert returned_molecule.n_conformers == 1
 
     # Make sure the atom ordering did not change.
@@ -77,7 +77,7 @@ def test_generate_conformers_ordering():
 def test_generate_conformers_canonical_check():
 
     original_molecule = Molecule.from_smiles("CCCCl").canonical_order_atoms()
-    original_molecule = chemi.generate_conformers(original_molecule, max_confs=1)
+    original_molecule = chemi._generate_conformers(original_molecule, max_confs=1)
 
     # Generate a conformer using a molecule with permuted atom orderings.
     atom_map = numpy.arange(original_molecule.n_atoms)
@@ -86,7 +86,7 @@ def test_generate_conformers_canonical_check():
     remapped_molecule = original_molecule.remap(
         {int(i): int(j) for i, j in enumerate(atom_map)}
     )
-    remapped_molecule = chemi.generate_conformers(remapped_molecule, max_confs=1)
+    remapped_molecule = chemi._generate_conformers(remapped_molecule, max_confs=1)
 
     original_conformer = original_molecule.conformers[0].value_in_unit(unit.angstrom)
     remapped_conformer = remapped_molecule.conformers[0].value_in_unit(unit.angstrom)
