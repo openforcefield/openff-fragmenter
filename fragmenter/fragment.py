@@ -1,6 +1,5 @@
 import abc
 import logging
-import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -22,73 +21,99 @@ logger = logging.getLogger(__name__)
 BondTuple = Tuple[int, int]
 AtomAndBondSet = Tuple[Set[int], Set[BondTuple]]
 
+Stereochemistries = Dict[Union[int, BondTuple], str]
+RingSystems = Dict[int, AtomAndBondSet]
+
+FunctionalGroups = Dict[str, AtomAndBondSet]
+
 Heuristic = Literal["path_length", "wbo"]
 
 
 class Fragmenter(abc.ABC):
     """Base fragmenter class."""
 
-    def __init__(self, molecule: Molecule, functional_groups):
+    def __init__(
+        self,
+        molecule: Molecule,
+        functional_groups: Optional[Union[bool, Dict[str, str]]],
+    ):
+        """
 
-        # Canonically order the molecule to try and make the fragmentation more
-        # deterministic.
-        self.molecule: Molecule = molecule.canonical_order_atoms()
-        self.molecule.properties["atom_map"] = {
-            i: i + 1 for i in range(self.molecule.n_atoms)
-        }
+        Parameters
+        ----------
+        molecule
+            The molecule to fragment.
+        functional_groups
+            A dictionary of SMARTS of functional groups that should not be fragmented.
+            If it is None, ``fragmenter/fragmenter/data/fgroup_smarts.yaml`` will be
+            used. If False, no functional groups will be tagged and they will all be
+            fragmented.
+        """
 
-        # Keep track of stereo to make sure it does not flip
-        self.stereo = {}
-        self._find_stereo()
+        self.molecule = molecule
 
-        # For provenance
-        self._options = {}
+        if functional_groups is False:
+            functional_groups = {}
+        if functional_groups is None:
+            functional_groups = get_fgroup_smarts()
 
-        # Find the functional groups.
-        self.functional_groups = {}
+        self.functional_groups = functional_groups
 
-        self._options["functional_groups"] = functional_groups
-        self._tag_functional_groups(functional_groups)
+        self.fragments = {}
 
-        # Track any ring systems.
-        self.ring_systems = {}
+    @classmethod
+    def _find_stereo(cls, molecule: Molecule) -> Stereochemistries:
+        """Find chiral atoms and bonds, store the chirality.
 
-        # Fragments from fragmentation scheme for each rotatable bond
-        self.fragments: Dict[BondTuple, Molecule] = {}
+        Notes
+        -----
+            * This is needed to check if a fragment has flipped chirality. Currently
+              this can happen and it is a bug.
 
-    def _find_stereo(self):
-        """Find chiral atoms and bonds, store the chirality. This is needed to check if
-        fragments flipped chirality. Currently this can happen and it is a bug
+        Parameters
+        ----------
+        molecule
+            The molecule to search for stereochemistry.
+
+        Returns
+        -------
+            The stereochemistry associated with atom and bond stereocenters
         """
 
         atom_stereo = {
-            get_map_index(self.molecule, atom.molecule_atom_index): atom.stereochemistry
-            for atom in self.molecule.atoms
+            get_map_index(molecule, atom.molecule_atom_index): atom.stereochemistry
+            for atom in molecule.atoms
             if atom.stereochemistry is not None
         }
 
         bond_stereo = {
             (
-                get_map_index(self.molecule, bond.atom1_index),
-                get_map_index(self.molecule, bond.atom2_index),
+                get_map_index(molecule, bond.atom1_index),
+                get_map_index(molecule, bond.atom2_index),
             ): bond.stereochemistry
-            for bond in self.molecule.bonds
+            for bond in molecule.bonds
             if bond.stereochemistry is not None
         }
 
-        self.stereo = {**atom_stereo, **bond_stereo}
+        return {**atom_stereo, **bond_stereo}
 
-    def _check_stereo(self, fragment: Molecule) -> bool:
-        """Check if stereo in fragment is different than stereo in parent.
+    @classmethod
+    def _check_stereo(
+        cls, fragment: Molecule, parent_stereo: Stereochemistries
+    ) -> bool:
+        """Checks if the stereochemistry of a fragment is different to the
+        stereochemistry of the parent.
 
         Parameters
         ----------
         fragment
             The fragment whose stereo should be compared to the parent.
+        parent_stereo
+            The stereochemistry of the parent molecule.
 
         Returns
         -------
-            Whether the fragment has the same stereo as the parent.
+            Whether the fragment has the same stereochemistry as the parent.
         """
 
         atom_stereocenters, bond_stereocenters = find_stereocenters(fragment)
@@ -98,19 +123,18 @@ class Fragmenter(abc.ABC):
 
             map_index = get_map_index(fragment, atom_index)
 
-            if map_index not in self.stereo:
+            if map_index not in parent_stereo:
 
                 logger.warning(f"A new stereocenter formed at atom {map_index}")
                 return False
 
             fragment_stereo = fragment.atoms[atom_index].stereochemistry
-            parent_stereo = self.stereo[map_index]
 
-            if fragment_stereo != parent_stereo:
+            if fragment_stereo != parent_stereo[map_index]:
 
                 logger.warning(
                     f"Stereochemistry for atom {map_index} flipped from "
-                    f"{parent_stereo} to {fragment_stereo}"
+                    f"{parent_stereo[map_index]} to {fragment_stereo}"
                 )
 
                 return False
@@ -120,36 +144,39 @@ class Fragmenter(abc.ABC):
             map_tuple = tuple(get_map_index(fragment, i) for i in index_tuple)
 
             map_tuple = (
-                map_tuple if map_tuple in self.stereo else tuple(reversed(map_tuple))
+                map_tuple if map_tuple in parent_stereo else tuple(reversed(map_tuple))
             )
 
-            if map_tuple not in self.stereo:
+            if map_tuple not in parent_stereo:
 
                 logger.warning(f"A new chiral bond formed at bond {map_tuple}")
                 return False
 
             fragment_stereo = fragment.get_bond_between(*index_tuple).stereochemistry
 
-            parent_stereo = self.stereo[map_tuple]
-
-            if fragment_stereo != parent_stereo:
+            if fragment_stereo != parent_stereo[map_tuple]:
 
                 logger.warning(
                     f"Stereochemistry for bond {map_tuple} flipped from "
-                    f"{parent_stereo} to {fragment_stereo}"
+                    f"{parent_stereo[map_tuple]} to {fragment_stereo}"
                 )
 
                 return False
 
         return True
 
-    def _fix_stereo(self, fragment: Molecule) -> Molecule:
+    @classmethod
+    def _fix_stereo(
+        cls, fragment: Molecule, parent_stereo: Stereochemistries
+    ) -> Molecule:
         """Flip all stereocenters and find the stereoisomer that matches the parent
 
         Parameters
         ----------
         fragment
             The fragment whose stereochemistry should be flipped to match the parent.
+        parent_stereo
+            The stereochemistry of the parent molecule.
 
         Returns
         -------
@@ -158,7 +185,7 @@ class Fragmenter(abc.ABC):
 
         for stereoisomer in _enumerate_stereoisomers(fragment, 200, True):
 
-            if not self._check_stereo(stereoisomer):
+            if not cls._check_stereo(stereoisomer, parent_stereo):
                 continue
 
             return stereoisomer
@@ -167,48 +194,54 @@ class Fragmenter(abc.ABC):
             f"The stereochemistry of {fragment.to_smiles()} could not be fixed."
         )
 
-    def _tag_functional_groups(
-        self, functional_groups: Optional[Union[bool, Dict[str, str]]]
-    ):
-        """Tags atoms and bonds of functional groups specified by ``functional_groups``.
+    @classmethod
+    def _find_functional_groups(
+        cls, molecule: Molecule, functional_groups: Dict[str, str]
+    ) -> FunctionalGroups:
+        """Find the atoms and bonds involved in the functional groups specified by
+        ``functional_groups``.
 
         Parameters
         ----------
+        molecule
+            The molecule to search for function groups.
         functional_groups
-            A dictionary of SMARTS of functional groups that should not be fragmented.
-            If it is None, ``fragmenter/fragmenter/data/fgroup_smarts.yaml`` will be
-            used. If False, no functional groups will be tagged and they will all be
-            fragmented.
+            A dictionary of SMARTS of functional groups that should not be fragmented
+            indexed by a friendly string label, e.g. 'alcohol: [#6:1]-[#8H1X2:2]'
+
+        Returns
+        -------
+            The atoms and bonds in the found function groups stored in a dictionary
+            indexed by a unique key associated with each functional group.
         """
 
-        if functional_groups is False:
-            return
-
-        if functional_groups is None:
-            functional_groups = get_fgroup_smarts()
+        found_groups = {}
 
         for functional_group, smarts in functional_groups.items():
 
             unique_matches = {
                 tuple(sorted(match))
-                for match in self.molecule.chemical_environment_matches(smarts)
+                for match in molecule.chemical_environment_matches(smarts)
             }
 
             for i, match in enumerate(unique_matches):
 
-                atoms = set(get_map_index(self.molecule, index) for index in match)
+                atoms = set(get_map_index(molecule, index) for index in match)
                 bonds = set(
                     (
-                        get_map_index(self.molecule, bond.atom1_index),
-                        get_map_index(self.molecule, bond.atom2_index),
+                        get_map_index(molecule, bond.atom1_index),
+                        get_map_index(molecule, bond.atom2_index),
                     )
-                    for bond in self.molecule.bonds
+                    for bond in molecule.bonds
                     if bond.atom1_index in match and bond.atom2_index in match
                 )
 
-                self.functional_groups[f"{functional_group}_{i}"] = (atoms, bonds)
+                found_groups[f"{functional_group}_{i}"] = (atoms, bonds)
 
-    def _find_rotatable_bonds(self) -> List[BondTuple]:
+        return found_groups
+
+    @classmethod
+    def _find_rotatable_bonds(cls, molecule: Molecule) -> List[BondTuple]:
         """Finds the rotatable bonds in a molecule *including* rotatable double
         bonds.
 
@@ -220,14 +253,18 @@ class Fragmenter(abc.ABC):
         -----
         * Add the option to build fragments around terminal torsions (-OH, -NH2, -CH3)
 
+        Parameters
+        ----------
+        molecule
+            The molecule to search for rotatable bonds.
+
         Returns
         -------
-        rotatable_bonds: list of tuples
-            list of rotatable bonds map indices [(m1, m2),...]
-
+            A list of the rotatable map indices of the atoms which form the rotatable
+            bonds, ``[(m1, m2),...]``.
         """
 
-        matches = self.molecule.chemical_environment_matches(
+        matches = molecule.chemical_environment_matches(
             "[!$(*#*)&!D1:1]-,=;!@[!$(*#*)&!D1:2]"
         )
         unique_matches = {tuple(sorted(match)) for match in matches}
@@ -235,7 +272,7 @@ class Fragmenter(abc.ABC):
         # Drop bonds without a heavy degree of at least 2 on each end to avoid finding
         # terminal bonds
         def heavy_degree(atom_index: int) -> int:
-            atom = self.molecule.atoms[atom_index]
+            atom = molecule.atoms[atom_index]
             return sum(1 for atom in atom.bonded_atoms if atom.atomic_number != 1)
 
         unique_matches = {
@@ -244,17 +281,29 @@ class Fragmenter(abc.ABC):
 
         return [
             (
-                get_map_index(self.molecule, match[0]),
-                get_map_index(self.molecule, match[1]),
+                get_map_index(molecule, match[0]),
+                get_map_index(molecule, match[1]),
             )
             for match in unique_matches
         ]
 
-    def _atom_bond_set_to_mol(self, atoms: Set[int], bonds: Set[BondTuple]) -> Molecule:
+    @classmethod
+    def _atom_bond_set_to_mol(
+        cls,
+        parent: Molecule,
+        parent_stereo: Stereochemistries,
+        atoms: Set[int],
+        bonds: Set[BondTuple],
+    ) -> Molecule:
         """Extracts a subset of a molecule based on a set of atom and bond indices.
 
         Parameters
         ----------
+        parent
+            The parent molecule to slice.
+        parent_stereo
+            The stereochemistry of the parent. This will be used to ensure the returned
+            subset molecule retains the correct stereochemistry.
         atoms
             set of map indices
         bonds
@@ -265,43 +314,48 @@ class Fragmenter(abc.ABC):
             The subset molecule.
         """
 
-        fragment = extract_fragment(self.molecule, atoms, bonds)
+        fragment = extract_fragment(parent, atoms, bonds)
 
-        if not self._check_stereo(fragment):
-            fragment = self._fix_stereo(fragment)
+        if not cls._check_stereo(fragment, parent_stereo):
+            fragment = cls._fix_stereo(fragment, parent_stereo)
 
         return fragment
 
-    def _get_torsion_quartet(self, bond: BondTuple) -> AtomAndBondSet:
+    @classmethod
+    def _get_torsion_quartet(
+        cls, molecule: Molecule, bond: BondTuple
+    ) -> AtomAndBondSet:
         """Get all atoms bonded to the torsion quartet around rotatable bond
 
         Parameters
         ----------
-        bond: tuple of ints
+        molecule
+            The molecule containing the rotatable bond.
+        bond
             map indices of atoms in bond
 
         Returns
         -------
-            The map indices of atoms in quartet and the bonds in quartet)
+            The map indices of atoms in quartet and the bonds in quartet.
         """
 
         atom_map_indices = {*bond}
         bond_map_indices = {bond}
 
         atoms = [
-            self.molecule.atoms[i]
-            for i, j in self.molecule.properties["atom_map"].items()
+            molecule.atoms[i]
+            for i, j in molecule.properties["atom_map"].items()
             if j in bond
         ]
 
         for atom in atoms:
 
-            map_index = get_map_index(self.molecule, atom.molecule_atom_index)
+            map_index = get_map_index(molecule, atom.molecule_atom_index)
 
             for neighbor in atom.bonded_atoms:
 
                 neighbour_map_index = get_map_index(
-                    self.molecule, neighbor.molecule_atom_index
+                    molecule, neighbor.molecule_atom_index
                 )
 
                 atom_map_indices.add(neighbour_map_index)
@@ -310,7 +364,7 @@ class Fragmenter(abc.ABC):
                 for next_neighbour in neighbor.bonded_atoms:
 
                     next_neighbour_map_index = get_map_index(
-                        self.molecule, next_neighbour.molecule_atom_index
+                        molecule, next_neighbour.molecule_atom_index
                     )
 
                     atom_map_indices.add(next_neighbour_map_index)
@@ -320,23 +374,37 @@ class Fragmenter(abc.ABC):
 
         return atom_map_indices, bond_map_indices
 
-    def _find_ring_systems(self, keep_non_rotor_ring_substituents: bool = False):
-        """This function finds all ring systems and stores them in the `ring_systems`
-        field.
+    @classmethod
+    def _find_ring_systems(
+        cls,
+        molecule: Molecule,
+        functional_groups: FunctionalGroups,
+        keep_non_rotor_ring_substituents: bool = False,
+    ) -> RingSystems:
+        """This function finds all ring systems in a molecule.
 
         Parameters
         ----------
+        molecule
+            The molecule to search for ring systems.
+        functional_groups
+            A dictionary of the functional groups on the molecule which should not
+            be fragmented.
         keep_non_rotor_ring_substituents
             If True, keep all non rotatable ring substituents. According to the
             benchmark, it is not necessary.
+
+        Returns
+        -------
+            Any found ring systems.
         """
 
-        atom_to_ring_indices = find_ring_systems(self.molecule)
+        atom_to_ring_indices = find_ring_systems(molecule)
 
         # Find the map indices of the atoms involved in each ring system.
         ring_system_atoms = {
             ring_index: {
-                get_map_index(self.molecule, i)
+                get_map_index(molecule, i)
                 for i in atom_to_ring_indices
                 if atom_to_ring_indices[i] == ring_index
             }
@@ -346,7 +414,7 @@ class Fragmenter(abc.ABC):
         # Find the map indices of the bonds involved in each ring system.
         ring_system_bonds = defaultdict(set)
 
-        for bond in self.molecule.bonds:
+        for bond in molecule.bonds:
 
             ring_index_1 = atom_to_ring_indices.get(bond.atom1_index, -1)
             ring_index_2 = atom_to_ring_indices.get(bond.atom2_index, -2)
@@ -356,8 +424,8 @@ class Fragmenter(abc.ABC):
 
             ring_system_bonds[ring_index_1].add(
                 (
-                    get_map_index(self.molecule, bond.atom1_index),
-                    get_map_index(self.molecule, bond.atom2_index),
+                    get_map_index(molecule, bond.atom1_index),
+                    get_map_index(molecule, bond.atom2_index),
                 )
             )
 
@@ -367,47 +435,64 @@ class Fragmenter(abc.ABC):
 
             # If any atoms are part of a functional group, include the other atoms in the
             # group in the ring system lists
-            functional_groups = {
+            ring_functional_groups = {
                 functional_group
                 for map_index in ring_system_atoms[ring_index]
-                for functional_group in self.functional_groups
-                if map_index in self.functional_groups[functional_group][0]
+                for functional_group in functional_groups
+                if map_index in functional_groups[functional_group][0]
             }
 
             ring_system_atoms[ring_index].update(
                 map_index
-                for functional_group in functional_groups
-                for map_index in self.functional_groups[functional_group][0]
+                for functional_group in ring_functional_groups
+                for map_index in functional_groups[functional_group][0]
             )
             ring_system_bonds[ring_index].update(
                 map_tuple
-                for functional_group in functional_groups
-                for map_tuple in self.functional_groups[functional_group][1]
+                for functional_group in ring_functional_groups
+                for map_tuple in functional_groups[functional_group][1]
             )
 
             if not keep_non_rotor_ring_substituents:
                 continue
 
-            non_rotor_atoms, non_rotor_bonds = self._find_non_rotor_ring_substituents(
-                ring_system_atoms[ring_index]
+            non_rotor_atoms, non_rotor_bonds = cls._find_non_rotor_ring_substituents(
+                molecule, ring_system_atoms[ring_index]
             )
 
             ring_system_atoms[ring_index].update(non_rotor_atoms)
             ring_system_bonds[ring_index].update(non_rotor_bonds)
 
-        for ring_index in ring_system_atoms:
-
-            self.ring_systems[ring_index] = (
+        ring_systems = {
+            ring_index: (
                 ring_system_atoms[ring_index],
                 ring_system_bonds[ring_index],
             )
+            for ring_index in ring_system_atoms
+        }
 
+        return ring_systems
+
+    @classmethod
     def _find_non_rotor_ring_substituents(
-        self, ring_system_atoms: Set[int]
+        cls, molecule: Molecule, ring_system_atoms: Set[int]
     ) -> AtomAndBondSet:
-        """Find the non-rotor substituents attached to a particular ring system."""
+        """Find the non-rotor substituents attached to a particular ring system.
 
-        rotatable_bonds = self.molecule.find_rotatable_bonds()
+        Parameters
+        ----------
+        molecule
+            The molecule to search for non-rotor ring substituents.
+        ring_system_atoms
+            The map indices of the atoms in the ring system of interest.
+
+        Returns
+        -------
+            The map indices of the atoms and bonds involved in any found
+            functional groups.
+        """
+
+        rotatable_bonds = molecule.find_rotatable_bonds()
 
         def heavy_degree(atom: Atom) -> int:
             return sum(1 for atom in atom.bonded_atoms if atom.atomic_number != 1)
@@ -421,7 +506,7 @@ class Fragmenter(abc.ABC):
         non_rotor_atoms = set()
         non_rotor_bonds = set()
 
-        for bond in self.molecule.bonds:
+        for bond in molecule.bonds:
 
             # Check if the bond is a rotor.
             if bond in rotor_bonds:
@@ -430,8 +515,8 @@ class Fragmenter(abc.ABC):
             if bond.atom1.atomic_number == 1 or bond.atom2.atomic_number == 1:
                 continue
 
-            map_index_1 = get_map_index(self.molecule, bond.atom1_index)
-            map_index_2 = get_map_index(self.molecule, bond.atom2_index)
+            map_index_1 = get_map_index(molecule, bond.atom1_index)
+            map_index_2 = get_map_index(molecule, bond.atom2_index)
 
             in_system_1 = map_index_1 in ring_system_atoms
             in_system_2 = map_index_2 in ring_system_atoms
@@ -444,17 +529,32 @@ class Fragmenter(abc.ABC):
 
         return non_rotor_atoms, non_rotor_bonds
 
+    @classmethod
     def _get_ring_and_fgroups(
-        self, atoms: Set[int], bonds: Set[BondTuple]
+        cls,
+        parent: Molecule,
+        parent_groups: FunctionalGroups,
+        parent_rings: RingSystems,
+        atoms: Set[int],
+        bonds: Set[BondTuple],
     ) -> AtomAndBondSet:
-        """Keep ortho substituents
+        """Adds the atom and bond indices of groups ortho to those already in
+        a fragment, such that they are retained during fragmentation.
 
         Parameters
         ----------
+        parent
+            The molecule being fragmented.
+        parent_groups
+            A dictionary of the functional groups on the molecule which should not
+            be fragmented.
+        parent_rings
+            A dictionary of the ring systems in the molecule which should not
+            be fragmented.
         atoms
-            map indices of atom in fragment
+            The map indices of the atoms in the fragment.
         bonds
-            map indices of bonds in fragment
+            The map indices of the bonds in the fragment.
 
         Returns
         -------
@@ -463,7 +563,7 @@ class Fragmenter(abc.ABC):
 
         # Find the sets of atoms which are located ortho to one of the bonds being
         # fragmented.
-        ortho_atoms, ortho_bonds = self._find_ortho_substituents(bonds)
+        ortho_atoms, ortho_bonds = cls._find_ortho_substituents(parent, bonds)
 
         atoms.update(ortho_atoms)
         bonds.update(ortho_bonds)
@@ -473,25 +573,25 @@ class Fragmenter(abc.ABC):
         new_atoms = set()
         new_bonds = set()
 
-        functional_groups = {
+        fragment_groups = {
             group
-            for group in self.functional_groups
-            if any(atom in self.functional_groups[group][0] for atom in atoms)
+            for group in parent_groups
+            if any(atom in parent_groups[group][0] for atom in atoms)
         }
 
-        for functional_group in functional_groups:
-            new_atoms.update(self.functional_groups[functional_group][0])
-            new_bonds.update(self.functional_groups[functional_group][1])
+        for functional_group in fragment_groups:
+            new_atoms.update(parent_groups[functional_group][0])
+            new_bonds.update(parent_groups[functional_group][1])
 
-        ring_systems = {
+        fragment_rings = {
             ring_index
-            for ring_index in self.ring_systems
-            if any(atom in self.ring_systems[ring_index][0] for atom in atoms)
+            for ring_index in parent_rings
+            if any(atom in parent_rings[ring_index][0] for atom in atoms)
         }
 
-        for ring_system in ring_systems:
-            new_atoms.update(self.ring_systems[ring_system][0])
-            new_bonds.update(self.ring_systems[ring_system][1])
+        for ring_system in fragment_rings:
+            new_atoms.update(parent_rings[ring_system][0])
+            new_bonds.update(parent_rings[ring_system][1])
 
         atoms.update(new_atoms)
         bonds.update(new_bonds)
@@ -501,12 +601,17 @@ class Fragmenter(abc.ABC):
 
         return atoms, bonds
 
-    def _find_ortho_substituents(self, bonds: Set[BondTuple]) -> AtomAndBondSet:
+    @classmethod
+    def _find_ortho_substituents(
+        cls, parent: Molecule, bonds: Set[BondTuple]
+    ) -> AtomAndBondSet:
         """Find ring substituents that are ortho to one of the rotatable bonds specified
         in a list of bonds.
 
         Parameters
         ----------
+        parent
+            The parent molecule being fragmented.
         bonds
             The map indices of the rotatable bonds.
 
@@ -519,11 +624,11 @@ class Fragmenter(abc.ABC):
         matched_atoms = set()
         matched_bonds = set()
 
-        for match in self.molecule.chemical_environment_matches(
+        for match in parent.chemical_environment_matches(
             "[!#1:1]~&!@[*:2]@[*:3]~&!@[!#1*:4]"
         ):
 
-            map_tuple = tuple(get_map_index(self.molecule, i) for i in match)
+            map_tuple = tuple(get_map_index(parent, i) for i in match)
 
             if map_tuple[:2] not in bonds and map_tuple[:2][::-1] not in bonds:
                 continue
@@ -536,13 +641,23 @@ class Fragmenter(abc.ABC):
 
         return matched_atoms, matched_bonds
 
+    @classmethod
     def _cap_open_valence(
-        self, atoms: Set[int], bonds: Set[BondTuple]
+        cls,
+        parent: Molecule,
+        parent_groups: FunctionalGroups,
+        atoms: Set[int],
+        bonds: Set[BondTuple],
     ) -> AtomAndBondSet:
         """Cap with methyl for fragments that ends with N, O or S. Otherwise cap with H
 
         Parameters
         ----------
+        parent
+            The molecule being fragmented.
+        parent_groups
+            A dictionary of the functional groups on the molecule which should not
+            be fragmented.
         atoms
             The map indices of the atoms in the fragment being constructed.
         bonds
@@ -551,8 +666,8 @@ class Fragmenter(abc.ABC):
 
         map_index_to_functional_group = {
             map_index: functional_group
-            for functional_group in self.functional_groups
-            for map_index in self.functional_groups[functional_group][0]
+            for functional_group in parent_groups
+            for map_index in parent_groups[functional_group][0]
         }
 
         atoms_to_add = set()
@@ -560,8 +675,8 @@ class Fragmenter(abc.ABC):
 
         for map_index in atoms:
 
-            atom_index = get_atom_index(self.molecule, map_index)
-            atom = self.molecule.atoms[atom_index]
+            atom_index = get_atom_index(parent, map_index)
+            atom = parent.atoms[atom_index]
 
             if (
                 atom.atomic_number not in (7, 8, 16)
@@ -575,7 +690,7 @@ class Fragmenter(abc.ABC):
             for neighbour in atom.bonded_atoms:
 
                 neighbour_map_index = get_map_index(
-                    self.molecule, neighbour.molecule_atom_index
+                    parent, neighbour.molecule_atom_index
                 )
 
                 if neighbour.atomic_number == 1 or neighbour_map_index in atoms:
@@ -593,7 +708,7 @@ class Fragmenter(abc.ABC):
                     continue
 
                 neighbour_map_index = get_map_index(
-                    self.molecule, neighbour.molecule_atom_index
+                    parent, neighbour.molecule_atom_index
                 )
 
                 atoms_to_add.add(neighbour_map_index)
@@ -604,8 +719,54 @@ class Fragmenter(abc.ABC):
 
         return atoms, bonds
 
+    @classmethod
+    def _prepare_molecule(
+        cls,
+        molecule: Molecule,
+        functional_groups: Dict[str, str],
+        keep_non_rotor_ring_substituents: bool,
+    ) -> Tuple[Molecule, Stereochemistries, FunctionalGroups, RingSystems]:
+        """Prepare a molecule for fragmentation.
+
+        This involves canonically ordering the molecule, determining the stereochemistry
+        of any stereocenters, detecting any functional groups which should be preserved,
+        and finding any ring systems which should be preserved.
+
+        Parameters
+        ----------
+        molecule
+            The parent molecule that should be fragmented.
+        functional_groups:
+            A dictionary of SMARTS of functional groups that should not be fragmented.
+        keep_non_rotor_ring_substituents:
+            If True, will always keep all non rotor substituents on ring.
+
+        Returns
+        -------
+            The prepared molecule to fragment, its stereochemistry, and the functional
+            groups and ring systems it contains that should not be fragmented.
+        """
+
+        # Canonically order the molecule to try and make the fragmentation more
+        # deterministic.
+        molecule: Molecule = molecule.canonical_order_atoms()
+        molecule.properties["atom_map"] = {i: i + 1 for i in range(molecule.n_atoms)}
+
+        # Keep track of stereo to make sure it does not flip
+        stereo = cls._find_stereo(molecule)
+
+        # Find the functional groups and ring systems which should not be fragmented.
+        found_functional_groups = cls._find_functional_groups(
+            molecule, functional_groups
+        )
+        found_ring_systems = cls._find_ring_systems(
+            molecule, found_functional_groups, keep_non_rotor_ring_substituents
+        )
+
+        return molecule, stereo, found_functional_groups, found_ring_systems
+
     @abc.abstractmethod
-    def fragment(self):
+    def fragment(self, **kwargs):
         """Fragment molecules."""
         raise NotImplementedError()
 
@@ -614,162 +775,159 @@ class Fragmenter(abc.ABC):
         Get version of fragmenter and options used
 
         """
-        import getpass
-        import socket
-        import uuid
-
-        import fragmenter
-
-        fragmenter_version = fragmenter.__version__
+        # import getpass
+        # import socket
+        # import uuid
+        #
+        # import fragmenter
+        #
+        # fragmenter_version = fragmenter.__version__
 
         provenance = {
-            "creator": fragmenter.__package__,
-            "job_id": str(uuid.uuid4()),
-            "hostname": socket.gethostname(),
-            "username": getpass.getuser(),
-            "routine": {
-                "fragment_molecule": {
-                    "version": fragmenter_version,
-                    "options": self._options,
-                    "parent_molecule": self.molecule.to_smiles(
-                        mapped=False, explicit_hydrogens=False
-                    ),
-                    "parent_name": self.molecule.name,
-                    "mapped_parent_smiles": self.molecule.to_smiles(mapped=True),
-                }
-            },
+            # "creator": fragmenter.__package__,
+            # "job_id": str(uuid.uuid4()),
+            # "hostname": socket.gethostname(),
+            # "username": getpass.getuser(),
+            # "routine": {
+            #     "fragment_molecule": {
+            #         "version": fragmenter_version,
+            #         "options": self._options,
+            #         "parent_molecule": self.molecule.to_smiles(
+            #             mapped=False, explicit_hydrogens=False
+            #         ),
+            #         "parent_name": self.molecule.name,
+            #         "mapped_parent_smiles": self.molecule.to_smiles(mapped=True),
+            #     }
+            # },
         }
         return provenance
 
 
 class WBOFragmenter(Fragmenter):
-    """
-    Fragment engine for fragmenting molecules using Wiberg Bond Order
+    """Fragment engine for fragmenting molecules using Wiberg Bond Order."""
 
-    Parameters
-    ----------
-    molecule : OEMol
-        Molecule to fragment.
-    functional_groups : dict, optional, default None
-        `{f_group: SMARTS}`. Dictionary that maps the name of a functional group to its
-        SMARTS pattern. These functional groups, if they exist in the molecule, will be
-        tagged so they are not fragmented. If None, will use internal list of functional
-        group. If False, will not tag any functional groups.
-
-    """
-
-    def __init__(self, molecule, functional_groups=None, verbose=False):
-
-        if functional_groups is None:
-            functional_groups = get_fgroup_smarts()
-
-        super().__init__(molecule, functional_groups)
-
-        self.rotors_wbo = {}
-
-        self.verbose = verbose
-        self.threshold = None
+    def __init__(
+        self,
+        molecule: Molecule,
+        functional_groups: Optional[Union[bool, Dict[str, str]]] = None,
+    ):
+        super(WBOFragmenter, self).__init__(molecule, functional_groups)
 
     def fragment(
         self,
-        threshold: float = 0.03,
         keep_non_rotor_ring_substituents: bool = False,
+        threshold: float = 0.03,
+        heuristic: Heuristic = "path_length",
+        cap: bool = True,
         **kwargs,
     ):
-        """
-        Fragment molecules using the Wiberg Bond Order as a surrogate
+        """Fragment molecules using the Wiberg Bond Order as a surrogate
 
         Parameters
         ----------
-        threshold
-            The threshold for the central bond WBO. If the fragment WBO is below this
-            threshold, fragmenter will grow out the fragment one bond at a time via the
-            path specified by the heuristic option
         keep_non_rotor_ring_substituents: bool
             If True, will always keep all non rotor substituents on ring. If False, will
             only add them if they are ortho to rotatable bond or if it's needed for WBO
             to be within the threshold
-        **heuristic : str, optional, default 'path_length'
+        threshold
+            The threshold for the central bond WBO. If the fragment WBO is below this
+            threshold, fragmenter will grow out the fragment one bond at a time via the
+            path specified by the heuristic option
+        heuristic
             The path fragmenter should take when fragment needs to be grown out. The
-            other option is 'wbo'
+            options are ``['wbo', 'path_length']``.
+        cap
+            Whether to cap open valences.
         """
-        # Capture options used
-        self._options[
-            "keep_non_rotor_ring_substituents"
-        ] = keep_non_rotor_ring_substituents
-        if "threshold" not in self._options:
-            self._options["threshold"] = threshold
 
-        # Add threshold as attribute because it is used in more than one function
-        self.threshold = threshold
-        self._options.update(kwargs)
-        # Calculate WBO for molecule
-        self.calculate_wbo(**kwargs)
-        self._get_rotor_wbo()
-        # Find ring systems
-        self._find_ring_systems(
-            keep_non_rotor_ring_substituents=keep_non_rotor_ring_substituents
+        # Capture options used
+        # self._options[
+        #     "keep_non_rotor_ring_substituents"
+        # ] = keep_non_rotor_ring_substituents
+        # if "threshold" not in self._options:
+        #     self._options["threshold"] = threshold
+        # self._options.update(kwargs)
+        # Capture options
+        # if "heuristic" not in self._options:
+        #     self._options["heuristic"] = heuristic
+
+        (
+            self.molecule,
+            stereochemistry,
+            functional_groups,
+            ring_systems,
+        ) = self._prepare_molecule(
+            self.molecule, self.functional_groups, keep_non_rotor_ring_substituents
         )
 
-        # Build fragments
-        for bond in self.rotors_wbo:
-            self._build_fragment(bond, **kwargs)
+        # Calculate WBO for molecule
+        self.molecule = assign_elf10_am1_bond_orders(self.molecule, **kwargs)
 
-    def calculate_wbo(
-        self, fragment: Optional[Molecule] = None, **kwargs
-    ) -> Optional[Molecule]:
-        """Calculate the WBOs on either a parent or fragment molecule.
+        wbo_rotor_bonds = self._get_rotor_wbo(self.molecule)
+
+        fragments = {
+            bond: self._build_fragment(
+                self.molecule,
+                stereochemistry,
+                functional_groups,
+                ring_systems,
+                bond,
+                wbo_rotor_bonds[bond],
+                threshold=threshold,
+                heuristic=heuristic,
+                cap=cap,
+                **kwargs,
+            )
+            for bond in wbo_rotor_bonds
+        }
+
+        self.fragments = fragments
+
+    @classmethod
+    def _get_rotor_wbo(
+        cls, molecule: Molecule, rotor_bonds: Optional[List[BondTuple]] = None
+    ) -> Dict[BondTuple, float]:
+        """Cache the WBO of each bond in a specific set of rotor bonds. If no list is
+        provided, the WBO for each rotatable bond (as defined by
+        ``_find_rotatable_bonds``) will be returned.
 
         Parameters
         ----------
-        fragment
-            The fragment to recalculate the WBO for. When fragment is ``None``,
-            fragmenter assumes it's the full molecule and saves the calculated values
-            in self.molecule
+            molecule
+                The molecule containing the rotors.
+            rotor_bonds
+                The map indices of the rotor bonds to return the WBOs of.
 
         Returns
         -------
-            The fragment with WBOs.
+            The WBO of each rotor bond.
         """
-        if not fragment:
 
-            time1 = time.time()
-            self.molecule = assign_elf10_am1_bond_orders(self.molecule, **kwargs)
-            time2 = time.time()
-            if self.verbose:
-                logger.info("WBO took {} seconds to calculate".format(time2 - time1))
+        if any(bond.fractional_bond_order is None for bond in molecule.bonds):
 
-        else:
-
-            time1 = time.time()
-            fragment = assign_elf10_am1_bond_orders(fragment, **kwargs)
-            time2 = time.time()
-            if self.verbose:
-                logger.info("WBO took {} seconds to calculate".format(time2 - time1))
-
-        return fragment
-
-    def _get_rotor_wbo(self):
-        """Cache the WBO of each rotatable bond"""
-
-        if any(bond.fractional_bond_order is None for bond in self.molecule.bonds):
-
-            logger.info("WBO was not calculated for this molecule. Calculating WBO...")
-            self.calculate_wbo()
-
-        rotatable_bonds = self._find_rotatable_bonds()
-
-        for bond_indices in rotatable_bonds:
-
-            bond = self.molecule.get_bond_between(
-                get_atom_index(self.molecule, bond_indices[0]),
-                get_atom_index(self.molecule, bond_indices[1]),
+            raise RuntimeError(
+                "WBO was not calculated for this molecule. Calculating WBO..."
             )
 
-            self.rotors_wbo[bond_indices] = bond.fractional_bond_order
+        if rotor_bonds is None:
+            rotor_bonds = cls._find_rotatable_bonds(molecule)
 
+        rotors_wbo = {}
+
+        for bond_indices in rotor_bonds:
+
+            bond = molecule.get_bond_between(
+                get_atom_index(molecule, bond_indices[0]),
+                get_atom_index(molecule, bond_indices[1]),
+            )
+
+            rotors_wbo[bond_indices] = bond.fractional_bond_order
+
+        return rotors_wbo
+
+    @classmethod
     def _compare_wbo(
-        self, fragment: Molecule, bond_tuple: BondTuple, **kwargs
+        cls, fragment: Molecule, bond_tuple: BondTuple, parent_wbo: float, **kwargs
     ) -> float:
         """Compare Wiberg Bond order of rotatable bond in a fragment to the parent.
 
@@ -779,6 +937,8 @@ class WBOFragmenter(Fragmenter):
             The fragment containing the rotatable bond.
         bond_tuple
             The map indices of the rotatable bond.
+        parent_wbo
+            The WBO of the parent bond with map indices matching ``bond_tuple``.
 
         Returns
         -------
@@ -794,7 +954,7 @@ class WBOFragmenter(Fragmenter):
         fragment_map = fragment.properties.pop("atom_map", None)
 
         try:
-            fragment = self.calculate_wbo(fragment=fragment, **kwargs)
+            fragment = assign_elf10_am1_bond_orders(fragment, **kwargs)
 
         except RuntimeError:
 
@@ -819,48 +979,75 @@ class WBOFragmenter(Fragmenter):
         )
 
         fragment_wbo = bond.fractional_bond_order
-        parent_wbo = self.rotors_wbo[bond_tuple]
 
         return abs(parent_wbo - fragment_wbo)
 
+    @classmethod
     def _build_fragment(
-        self,
+        cls,
+        parent: Molecule,
+        parent_stereo: Stereochemistries,
+        parent_groups: FunctionalGroups,
+        parent_rings: RingSystems,
         bond_tuple: BondTuple,
+        parent_wbo: float,
+        threshold: float,
         heuristic: Heuristic = "path_length",
         cap: bool = True,
         **kwargs,
-    ):
+    ) -> Molecule:
         """Build a fragment around a specified bond.
 
         Parameters
         ----------
+        parent
+            The original molecule being fragmented.
+        parent_stereo
+            The stereochemistry of the parent molecule.
+        parent_groups
+            A dictionary of the functional groups on the molecule which should not
+            be fragmented.
+        parent_rings
+            A dictionary of the ring systems in the molecule which should not
+            be fragmented.
         bond_tuple
             The map indices specifying which bond to build the fragment around.
+        parent_wbo
+            The WBO of the parent bond with map indices matching ``bond_tuple``.
+        threshold
+            The threshold for the central bond WBO. If the fragment WBO is below this
+            threshold, fragmenter will grow out the fragment one bond at a time via the
+            path specified by the heuristic option
         heuristic
             The heuristic to use when building the fragment.
         cap
             Whether to cap open valences.
+
+        Returns
+        -------
+            The built fragment molecule.
         """
 
-        # Capture options
-        if "heuristic" not in self._options:
-            self._options["heuristic"] = heuristic
-
-        atoms, bonds = self._get_torsion_quartet(bond_tuple)
-        atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
+        atoms, bonds = cls._get_torsion_quartet(parent, bond_tuple)
+        atoms, bonds = cls._get_ring_and_fgroups(
+            parent, parent_groups, parent_rings, atoms, bonds
+        )
 
         # Cap open valence
         if cap:
-            atoms, bonds = self._cap_open_valence(atoms, bonds)
+            atoms, bonds = cls._cap_open_valence(parent, parent_groups, atoms, bonds)
 
-        fragment = self._atom_bond_set_to_mol(atoms, bonds)
+        fragment = cls._atom_bond_set_to_mol(parent, parent_stereo, atoms, bonds)
 
-        wbo_difference = self._compare_wbo(fragment, bond_tuple, **kwargs)
+        wbo_difference = cls._compare_wbo(fragment, bond_tuple, parent_wbo, **kwargs)
 
-        while fragment is not None and wbo_difference > self.threshold:
+        while fragment is not None and wbo_difference > threshold:
 
-            fragment = self._add_next_substituent(
-                self.molecule,
+            fragment = cls._add_next_substituent(
+                parent,
+                parent_stereo,
+                parent_groups,
+                parent_rings,
                 atoms,
                 bonds,
                 target_bond=bond_tuple,
@@ -870,16 +1057,18 @@ class WBOFragmenter(Fragmenter):
             if fragment is None:
                 break
 
-            wbo_difference = self._compare_wbo(fragment, bond_tuple, **kwargs)
+            wbo_difference = cls._compare_wbo(
+                fragment, bond_tuple, parent_wbo, **kwargs
+            )
 
         # A work around for a known bug where if stereochemistry changes or gets removed,
         # the WBOs can change more than the threshold (this will sometimes happen if a
         # very small threshold is chosen) and even the parent will have a WBO difference
         # greater than the threshold. In this case, return the molecule
         if fragment is None:
-            fragment = self._atom_bond_set_to_mol(atoms, bonds)
+            fragment = cls._atom_bond_set_to_mol(parent, parent_stereo, atoms, bonds)
 
-        self.fragments[bond_tuple] = fragment
+        return fragment
 
     @classmethod
     def _select_neighbour_by_path_length(
@@ -1008,20 +1197,32 @@ class WBOFragmenter(Fragmenter):
 
         return None if len(sorted_atoms) == 0 else sorted_atoms[0]
 
+    @classmethod
     def _add_next_substituent(
-        self,
-        molecule: Molecule,
+        cls,
+        parent: Molecule,
+        parent_stereo: Stereochemistries,
+        parent_groups: FunctionalGroups,
+        parent_rings: RingSystems,
         atoms: Set[int],
         bonds: Set[BondTuple],
         target_bond: BondTuple,
         heuristic: Heuristic = "path_length",
-    ) -> Molecule:
+    ) -> Optional[Molecule]:
         """Expand the fragment to include the next set of substituents / ring systems.
 
         Parameters
         ----------
-        molecule
+        parent
             The original molecule being fragmented.
+        parent_stereo
+            The stereochemistry of the parent molecule.
+        parent_groups
+            A dictionary of the functional groups on the molecule which should not
+            be fragmented.
+        parent_rings
+            A dictionary of the ring systems in the molecule which should not
+            be fragmented.
         atoms
             The map indices of the atoms currently in the fragment.
         bonds
@@ -1033,16 +1234,17 @@ class WBOFragmenter(Fragmenter):
 
         Returns
         -------
-            The expanded fragment.
+            The expanded fragment, or None if the fragment already includes the
+            entire parent.
         """
 
         # Select the next atom neighbour (and the groups / rings that it is part of)
         # that should be added to the fragment.
         if heuristic == "wbo":
-            neighbour_atom_and_bond = self._select_neighbour_by_wbo(molecule, atoms)
+            neighbour_atom_and_bond = cls._select_neighbour_by_wbo(parent, atoms)
         elif heuristic == "path_length":
-            neighbour_atom_and_bond = self._select_neighbour_by_path_length(
-                molecule, atoms, target_bond
+            neighbour_atom_and_bond = cls._select_neighbour_by_path_length(
+                parent, atoms, target_bond
             )
         else:
             raise NotImplementedError(
@@ -1056,27 +1258,27 @@ class WBOFragmenter(Fragmenter):
 
         # If the neighbour to include is part of a functional group / ring system
         # the entire group should be included in the fragment.
-        for group, group_atoms in self.functional_groups.items():
+        for group, group_atoms in parent_groups.items():
 
             if neighbour_atom not in group_atoms[0]:
                 continue
 
-            atoms.update(self.functional_groups[group][0])
-            bonds.update(self.functional_groups[group][1])
+            atoms.update(parent_groups[group][0])
+            bonds.update(parent_groups[group][1])
 
-        for ring_index, ring_atoms in self.ring_systems.items():
+        for ring_index, ring_atoms in parent_rings.items():
 
             if neighbour_atom not in ring_atoms[0]:
                 continue
 
-            atoms.update(self.ring_systems[ring_index][0])
-            bonds.update(self.ring_systems[ring_index][1])
+            atoms.update(parent_rings[ring_index][0])
+            bonds.update(parent_rings[ring_index][1])
 
         atoms.add(neighbour_atom)
         bonds.add(neighbour_bond)
 
         # Check new WBO
-        return self._atom_bond_set_to_mol(atoms, bonds)
+        return cls._atom_bond_set_to_mol(parent, parent_stereo, atoms, bonds)
 
 
 class PfizerFragmenter(Fragmenter):
@@ -1085,26 +1287,34 @@ class PfizerFragmenter(Fragmenter):
     """
 
     def __init__(self, molecule: Molecule):
-        """
-
-        Parameters
-        ----------
-        molecule
-            The molecule to fragment.
-        """
         super().__init__(molecule, get_fgroup_smarts())
-        self._find_ring_systems(keep_non_rotor_ring_substituents=False)
 
     def fragment(self):
         """
         Fragment molecules according to Pfizer protocol
         """
-        rotatable_bonds = self._find_rotatable_bonds()
+
+        (
+            parent,
+            parent_stereo,
+            parent_groups,
+            parent_rings,
+        ) = self._prepare_molecule(self.molecule, self.functional_groups, False)
+
+        rotatable_bonds = self._find_rotatable_bonds(parent)
+
+        fragments = {}
 
         for bond in rotatable_bonds:
 
-            atoms, bonds = self._get_torsion_quartet(bond)
-            atoms, bonds = self._get_ring_and_fgroups(atoms, bonds)
-            atoms, bonds = self._cap_open_valence(atoms, bonds)
+            atoms, bonds = self._get_torsion_quartet(parent, bond)
+            atoms, bonds = self._get_ring_and_fgroups(
+                parent, parent_groups, parent_rings, atoms, bonds
+            )
+            atoms, bonds = self._cap_open_valence(parent, parent_groups, atoms, bonds)
 
-            self.fragments[bond] = self._atom_bond_set_to_mol(atoms, bonds)
+            fragments[bond] = self._atom_bond_set_to_mol(
+                parent, parent_stereo, atoms, bonds
+            )
+
+        self.fragments = fragments
