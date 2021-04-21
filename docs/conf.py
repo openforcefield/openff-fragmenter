@@ -59,8 +59,6 @@ pygments_style = 'default'
 autosummary_generate = True
 
 autodoc_default_options = {
-    'members': True,
-    'inherited-members': True,
     'member-order': 'bysource',
 }
 

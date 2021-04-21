@@ -18,6 +18,7 @@ dependencies:
 
     # Standard dependencies
   - numpy
+  - pydantic
   - pyyaml
   - networkx
   - jinja2

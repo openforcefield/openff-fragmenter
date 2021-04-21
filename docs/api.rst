@@ -6,14 +6,22 @@ how to use these functions.
 
 .. warning:: ``fragmenter`` The ``fragmenter`` package is still pre-alpha so the API is still in flux.is still pre-alpha so the API is still in flux.
 
-.. currentmodule:: fragmenter.fragment
-.. autoclass:: WBOFragmenter
-    :members:
-    :undoc-members:
-    :inherited-members:
+Fragmentation Engines
+---------------------
 
+.. currentmodule:: fragmenter.fragment
+
+.. autoclass:: WBOOptions
+    :members:
+
+.. autoclass:: WBOFragmenter
+    :members: +fragment, json, dict
 
 .. autoclass:: PfizerFragmenter
+    :members: +fragment, json, dict
+
+.. autoclass:: Fragment
     :members:
-    :undoc-members:
-    :inherited-members:
+
+.. autoclass:: FragmentationResult
+    :members:
