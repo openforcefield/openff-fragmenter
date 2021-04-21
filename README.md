@@ -1,6 +1,6 @@
 Fragmenter
 ==========
-[![Test Status](https://github.com/openforcefield/fragmenter/workflows/tests/badge.svg?branch=master)](https://github.com/openforcefield/fragmenter/actions)
+[![Test Status](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml/badge.svg?branch=master)](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml)
 [![Documentation Status](https://readthedocs.org/projects/fragmenter/badge/?version=latest)](https://fragmenter.readthedocs.io/en/latest/?badge=latest)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/openforcefield/fragmenter.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/openforcefield/fragmenter/context:python)
 [![codecov](https://codecov.io/gh/openforcefield/fragmenter/branch/master/graph/badge.svg)](https://codecov.io/gh/openforcefield/fragmenter/branch/master)
