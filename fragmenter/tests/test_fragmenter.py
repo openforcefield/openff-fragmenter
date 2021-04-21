@@ -445,10 +445,12 @@ def test_compare_wbo():
         assert numpy.isclose(
             WBOFragmenter._compare_wbo(fragment, bond_tuple, value),
             0.0,
+            atol=1.0e-6,
         )
         assert numpy.isclose(
             WBOFragmenter._compare_wbo(fragment, bond_tuple, value + 1.0),
             1.0,
+            atol=1.0e-6,
         )
 
 
