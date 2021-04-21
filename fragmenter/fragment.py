@@ -91,7 +91,7 @@ class Fragmenter(BaseModel, abc.ABC):
     class Config:
         validate_assignment = True
 
-    type: Literal["scheme"] = "scheme"
+    scheme: Literal["scheme"] = "scheme"
 
     functional_groups: Dict[str, str] = Field(
         default_factory=get_fgroup_smarts,
