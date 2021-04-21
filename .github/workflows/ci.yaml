@@ -3,12 +3,10 @@ name: CI
 on:
   push:
     branches:
-#      - "master"
-      - "refactor-main"
+      - "master"
   pull_request:
     branches:
-#      - "master"
-      - "refactor-main"
+      - "master"
   schedule:
     - cron: "0 0 * * *"
 
@@ -21,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macOS-latest]
         python-version: [3.8]
         openeye: [false, true]
 
