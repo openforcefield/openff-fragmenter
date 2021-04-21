@@ -1,177 +1,242 @@
 """Test chemi module"""
-
-from fragmenter import chemi, torsions
+import numpy
 import pytest
-import numpy as np
-from .utils import using_openeye
-import cmiles
-import tempfile
+from openff.toolkit.topology import Molecule
+from openff.toolkit.utils import (
+    AmberToolsToolkitWrapper,
+    OpenEyeToolkitWrapper,
+    ToolkitRegistry,
+)
+from simtk import unit
 
-@pytest.fixture
-def mapped_molecule():
-    return chemi.smiles_to_oemol('[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]')
+from fragmenter import chemi
+from fragmenter.chemi import (
+    _extract_oe_fragment,
+    _extract_rd_fragment,
+    _find_oe_stereocenters,
+    _find_rd_stereocenters,
+    assign_elf10_am1_bond_orders,
+    extract_fragment,
+    find_ring_systems,
+    find_stereocenters,
+    smiles_to_molecule,
+)
+from fragmenter.tests.utils import global_toolkit_wrapper, using_openeye
 
-@pytest.mark.parametrize('keep_confs, output', [(None, 1), (1, 1),  (2, 2),  (-1, 3),  (-2, 'error')])
-def test_get_charges(keep_confs, output):
-    mol = chemi.smiles_to_oemol('CCCCCCC')
-    if output == 'error':
-        with pytest.raises(ValueError):
-            chemi.get_charges(mol, keep_confs=keep_confs)
-    else:
-        charged = chemi.get_charges(mol, keep_confs=keep_confs)
-        for i, c in enumerate(charged.GetConfs()):
-            i +=1
-        assert i == output
 
-def test_generate_conformers():
-    mol = chemi.smiles_to_oemol('CCCCCCC')
-    confs = chemi.generate_conformers(mol, max_confs=1)
-    assert confs.GetMaxConfIdx() == 1
+def test_assign_elf10_am1_bond_orders():
 
-    confs = chemi.generate_conformers(mol)
-    assert confs.GetMaxConfIdx() == 3
+    molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("CCCC"))
 
-def generate_grid_conformers():
+    for bond in molecule.bonds:
+        assert bond.fractional_bond_order is not None
 
-    mol = chemi.smiles_to_oemol('CCCC')
-    dihedrals = [(0, 2, 3, 1), (3, 2, 0, 4)]
-    intervals = [30, 90]
-    grid = chemi.generate_grid_conformers(mol, dihedrals=dihedrals, intervals=intervals)
-    assert grid.GetMaxConfIdx() == 48
 
-@pytest.mark.parametrize('smiles, charge', [('CCCC', 0),
-                                             ('CC(=O)([O-])', -1),
-                                             ('C[N+](C)(C)[H]', +1)])
-def test_get_charge(smiles, charge):
-    mol = chemi.smiles_to_oemol(smiles)
-    assert chemi.get_charge(mol) == charge
+@using_openeye
+def test_assign_elf10_am1_bond_orders_simple_parity():
 
-def test_smiles_to_oemol():
+    with global_toolkit_wrapper(OpenEyeToolkitWrapper()):
+
+        molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("C"))
+        oe_bond_orders = [bond.fractional_bond_order for bond in molecule.bonds]
+
+    with global_toolkit_wrapper(
+        ToolkitRegistry([AmberToolsToolkitWrapper(), OpenEyeToolkitWrapper()])
+    ):
+        molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("C"))
+        at_bond_orders = [bond.fractional_bond_order for bond in molecule.bonds]
+
+    assert numpy.allclose(oe_bond_orders, at_bond_orders, atol=1.0e-2)
+
+
+@pytest.mark.parametrize("smiles, max_confs", [("CCCCCCC", 1), ("CCCCCCC", 3)])
+def test_generate_conformers(smiles, max_confs):
+
+    returned_molecule = chemi.generate_conformers(
+        Molecule.from_smiles(smiles), max_confs=max_confs
+    )
+
+    assert 0 < returned_molecule.n_conformers <= max_confs
+
+
+def test_generate_conformers_ordering():
+
+    original_molecule = Molecule.from_smiles("CCCC")
+
+    returned_molecule = chemi.generate_conformers(original_molecule, max_confs=1)
+    assert returned_molecule.n_conformers == 1
+
+    # Make sure the atom ordering did not change.
+    _, atom_map = Molecule.are_isomorphic(
+        original_molecule, returned_molecule, return_atom_map=True
+    )
+
+    assert all(i == j for i, j in atom_map.items())
+
+
+def test_generate_conformers_canonical_check():
+
+    original_molecule = Molecule.from_smiles("CCCCl").canonical_order_atoms()
+    original_molecule = chemi.generate_conformers(original_molecule, max_confs=1)
+
+    # Generate a conformer using a molecule with permuted atom orderings.
+    atom_map = numpy.arange(original_molecule.n_atoms)
+    numpy.random.shuffle(atom_map)
+
+    remapped_molecule = original_molecule.remap(
+        {int(i): int(j) for i, j in enumerate(atom_map)}
+    )
+    remapped_molecule = chemi.generate_conformers(remapped_molecule, max_confs=1)
+
+    original_conformer = original_molecule.conformers[0].value_in_unit(unit.angstrom)
+    remapped_conformer = remapped_molecule.conformers[0].value_in_unit(unit.angstrom)
+
+    assert numpy.allclose(original_conformer[:4], remapped_conformer[atom_map][:4])
+
+
+@using_openeye
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        "c1ccccc1",
+        "C1CC2CCC1C2",
+        "C12C3C4C1C5C2C3C45",
+        "c1ccc2ccccc2c1",
+        "c1ccc(cc1)C2CCCC2",
+        "c1ccc(cc1)C2CCC3C2CC3",
+        "c1cc2ccc3cccc4c3c2c(c1)cc4",
+        "C1CCC2(CC1)CCCCC2",
+        "c1ccc(cc1)Cc2ccccc2",
+    ],
+)
+def test_find_ring_systems(smiles):
+
     from openeye import oechem
-    mol = chemi.smiles_to_oemol('CCCC')
-    assert isinstance(mol, oechem.OEMol)
-    assert oechem.OEMolToSmiles(mol) == 'CCCC'
-    assert mol.GetTitle() == 'butane'
 
-    mol = chemi.smiles_to_oemol('CCCC', normalize=False)
-    assert mol.GetTitle() == ''
+    molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
 
-    mol = chemi.smiles_to_oemol('CCCC', add_atom_map=True)
-    assert oechem.OEMolToSmiles(mol) == '[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]'
+    oe_molecule = molecule.to_openeye()
+    _, expected = oechem.OEDetermineRingSystems(oe_molecule)
 
-def test_normalize_molecule():
-    from openeye import oechem
-    mol = oechem.OEMol()
-    oechem.OESmilesToMol(mol, 'CCCC')
-    assert mol.GetTitle() == ''
+    ring_systems = find_ring_systems(molecule)
 
-    normalized_mol = chemi.normalize_molecule(mol)
-    assert normalized_mol.GetTitle() == 'butane'
+    for i, ring_system in enumerate(expected):
 
-def test_smiles_to_smi():
-    """Test writing out list of SMILES to smi file"""
-    smiles = ['CCCC', 'CCCCC']
-    filename = tempfile.mkdtemp()[1] + '.smi'
-    chemi.smiles_to_smi(smiles, filename)
-    # read file
-    smiles_2 = chemi.file_to_smiles_list(filename, return_titles=False, explicit_hydrogen=False, mapped=False)
-    assert smiles == smiles_2
+        if ring_system > 0:
+            assert ring_systems[i] == ring_system
 
-#@using_openeye
-def test_to_mapped_xyz():
-    from openeye import oechem
-    smiles = 'HC(H)(C(H)(H)OH)OH'
-    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
-    mol = cmiles.utils.load_molecule(smiles)
-    mapped_mol = cmiles.utils.load_molecule(mapped_smiles)
+        else:
+            assert i not in ring_systems
 
-    with pytest.raises(ValueError):
-        chemi.to_mapped_xyz(mapped_mol)
-    # generate conformer
-    mol = chemi.generate_conformers(mol, max_confs=1)
-    mapped_mol = chemi.generate_conformers(mapped_mol, max_confs=1)
-    atom_map = cmiles.utils.get_atom_map(mol, mapped_smiles)
 
-    with pytest.raises(ValueError):
-        chemi.to_mapped_xyz(mol)
+@pytest.mark.parametrize("add_atom_map", [True, False])
+def test_smiles_to_molecule(add_atom_map):
 
-    xyz_1 = chemi.to_mapped_xyz(mol, atom_map)
-    xyz_2 = chemi.to_mapped_xyz(mapped_mol)
-    assert xyz_1 == xyz_2
+    molecule = smiles_to_molecule("CCCC", add_atom_map=add_atom_map)
 
-    xyz_1 = sorted(xyz_1.split('\n')[2:-1])
-    xyz_2 = sorted(xyz_2.split('\n')[2:-1])
-    assert xyz_1 == xyz_2
+    assert isinstance(molecule, Molecule)
+    assert ("atom_map" in molecule.properties) == add_atom_map
+
+
+@pytest.mark.parametrize(
+    "smiles, expected_atoms, expected_bonds",
+    [
+        ("[C:1]([H:6])([H:7])([H:8])[C:5]([Br:3])([Cl:4])([H:2])", [4], []),
+        ("[C:3]([Cl:1])([H:2])=[C:6]([H:4])([Cl:5])", [], [(2, 5)]),
+        (
+            "[C:3]([Cl:1])([H:2])=[C:6]([H:4])[C:5]([Br:7])([Cl:8])([H:9])",
+            [4],
+            [(2, 5)],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "find_method", [_find_oe_stereocenters, _find_rd_stereocenters, find_stereocenters]
+)
+def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method):
+
+    molecule = Molecule.from_mapped_smiles(smiles, allow_undefined_stereo=True)
+
+    stereogenic_atoms, stereogenic_bonds = None, None
+
+    try:
+        stereogenic_atoms, stereogenic_bonds = find_method(molecule)
+    except ModuleNotFoundError as e:
+        pytest.skip(str(e))
+
+    assert stereogenic_atoms == expected_atoms
+    assert stereogenic_bonds == expected_bonds
+
+
+@pytest.mark.parametrize(
+    "smiles, atoms, bonds, expected",
+    [
+        (
+            "[C:1]([H:4])([H:5])([H:6])"
+            "[C:2]([H:7])([H:8])"
+            "[C:3]([H:9])([H:10])([H:11])",
+            {1, 2},
+            {(1, 2)},
+            "CC",
+        ),
+        (
+            "[C:1]([H:4])([H:5])([H:6])"
+            "[C:2]([H:7])([H:8])"
+            "[C:3]([H:9])([H:10])([H:11])",
+            {1, 2, 4},
+            {(1, 2), (1, 4)},
+            "CC",
+        ),
+        (
+            r"[H:6]/[C:1](=[C:2](\[C:3]([H:7])([H:8])[H:9])/[Cl:5])/[Cl:4]",
+            {1, 2, 4, 5},
+            {(1, 2), (1, 4), (2, 5)},
+            r"Cl\C=C/Cl",
+        ),
+        (
+            "[H:7][C:1]([H:8])([C@:2]([F:3])([Cl:5])[Br:6])[Cl:4]",
+            {1, 2, 3, 5, 6},
+            {(1, 2), (2, 3), (2, 5), (2, 6)},
+            r"C[C@](F)(Cl)Br",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "extract_method", [_extract_rd_fragment, _extract_oe_fragment, extract_fragment]
+)
+def test_extract_fragment(smiles, atoms, bonds, expected, extract_method):
+
+    molecule = Molecule.from_mapped_smiles(smiles)
+    molecule.properties["atom_map"] = {i: i + 1 for i in range(molecule.n_atoms)}
+
+    fragment = None
+
+    try:
+        fragment = extract_method(molecule, atoms, bonds)
+    except ModuleNotFoundError as e:
+        pytest.skip(str(e))
+
+    expected_fragment = Molecule.from_smiles(expected)
+
+    assert Molecule.are_isomorphic(
+        fragment, expected_fragment, bond_stereochemistry_matching=False
+    )[0]
+
+
+def test_extract_fragment_bonds_in_atoms():
+    """Tests that an exception is raised when the bonds set contains atoms not in the
+    atoms set."""
+
+    molecule = Molecule.from_smiles("[H:1][C:2]#[C:3][H:4]")
+
+    with pytest.raises(ValueError, match="set includes atoms not in the"):
+        extract_fragment(molecule, {2}, {(2, 3)})
+
 
 @using_openeye
-def test_grid_multi_conformers():
-    "Test generating grid multiconformer"
-    smiles = 'HC(H)(C(H)(H)OH)OH'
-    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
-    mol = cmiles.utils.load_molecule(smiles)
-    mapped_mol = cmiles.utils.load_molecule(mapped_smiles)
+def test_extract_fragment_disconnected_fragment_warning():
 
-    dihedrals = [(2, 0, 1, 3), (0, 1, 3, 9), (1, 0, 2, 8)]
-    intervals = [60, 60, 60]
-    with pytest.raises(ValueError):
-        chemi.generate_grid_conformers(mol, dihedrals, intervals)
+    molecule = Molecule.from_smiles("[C:1][C:2]")
 
-    mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
-    # assert mult_conf.GetMaxConfIdx() == 216
-
-    # intervals = [90, 90, 90]
-    # mult_conf = chemi.generate_grid_conformers(mapped_mol, dihedrals, intervals)
-    # assert mult_conf.GetMaxConfIdx() == 64
-
-@using_openeye
-def test_remove_clashes():
-    pass
-
-@using_openeye
-def test_resolve_clashes():
-    pass
-
-@using_openeye
-@pytest.mark.parametrize('smiles', ['OCCO', 'C(CO)O', '[H]C([H])(C([H])([H])O[H])O[H]',
-                                    '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]',
-                                   '[H][O][C]([H])([H])[C]([H])([H])[O][H]',
-                                    '[O:1]([C:3]([C:4]([O:2][H:6])([H:9])[H:10])([H:7])[H:8])[H:5]'])
-def canonical_order_conformer(smiles):
-    """Test that geometry is ordered the same way every time no matter the SMILES used to create the molecule"""
-    import cmiles
-    mapped_smiles = '[H:5][C:1]([H:6])([C:2]([H:7])([H:8])[O:4][H:10])[O:3][H:9]'
-    mol_id_oe = cmiles.to_molecule_id(mapped_smiles, canonicalization='openeye')
-    oemol = cmiles.utils.load_molecule(mapped_smiles, toolkit='openeye')
-    # Generate canonical geometry
-    conf = chemi.generate_conformers(oemol, can_order=True, max_confs=1)
-    mapped_symbols, mapped_geometry = cmiles._cmiles_oe.get_map_ordered_geometry(conf, mapped_smiles)
-    # #mapped_symbols = ['C', 'C', 'O', 'O', 'H', 'H', 'H', 'H', 'H', 'H']
-    # mapped_geometry = [-1.6887193912042044, 0.8515190939276903, 0.8344587822904272, -4.05544806361675, -0.3658269566455062,
-    #                    -0.22848169646448416, -1.6111611950422127, 0.4463128276938808, 3.490617694146934, -3.97756355964586,
-    #                    -3.0080934853087373, 0.25948499322223956, -1.6821252026076652, 2.891135395246369, 0.4936556190978574,
-    #                    0.0, 0.0, 0.0, -4.180315034973438, -0.09210893239246959, -2.2748227320305525, -5.740516456782416,
-    #                    0.4115539217904015, 0.6823267491485907, -0.07872657410528058, 1.2476492272884379, 4.101615944163073,
-    #                    -5.514569080545831, -3.7195945404657222, -0.4441653010509862]
-
-    mol = cmiles.utils.load_molecule(smiles, toolkit='openeye')
-    # if not cmiles.utils.has_explicit_hydrogen(mol):
-    #     mol = utils.add_explicit_hydrogen(mol)
-    atom_map = cmiles.utils.get_atom_map(mol, mapped_smiles=mapped_smiles)
-    # use the atom map to add coordinates to molecule. First reorder mapped geometry to order in molecule
-    mapped_coords = np.array(mapped_geometry, dtype=float).reshape(int(len(mapped_geometry)/3), 3)
-    coords = np.zeros((mapped_coords.shape))
-    for m in atom_map:
-        coords[atom_map[m]] = mapped_coords[m-1]
-    # flatten
-    coords = coords.flatten()
-    # convert to Angstroms
-    coords = coords*cmiles.utils.BOHR_2_ANGSTROM
-    # set coordinates in oemol
-    mol.SetCoords(coords)
-    mol.SetDimension(3)
-
-    # Get new atom map
-    atom_map = cmiles.utils.get_atom_map(mol, mapped_smiles)
-    symbols, geometry = cmiles._cmiles_oe.get_map_ordered_geometry(mol, mapped_smiles)
-    assert geometry == mapped_geometry
-    assert symbols == mapped_symbols
+    with pytest.raises(AssertionError, match="An atom that is not bonded"):
+        extract_fragment(molecule, {1, 2}, set())

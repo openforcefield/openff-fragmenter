@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches:
+#      - "master"
+      - "refactor-main"
+  pull_request:
+    branches:
+#      - "master"
+      - "refactor-main"
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  test:
+
+    name: ${{ matrix.os }} python=${{ matrix.python-version }} OE=${{ matrix.openeye }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: [3.8]
+        openeye: [false, true]
+
+    env:
+      OE_LICENSE: ${{ github.workspace }}/oe_license.txt
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Setup Conda Environment
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+        environment-file: devtools/conda-envs/meta.yaml
+
+        channels: conda-forge,defaults
+
+        activate-environment: test
+        auto-update-conda: true
+        auto-activate-base: false
+        show-channel-urls: true
+
+    - name: Install OpenEye
+      if: matrix.openeye
+      shell: bash -l {0}
+      run: |
+        conda install --yes -c openeye openeye-toolkits
+        echo "${SECRET_OE_LICENSE}" > ${OE_LICENSE}
+        python -c "from openeye import oechem; assert oechem.OEChemIsLicensed()"
+      env:
+        SECRET_OE_LICENSE: ${{ secrets.OE_LICENSE }}
+
+    - name: Install Package
+      shell: bash -l {0}
+      run: |
+        python setup.py develop --no-deps
+
+    - name: Conda Environment Information
+      shell: bash -l {0}
+      run: |
+        conda info
+        conda list
+
+    - name: Run Tests
+      shell: bash -l {0}
+      run: |
+        pytest -v --cov=fragmenter --cov-report=xml --color=yes fragmenter/tests/
+
+    - name: CodeCov
+      uses: codecov/codecov-action@v1
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-${{ matrix.os }}-py${{ matrix.python-version }}

@@ -1,32 +1,42 @@
-Installing fragmenter
-=====================
+Installation
+============
 
 Installing using conda
 ----------------------
-To install ``fragmenter`` with conda run the following
+
+The recommended way to install ``fragmenter`` is via the ``conda`` package manger:
 
 .. code-block:: bash
 
     conda install -c omnia fragmenter
 
-Installing from source
-----------------------
-To install ``fragmenter`` from source, clone or download the `GitHub repo <https://github.com/openforcefield/fragmenter>`_.
-From inside the ``fragmenter`` directory, run the following:
+If you have access to the OpenEye toolkits (namely ``oechem``, ``oequacpac`` and ``oeomega``) we recommend installing
+these also as these can speed up fragmentation times significantly:
 
 .. code-block:: bash
 
-    python setup.py install
+    conda install -c openeye openeye-toolkits
 
-This command will not install dependencies. All dependencies are in the ``meta.yaml`` `file <https://github.com/openforcefield/fragmenter/blob/master/devtools/conda-envs/meta.yaml>`_
+Installing from source
+----------------------
 
-Prerequisites
--------------
-``fragmenter`` is tested with python 3.6.
+To install ``fragmenter`` from source begin by cloning the repository from `github
+<https://github.com/openforcefield/fragmenter>`_:
 
-This toolkit uses `OpenEye <https://www.eyesopen.com/>`_ as a dependency so licenses for `oechem`, `oequacpac` and `oeomega` are required.
+.. code-block:: bash
 
-Warning
--------
-``fragmenter`` is still pre-alpha. It is not fully tested and the API is still in flux.
+    git clone https://github.com/openforcefield/fragmenter.git
+    cd fragmenter
 
+Create a custom conda environment which contains the required dependencies and activate it:
+
+.. code-block:: bash
+
+    conda env create --name fragmenter --file devtools/conda-envs/meta.yaml
+    conda activate fragmenter
+
+Finally, install ``fragmenter`` itself:
+
+.. code-block:: bash
+
+    python setup.py develop

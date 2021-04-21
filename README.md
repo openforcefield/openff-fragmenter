@@ -1,11 +1,11 @@
-fragmenter
-==============================
-[![Travis Build Status](https://travis-ci.org/openforcefield/fragmenter.svg?branch=master)](https://travis-ci.org/openforcefield/fragmenter)
-[![codecov](https://codecov.io/gh/openforcefield/fragmenter/branch/master/graph/badge.svg)](https://codecov.io/gh/openforcefield/fragmenter/branch/master)
-[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/openforcefield/fragmenter.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/openforcefield/fragmenter/context:python)
+Fragmenter
+==========
+[![Test Status](https://github.com/openforcefield/fragmenter/workflows/tests/badge.svg?branch=master)](https://github.com/openforcefield/fragmenter/actions)
 [![Documentation Status](https://readthedocs.org/projects/fragmenter/badge/?version=latest)](https://fragmenter.readthedocs.io/en/latest/?badge=latest)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/openforcefield/fragmenter.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/openforcefield/fragmenter/context:python)
+[![codecov](https://codecov.io/gh/openforcefield/fragmenter/branch/master/graph/badge.svg)](https://codecov.io/gh/openforcefield/fragmenter/branch/master)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://zenodo.org/badge/127185286.svg)](https://zenodo.org/badge/latestdoi/127185286)
-
 
 Fragment molecules for quantum mechanics torsion scans.
 
@@ -24,6 +24,7 @@ API can change without notice.
 See [documentation](https://fragmenter.readthedocs.io/en/latest/) for more information.
 
 # Dependencies
+
 Dependencies are in [`meta.yaml`](https://github.com/openforcefield/fragmenter/blob/master/devtools/conda-envs/meta.yaml)
 
 ### Copyright

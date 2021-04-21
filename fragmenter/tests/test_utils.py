@@ -1,54 +1,47 @@
-"""Test util functions"""
-import unittest
-from fragmenter.tests.utils import get_fn
-from fragmenter import chemi, states
-from openeye import oechem
+from contextlib import nullcontext
 
-class TesTorsions(unittest.TestCase):
+import pytest
+from openff.toolkit.topology import Molecule
 
-    def test_check_molecule(self):
-        """Test check moelcule"""
-        pass
-
-    def test_formal_charge(self):
-        """Test formal charge"""
-
-        mol_1 = chemi.smiles_to_oemol('c1cc(c[nH+]c1)c2ccncn2')
-        charge = chemi.get_charge(mol_1)
-        self.assertEqual(charge, 1)
-
-        mol_2 = chemi.smiles_to_oemol('C[NH+]1CC[NH+](CC1)Cc2ccccc2')
-        charge = chemi.get_charge(mol_2)
-        self.assertEqual(charge, 2)
-
-        mol_3 = chemi.smiles_to_oemol('CCC(C)(C)C(=O)[O-]')
-        charge = chemi.get_charge(mol_3)
-        self.assertEqual(charge, -1)
-
-    def test_has_conformer(self):
-        """Test has conformer"""
-        infile = get_fn('butane.pdb')
-        ifs = oechem.oemolistream(infile)
-        molecule_with_conf = oechem.OEMol()
-        oechem.OEReadMolecule(ifs, molecule_with_conf)
-
-        self.assertTrue(chemi.has_conformer(molecule_with_conf))
-
-        molecule_without_conf = chemi.smiles_to_oemol('CCCC')
-        self.assertFalse(chemi.has_conformer(molecule_without_conf))
-
-    def test_2D_conformation(self):
-        """Test checking for 2D conformation"""
-        from fragmenter import chemi, states
-        mol = chemi.smiles_to_oemol('CCCC')
-        states = states.enumerate_states(mol, return_mols=True)
-        for state in states:
-            self.assertFalse(chemi.has_conformer(state, check_two_dimension=True))
-
-        conf = chemi.generate_conformers(mol, max_confs=1)
-        self.assertTrue(chemi.has_conformer(conf, check_two_dimension=True))
+from fragmenter.utils import get_atom_index, get_fgroup_smarts, get_map_index
 
 
+def test_get_fgroup_smarts():
+    """Tests that the `get_fgroup_smarts` utility returns correctly."""
+
+    smarts = get_fgroup_smarts()
+
+    assert "hydrazine" in smarts
+    assert smarts["hydrazine"] == "[NX3:1][NX3:2]"
+
+    assert "phosphon" not in smarts
+
+    assert len(smarts) == 21
 
 
+def test_get_map_index():
 
+    molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
+    assert get_map_index(molecule, 0) == 5
+
+
+@pytest.mark.parametrize(
+    "raise_error, expected_raises",
+    [
+        (False, nullcontext()),
+        (True, pytest.raises(KeyError, match="is not in the atom map")),
+    ],
+)
+def test_get_map_index_error(raise_error, expected_raises):
+
+    molecule = Molecule.from_smiles("C")
+
+    with expected_raises:
+        map_index = get_map_index(molecule, 0, error_on_missing=raise_error) == 5
+        assert map_index == 0
+
+
+def test_get_atom_index():
+
+    molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
+    assert get_atom_index(molecule, 5) == 0
