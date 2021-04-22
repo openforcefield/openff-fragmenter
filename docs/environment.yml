@@ -22,3 +22,6 @@ dependencies:
   - pyyaml
   - networkx
   - jinja2
+
+  - pip:
+      - autodoc_pydantic

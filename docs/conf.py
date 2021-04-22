@@ -42,6 +42,7 @@ extensions = [
     'nbsphinx',
     'nbsphinx_link',
     'sphinxcontrib.bibtex',
+    'sphinxcontrib.autodoc_pydantic',
 ]
 
 source_suffix = '.rst'
@@ -65,6 +66,16 @@ autodoc_default_options = {
 autodoc_mock_imports = [
     'openff',
 ]
+
+# Napoleon settings
+napoleon_numpy_docstring = True
+napoleon_use_rtype = False
+
+# autodoc_pydantic settings
+autodoc_pydantic_show_config = False
+autodoc_pydantic_model_show_config = False
+autodoc_pydantic_show_validators = False
+autodoc_pydantic_model_show_validators = False
 
 # nbsphinx settings
 nbsphinx_execute = 'never'

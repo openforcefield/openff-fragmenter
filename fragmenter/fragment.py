@@ -78,6 +78,13 @@ class FragmentationResult(BaseModel):
         return Molecule.from_smiles(self.parent_smiles)
 
     @property
+    def fragment_molecules(self) -> Dict[BondTuple, Molecule]:
+        """A dictionary of the fragment molecules represented as OpenFF molecule
+        objects indexed by the map indices of the bond that each fragment was built
+        around."""
+        return {fragment.bond_indices: fragment.molecule for fragment in self.fragments}
+
+    @property
     def fragments_by_bond(self) -> Dict[BondTuple, Fragment]:
         """Returns a dictionary of fragments indexed by the bond (defined in terms of
         the map indices of the atoms that form it) that the fragment was built around.
@@ -86,12 +93,7 @@ class FragmentationResult(BaseModel):
 
 
 class Fragmenter(BaseModel, abc.ABC):
-    """Base fragmenter class."""
-
-    class Config:
-        validate_assignment = True
-
-    scheme: Literal["scheme"] = "scheme"
+    """The base class that all fragmentation engines should inherit from."""
 
     functional_groups: Dict[str, str] = Field(
         default_factory=get_fgroup_smarts,
