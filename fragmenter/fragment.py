@@ -51,7 +51,7 @@ class Fragment(BaseModel):
 
     @property
     def molecule(self) -> Molecule:
-        """The fragmented represented as an OpenFF molecule object."""
+        """The fragment represented as an OpenFF molecule object."""
         return Molecule.from_smiles(self.smiles)
 
 
@@ -80,7 +80,7 @@ class FragmentationResult(BaseModel):
     @property
     def fragment_molecules(self) -> Dict[BondTuple, Molecule]:
         """A dictionary of the fragment molecules represented as OpenFF molecule
-        objects indexed by the map indices of the bond that each fragment was built
+        objects, indexed by the map indices of the bond that each fragment was built
         around."""
         return {fragment.bond_indices: fragment.molecule for fragment in self.fragments}
 
@@ -98,7 +98,7 @@ class Fragmenter(BaseModel, abc.ABC):
     functional_groups: Dict[str, str] = Field(
         default_factory=get_fgroup_smarts,
         description="A dictionary of SMARTS of functional groups that should not be "
-        "fragmented indexed by an informative name, e.g. 'alcohol': '[#6]-[#8X2H1]'.",
+        "fragmented, indexed by an informative name, e.g. 'alcohol': '[#6]-[#8X2H1]'.",
     )
 
     @classmethod
@@ -807,7 +807,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
     @abc.abstractmethod
     def fragment(self, molecule: Molecule) -> FragmentationResult:
-        """Fragments a molecule according to this classes settings.
+        """Fragments a molecule according to this class' settings.
 
         Parameters
         ----------
