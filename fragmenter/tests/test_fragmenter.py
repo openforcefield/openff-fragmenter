@@ -15,7 +15,7 @@ from fragmenter.tests.utils import (
     smarts_set_to_map_indices,
     value_smarts_to_map_indices,
 )
-from fragmenter.utils import get_atom_index, get_fgroup_smarts, get_map_index
+from fragmenter.utils import default_functional_groups, get_atom_index, get_map_index
 
 
 @pytest.mark.parametrize(
@@ -241,7 +241,7 @@ def test_keep_non_rotor(keep_non_rotor_ring_substituents, n_output):
 def test_get_ring_and_fgroup(input_smiles, bond_smarts, expected):
 
     molecule, _, functional_groups, ring_systems = Fragmenter._prepare_molecule(
-        smiles_to_molecule(input_smiles, True), get_fgroup_smarts(), False
+        smiles_to_molecule(input_smiles, True), default_functional_groups(), False
     )
 
     # noinspection PyTypeChecker
@@ -290,7 +290,7 @@ def test_get_ring_and_fgroup_ortho(input_smiles, bond_smarts, expected_pattern):
     """
 
     molecule, _, functional_groups, ring_systems = Fragmenter._prepare_molecule(
-        smiles_to_molecule(input_smiles, True), get_fgroup_smarts(), False
+        smiles_to_molecule(input_smiles, True), default_functional_groups(), False
     )
 
     bond = tuple(
@@ -339,7 +339,7 @@ def test_find_ortho_substituents(dasatanib):
 def test_cap_open_valance():
 
     molecule, _, functional_groups, ring_systems = Fragmenter._prepare_molecule(
-        smiles_to_molecule("CNCCc1ccccc1", True), get_fgroup_smarts(), False
+        smiles_to_molecule("CNCCc1ccccc1", True), default_functional_groups(), False
     )
 
     expected_atom = get_map_index(
@@ -490,7 +490,9 @@ def test_build_fragment():
 def test_ring_fgroups(input_smiles, n_output):
 
     parent = smiles_to_molecule(input_smiles, True)
-    parent_groups = Fragmenter._find_functional_groups(parent, get_fgroup_smarts())
+    parent_groups = Fragmenter._find_functional_groups(
+        parent, default_functional_groups()
+    )
 
     parent_rings = Fragmenter._find_ring_systems(parent, parent_groups)
 
