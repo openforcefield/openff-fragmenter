@@ -18,6 +18,10 @@ dependencies:
 
     # Standard dependencies
   - numpy
+  - pydantic
   - pyyaml
   - networkx
   - jinja2
+
+  - pip:
+      - autodoc_pydantic

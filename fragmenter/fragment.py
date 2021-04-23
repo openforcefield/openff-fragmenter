@@ -5,8 +5,10 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import networkx
 from openff.toolkit.topology import Atom, Molecule
+from pydantic import BaseModel, Field
 from typing_extensions import Literal
 
+import fragmenter
 from fragmenter.chemi import (
     assign_elf10_am1_bond_orders,
     extract_fragment,
@@ -29,37 +31,75 @@ FunctionalGroups = Dict[str, AtomAndBondSet]
 Heuristic = Literal["path_length", "wbo"]
 
 
-class Fragmenter(abc.ABC):
-    """Base fragmenter class."""
+class Fragment(BaseModel):
+    """An object which stores minimal information about a molecules fragment."""
 
-    def __init__(
-        self,
-        molecule: Molecule,
-        functional_groups: Optional[Union[bool, Dict[str, str]]],
-    ):
+    smiles: str = Field(
+        ...,
+        description="A mapped SMILES pattern describing the fragment. The map indices "
+        "assigned to each atom in the pattern will correspond to the map index of the "
+        "corresponding parent atom. If an atom does not have a map index it is likely "
+        "that the atom was added (either H, or C) to ensure every atom in the fragment "
+        "has a sensible valence.",
+    )
+
+    bond_indices: Tuple[int, int] = Field(
+        ...,
+        description="The map indices of the atoms involved in the bond that the "
+        "fragment was built around.",
+    )
+
+    @property
+    def molecule(self) -> Molecule:
+        """The fragment represented as an OpenFF molecule object."""
+        return Molecule.from_smiles(self.smiles)
+
+
+class FragmentationResult(BaseModel):
+    """An object which stores the results of fragmenting a molecule."""
+
+    parent_smiles: str = Field(
+        ...,
+        description="A mapped SMILES pattern describing the parent molecule that was "
+        "fragmented.",
+    )
+
+    fragments: List[Fragment] = Field(..., description="The generated fragments.")
+
+    provenance: Dict[str, Any] = Field(
+        ...,
+        description="A dictionary storing provenance information about how the "
+        "fragments were generated.",
+    )
+
+    @property
+    def parent_molecule(self) -> Molecule:
+        """The parent molecule represented as an OpenFF molecule object."""
+        return Molecule.from_smiles(self.parent_smiles)
+
+    @property
+    def fragment_molecules(self) -> Dict[BondTuple, Molecule]:
+        """A dictionary of the fragment molecules represented as OpenFF molecule
+        objects, indexed by the map indices of the bond that each fragment was built
+        around."""
+        return {fragment.bond_indices: fragment.molecule for fragment in self.fragments}
+
+    @property
+    def fragments_by_bond(self) -> Dict[BondTuple, Fragment]:
+        """Returns a dictionary of fragments indexed by the bond (defined in terms of
+        the map indices of the atoms that form it) that the fragment was built around.
         """
+        return {fragment.bond_indices: fragment for fragment in self.fragments}
 
-        Parameters
-        ----------
-        molecule
-            The molecule to fragment.
-        functional_groups
-            A dictionary of SMARTS of functional groups that should not be fragmented.
-            If it is None, ``fragmenter/fragmenter/data/fgroup_smarts.yaml`` will be
-            used. If False, no functional groups will be tagged and they will all be
-            fragmented.
-        """
 
-        self.molecule = molecule
+class Fragmenter(BaseModel, abc.ABC):
+    """The base class that all fragmentation engines should inherit from."""
 
-        if functional_groups is False:
-            functional_groups = {}
-        if functional_groups is None:
-            functional_groups = get_fgroup_smarts()
-
-        self.functional_groups = functional_groups
-
-        self.fragments = {}
+    functional_groups: Dict[str, str] = Field(
+        default_factory=get_fgroup_smarts,
+        description="A dictionary of SMARTS of functional groups that should not be "
+        "fragmented, indexed by an informative name, e.g. 'alcohol': '[#6]-[#8X2H1]'.",
+    )
 
     @classmethod
     def _find_stereo(cls, molecule: Molecule) -> Stereochemistries:
@@ -766,122 +806,128 @@ class Fragmenter(abc.ABC):
         return molecule, stereo, found_functional_groups, found_ring_systems
 
     @abc.abstractmethod
-    def fragment(self, **kwargs):
-        """Fragment molecules."""
+    def fragment(self, molecule: Molecule) -> FragmentationResult:
+        """Fragments a molecule according to this class' settings.
+
+        Parameters
+        ----------
+        molecule
+            The molecule to fragment.
+
+        Returns
+        -------
+            The results of the fragmentation including the fragments and provenance
+            about the fragmentation.
+        """
+
         raise NotImplementedError()
 
-    def get_provenance(self) -> Dict[str, Any]:
-        """
-        Get version of fragmenter and options used
-
-        """
-        # import getpass
-        # import socket
-        # import uuid
-        #
-        # import fragmenter
-        #
-        # fragmenter_version = fragmenter.__version__
+    def _default_provenance(self) -> Dict[str, Any]:
+        """Returns a dictionary containing default provenance information."""
 
         provenance = {
-            # "creator": fragmenter.__package__,
-            # "job_id": str(uuid.uuid4()),
-            # "hostname": socket.gethostname(),
-            # "username": getpass.getuser(),
-            # "routine": {
-            #     "fragment_molecule": {
-            #         "version": fragmenter_version,
-            #         "options": self._options,
-            #         "parent_molecule": self.molecule.to_smiles(
-            #             mapped=False, explicit_hydrogens=False
-            #         ),
-            #         "parent_name": self.molecule.name,
-            #         "mapped_parent_smiles": self.molecule.to_smiles(mapped=True),
-            #     }
-            # },
+            "creator": fragmenter.__package__,
+            "version": fragmenter.__version__,
+            "options": self.dict(),
         }
         return provenance
+
+
+class WBOOptions(BaseModel):
+    """A set of options for controlling how Wiberg Bond Orders are computed."""
+
+    method: Literal["am1-wiberg-elf10"] = Field(
+        "am1-wiberg-elf10", description="The method to use when computing the WBOs."
+    )
+
+    max_conformers: int = Field(
+        800, description="The maximum number of conformers to average the WBOs over."
+    )
+    rms_threshold: float = Field(
+        1.0,
+        description="The minimum RMS value [Angstrom] at which two conformers are "
+        "considered redundant and one is deleted.",
+    )
 
 
 class WBOFragmenter(Fragmenter):
     """Fragment engine for fragmenting molecules using Wiberg Bond Order."""
 
-    def __init__(
-        self,
-        molecule: Molecule,
-        functional_groups: Optional[Union[bool, Dict[str, str]]] = None,
-    ):
-        super(WBOFragmenter, self).__init__(molecule, functional_groups)
+    scheme: Literal["WBO"] = "WBO"
 
-    def fragment(
-        self,
-        keep_non_rotor_ring_substituents: bool = False,
-        threshold: float = 0.03,
-        heuristic: Heuristic = "path_length",
-        cap: bool = True,
-        **kwargs,
-    ):
-        """Fragment molecules using the Wiberg Bond Order as a surrogate
+    wbo_options: WBOOptions = Field(
+        WBOOptions(), description="The options to use when computing the WBOs."
+    )
 
-        Parameters
-        ----------
-        keep_non_rotor_ring_substituents: bool
-            If True, will always keep all non rotor substituents on ring. If False, will
-            only add them if they are ortho to rotatable bond or if it's needed for WBO
-            to be within the threshold
-        threshold
-            The threshold for the central bond WBO. If the fragment WBO is below this
-            threshold, fragmenter will grow out the fragment one bond at a time via the
-            path specified by the heuristic option
-        heuristic
-            The path fragmenter should take when fragment needs to be grown out. The
-            options are ``['wbo', 'path_length']``.
-        cap
-            Whether to cap open valences.
+    threshold: float = Field(
+        0.03,
+        description="The threshold for the central bond WBO. If the fragment WBO is "
+        "below this threshold, fragmenter will grow out the fragment one bond at a "
+        "time via the path specified by the heuristic option",
+    )
+    heuristic: Heuristic = Field(
+        "path_length",
+        description="The path fragmenter should take when fragment needs to be grown "
+        "out. The options are ``['wbo', 'path_length']``.",
+    )
+
+    keep_non_rotor_ring_substituents: bool = Field(
+        False,
+        description="Whether to always keep all non rotor substituents on rings. If "
+        "``False``, rotor substituents on rings will only be retained if they are "
+        "ortho to the central bond or if it's needed for WBO to be within the "
+        "threshold.",
+    )
+
+    def fragment(self, molecule: Molecule) -> FragmentationResult:
+        """Fragments a molecule in such a way that the WBO of the bond that a fragment
+        is being built around does not change beyond the specified threshold.
         """
 
-        # Capture options used
-        # self._options[
-        #     "keep_non_rotor_ring_substituents"
-        # ] = keep_non_rotor_ring_substituents
-        # if "threshold" not in self._options:
-        #     self._options["threshold"] = threshold
-        # self._options.update(kwargs)
-        # Capture options
-        # if "heuristic" not in self._options:
-        #     self._options["heuristic"] = heuristic
-
         (
-            self.molecule,
+            molecule,
             stereochemistry,
             functional_groups,
             ring_systems,
         ) = self._prepare_molecule(
-            self.molecule, self.functional_groups, keep_non_rotor_ring_substituents
+            molecule, self.functional_groups, self.keep_non_rotor_ring_substituents
         )
 
         # Calculate WBO for molecule
-        self.molecule = assign_elf10_am1_bond_orders(self.molecule, **kwargs)
+        if self.wbo_options.method != "am1-wiberg-elf10":
 
-        wbo_rotor_bonds = self._get_rotor_wbo(self.molecule)
+            raise NotImplementedError(
+                "WBOs can currently only be computed using 'am1-wiberg-elf10'."
+            )
+
+        molecule = assign_elf10_am1_bond_orders(
+            molecule, self.wbo_options.max_conformers, self.wbo_options.rms_threshold
+        )
+
+        wbo_rotor_bonds = self._get_rotor_wbo(molecule)
 
         fragments = {
             bond: self._build_fragment(
-                self.molecule,
+                molecule,
                 stereochemistry,
                 functional_groups,
                 ring_systems,
                 bond,
                 wbo_rotor_bonds[bond],
-                threshold=threshold,
-                heuristic=heuristic,
-                cap=cap,
-                **kwargs,
+                threshold=self.threshold,
+                heuristic=self.heuristic,
             )
             for bond in wbo_rotor_bonds
         }
 
-        self.fragments = fragments
+        return FragmentationResult(
+            parent_smiles=molecule.to_smiles(mapped=True),
+            fragments=[
+                Fragment(smiles=fragment.to_smiles(mapped=True), bond_indices=bond)
+                for bond, fragment in fragments.items()
+            ],
+            provenance=self._default_provenance(),
+        )
 
     @classmethod
     def _get_rotor_wbo(
@@ -1286,20 +1332,17 @@ class PfizerFragmenter(Fragmenter):
     (doi: 10.1021/acs.jcim.9b00373)
     """
 
-    def __init__(self, molecule: Molecule):
-        super().__init__(molecule, get_fgroup_smarts())
+    scheme: Literal["Pfizer"] = "Pfizer"
 
-    def fragment(self):
-        """
-        Fragment molecules according to Pfizer protocol
-        """
+    def fragment(self, molecule: Molecule) -> FragmentationResult:
+        """Fragments a molecule according to Pfizer protocol."""
 
         (
             parent,
             parent_stereo,
             parent_groups,
             parent_rings,
-        ) = self._prepare_molecule(self.molecule, self.functional_groups, False)
+        ) = self._prepare_molecule(molecule, self.functional_groups, False)
 
         rotatable_bonds = self._find_rotatable_bonds(parent)
 
@@ -1308,13 +1351,22 @@ class PfizerFragmenter(Fragmenter):
         for bond in rotatable_bonds:
 
             atoms, bonds = self._get_torsion_quartet(parent, bond)
+
             atoms, bonds = self._get_ring_and_fgroups(
                 parent, parent_groups, parent_rings, atoms, bonds
             )
+
             atoms, bonds = self._cap_open_valence(parent, parent_groups, atoms, bonds)
 
             fragments[bond] = self._atom_bond_set_to_mol(
                 parent, parent_stereo, atoms, bonds
             )
 
-        self.fragments = fragments
+        return FragmentationResult(
+            parent_smiles=molecule.to_smiles(mapped=True),
+            fragments=[
+                Fragment(smiles=fragment.to_smiles(mapped=True), bond_indices=bond)
+                for bond, fragment in fragments.items()
+            ],
+            provenance=self._default_provenance(),
+        )

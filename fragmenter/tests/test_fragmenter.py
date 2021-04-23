@@ -391,20 +391,18 @@ def test_prepare_molecule():
 def test_wbo_fragment():
     """ Test build fragment"""
 
-    fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCC"))
-    fragmenter.fragment()
+    result = WBOFragmenter().fragment(Molecule.from_smiles("CCCCC"))
 
-    assert len(fragmenter.fragments) == 2
-    assert {*fragmenter.fragments} == {(3, 5), (4, 5)}
+    assert len(result.fragments) == 2
+    assert {fragment.bond_indices for fragment in result.fragments} == {(3, 5), (4, 5)}
 
 
 def test_keep_track_of_map():
 
-    fragments = WBOFragmenter(Molecule.from_smiles("CCCCC"))
-    fragments.fragment()
+    result = WBOFragmenter().fragment(Molecule.from_smiles("CCCCC"))
 
     assert all(
-        "atom_map" in fragment.properties for fragment in fragments.fragments.values()
+        "atom_map" in fragment.molecule.properties for fragment in result.fragments
     )
 
 
@@ -501,15 +499,11 @@ def test_ring_fgroups(input_smiles, n_output):
 
 def test_add_substituent():
 
-    fragmenter = WBOFragmenter(Molecule.from_smiles("CCCCCC"))
-    fragmenter.fragment()
+    result = WBOFragmenter().fragment(Molecule.from_smiles("CCCCCC"))
 
-    assert (
-        fragmenter.fragments[(3, 5)].to_smiles(mapped=False, explicit_hydrogens=False)
-        == "CCCCC"
-    )
+    fragment = result.fragments_by_bond[(3, 5)].molecule
 
-    fragment = fragmenter.fragments[(3, 5)]
+    assert fragment.to_smiles(mapped=False, explicit_hydrogens=False) == "CCCCC"
 
     atoms = set(
         get_map_index(fragment, i)
@@ -526,8 +520,8 @@ def test_add_substituent():
         if bond.atom1.atomic_number != 1 and bond.atom2.atomic_number != 1
     )
 
-    fragment = fragmenter._add_next_substituent(
-        fragmenter.molecule, {}, {}, {}, atoms, bonds, target_bond=(3, 5)
+    fragment = WBOFragmenter._add_next_substituent(
+        result.parent_molecule, {}, {}, {}, atoms, bonds, target_bond=(3, 5)
     )
 
     assert fragment.to_smiles(mapped=False, explicit_hydrogens=False) == "CCCCCC"
@@ -536,7 +530,5 @@ def test_add_substituent():
 @pytest.mark.parametrize("input_smiles, n_output", [("CCCCCCC", 4)])
 def test_pfizer_fragmenter(input_smiles, n_output):
 
-    fragmenter = PfizerFragmenter(Molecule.from_smiles(input_smiles))
-    fragmenter.fragment()
-
-    assert len(fragmenter.fragments) == n_output
+    result = PfizerFragmenter().fragment(Molecule.from_smiles(input_smiles))
+    assert len(result.fragments) == n_output

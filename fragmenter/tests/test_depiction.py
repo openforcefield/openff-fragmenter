@@ -8,8 +8,10 @@ from fragmenter.depiction import (
     _oe_render_parent,
     _rd_render_fragment,
     _rd_render_parent,
+    depict_fragmentation_result,
     depict_fragments,
 )
+from fragmenter.fragment import Fragment, FragmentationResult
 
 
 @pytest.mark.parametrize("draw_function", [_oe_render_parent, _rd_render_parent])
@@ -49,6 +51,26 @@ def test_depict_fragments(tmpdir):
     depict_fragments(
         Molecule.from_smiles("[C:1][C:2][C:3][C:4]"),
         {(1, 2): Molecule.from_smiles("[C:1][C:2]")},
+        output_file,
+    )
+
+    with open(output_file) as file:
+        contents = file.read()
+
+    assert "<html>" in contents
+    assert "<img src=" in contents
+
+
+def test_depict_fragmentation_result(tmpdir):
+
+    output_file = os.path.join(tmpdir, "report.html")
+
+    depict_fragmentation_result(
+        FragmentationResult(
+            parent_smiles="[C:1][C:2][C:3][C:4]",
+            fragments=[Fragment(smiles="[C:1][C:2]", bond_indices=(1, 2))],
+            provenance={},
+        ),
         output_file,
     )
 

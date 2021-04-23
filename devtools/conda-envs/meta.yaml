@@ -21,6 +21,7 @@ dependencies:
     # ---- openff-toolkit deps ----
 
   - numpy
+  - pydantic
   - pyyaml
   - networkx
   - jinja2
