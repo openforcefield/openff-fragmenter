@@ -1,14 +1,20 @@
+import json
 import os
 from typing import Dict
 
-import yaml
 from openff.toolkit.topology import Molecule
 from pkg_resources import resource_filename
 
 
-def get_fgroup_smarts() -> Dict[str, str]:
-    """Returns a dictionary containing the SMARTS representations of different
-    functional groups loaded from the internal ``fgroup_smarts.yml`` file.
+def default_functional_groups() -> Dict[str, str]:
+    """Returns a dictionary containing the SMARTS representations of the default set
+    functional groups which should be preserved during fragmentation (e.g. an amide
+    should not be cleaved leaving either a carbonyl or amine group).
+
+    Notes
+    -----
+    * The groups are loaded from the internal ``data/default-functional-groups.json``
+      file.
 
     Returns
     -------
@@ -17,11 +23,11 @@ def get_fgroup_smarts() -> Dict[str, str]:
     """
 
     file_name = resource_filename(
-        "fragmenter", os.path.join("data", "fgroup_smarts.yml")
+        "fragmenter", os.path.join("data", "default-functional-groups.json")
     )
 
     with open(file_name, "r") as file:
-        functional_groups = yaml.safe_load(file)
+        functional_groups = json.load(file)
 
     return functional_groups
 

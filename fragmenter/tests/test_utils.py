@@ -3,13 +3,13 @@ from contextlib import nullcontext
 import pytest
 from openff.toolkit.topology import Molecule
 
-from fragmenter.utils import get_atom_index, get_fgroup_smarts, get_map_index
+from fragmenter.utils import default_functional_groups, get_atom_index, get_map_index
 
 
-def test_get_fgroup_smarts():
-    """Tests that the `get_fgroup_smarts` utility returns correctly."""
+def test_default_functional_groups():
+    """Tests that the `default_functional_groups` utility returns correctly."""
 
-    smarts = get_fgroup_smarts()
+    smarts = default_functional_groups()
 
     assert "hydrazine" in smarts
     assert smarts["hydrazine"] == "[NX3:1][NX3:2]"

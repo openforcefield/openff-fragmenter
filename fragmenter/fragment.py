@@ -16,7 +16,7 @@ from fragmenter.chemi import (
     find_stereocenters,
 )
 from fragmenter.states import _enumerate_stereoisomers
-from fragmenter.utils import get_atom_index, get_fgroup_smarts, get_map_index
+from fragmenter.utils import default_functional_groups, get_atom_index, get_map_index
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class Fragmenter(BaseModel, abc.ABC):
     """The base class that all fragmentation engines should inherit from."""
 
     functional_groups: Dict[str, str] = Field(
-        default_factory=get_fgroup_smarts,
+        default_factory=default_functional_groups,
         description="A dictionary of SMARTS of functional groups that should not be "
         "fragmented, indexed by an informative name, e.g. 'alcohol': '[#6]-[#8X2H1]'.",
     )
