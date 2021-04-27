@@ -423,7 +423,7 @@ def test_fragmenter_provenance(toolkit_registry, expected_provenance):
     result = DummyFragmenter().fragment(Molecule.from_smiles("[He]"), toolkit_registry)
 
     assert "toolkits" in result.provenance
-    assert [*result.provenance["toolkits"]] == expected_provenance
+    assert [name for name, _ in result.provenance["toolkits"]] == expected_provenance
 
 
 def test_wbo_fragment():

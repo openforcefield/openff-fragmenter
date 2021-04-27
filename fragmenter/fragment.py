@@ -867,10 +867,10 @@ class Fragmenter(BaseModel, abc.ABC):
 
             result = self._fragment(molecule)
 
-            result.provenance["toolkits"] = {
-                toolkit.__class__.__name__: toolkit.toolkit_version
+            result.provenance["toolkits"] = [
+                (toolkit.__class__.__name__, toolkit.toolkit_version)
                 for toolkit in GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
-            }
+            ]
 
         return result
 
