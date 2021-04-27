@@ -21,7 +21,8 @@ from fragmenter.chemi import (
     find_stereocenters,
     smiles_to_molecule,
 )
-from fragmenter.tests.utils import global_toolkit_wrapper, using_openeye
+from fragmenter.tests.utils import using_openeye
+from fragmenter.utils import global_toolkit_registry
 
 
 def test_assign_elf10_am1_bond_orders():
@@ -35,12 +36,12 @@ def test_assign_elf10_am1_bond_orders():
 @using_openeye
 def test_assign_elf10_am1_bond_orders_simple_parity():
 
-    with global_toolkit_wrapper(OpenEyeToolkitWrapper()):
+    with global_toolkit_registry(OpenEyeToolkitWrapper()):
 
         molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("C"))
         oe_bond_orders = [bond.fractional_bond_order for bond in molecule.bonds]
 
-    with global_toolkit_wrapper(
+    with global_toolkit_registry(
         ToolkitRegistry([AmberToolsToolkitWrapper(), OpenEyeToolkitWrapper()])
     ):
         molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("C"))

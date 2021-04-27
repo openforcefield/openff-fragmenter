@@ -1,8 +1,14 @@
 import json
 import os
-from typing import Dict
+from contextlib import contextmanager
+from typing import Dict, Union
 
 from openff.toolkit.topology import Molecule
+from openff.toolkit.utils import (
+    GLOBAL_TOOLKIT_REGISTRY,
+    ToolkitRegistry,
+    ToolkitWrapper,
+)
 from pkg_resources import resource_filename
 
 
@@ -86,3 +92,32 @@ def get_atom_index(molecule: Molecule, map_index: int) -> int:
     ), f"{map_index} does not correspond to an atom in the molecule."
 
     return atom_index
+
+
+@contextmanager
+def global_toolkit_registry(toolkit_registry: Union[ToolkitRegistry, ToolkitWrapper]):
+
+    if isinstance(toolkit_registry, ToolkitRegistry):
+        toolkits = toolkit_registry.registered_toolkits
+    elif isinstance(toolkit_registry, ToolkitWrapper):
+        toolkits = [toolkit_registry]
+    else:
+        raise NotImplementedError(
+            "Only ``ToolkitRegistry`` and ``ToolkitWrapper`` are supported."
+        )
+
+    original_toolkits = GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
+
+    for toolkit in original_toolkits:
+        GLOBAL_TOOLKIT_REGISTRY.deregister_toolkit(toolkit)
+
+    for toolkit in toolkits:
+        GLOBAL_TOOLKIT_REGISTRY.register_toolkit(toolkit)
+
+    yield
+
+    for toolkit in toolkits:
+        GLOBAL_TOOLKIT_REGISTRY.deregister_toolkit(toolkit)
+
+    for toolkit in original_toolkits:
+        GLOBAL_TOOLKIT_REGISTRY.register_toolkit(toolkit)
