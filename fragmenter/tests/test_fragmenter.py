@@ -427,7 +427,7 @@ def test_fragmenter_provenance(toolkit_registry, expected_provenance):
 
 
 def test_wbo_fragment():
-    """ Test build fragment"""
+    """Test build fragment"""
 
     result = WBOFragmenter().fragment(Molecule.from_smiles("CCCCC"))
 
