@@ -5,6 +5,11 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import networkx
 from openff.toolkit.topology import Atom, Molecule
+from openff.toolkit.utils import (
+    GLOBAL_TOOLKIT_REGISTRY,
+    ToolkitRegistry,
+    ToolkitWrapper,
+)
 from pydantic import BaseModel, Field
 from typing_extensions import Literal
 
@@ -16,7 +21,12 @@ from fragmenter.chemi import (
     find_stereocenters,
 )
 from fragmenter.states import _enumerate_stereoisomers
-from fragmenter.utils import default_functional_groups, get_atom_index, get_map_index
+from fragmenter.utils import (
+    default_functional_groups,
+    get_atom_index,
+    get_map_index,
+    global_toolkit_registry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -806,8 +816,8 @@ class Fragmenter(BaseModel, abc.ABC):
         return molecule, stereo, found_functional_groups, found_ring_systems
 
     @abc.abstractmethod
-    def fragment(self, molecule: Molecule) -> FragmentationResult:
-        """Fragments a molecule according to this class' settings.
+    def _fragment(self, molecule: Molecule) -> FragmentationResult:
+        """The internal implementation of ``fragment``.
 
         Parameters
         ----------
@@ -821,6 +831,48 @@ class Fragmenter(BaseModel, abc.ABC):
         """
 
         raise NotImplementedError()
+
+    def fragment(
+        self,
+        molecule: Molecule,
+        toolkit_registry: Optional[Union[ToolkitRegistry, ToolkitWrapper]] = None,
+    ) -> FragmentationResult:
+        """Fragments a molecule according to this class' settings.
+
+        Notes
+        -----
+        * This method is currently *not* guaranteed to be thread safe as it uses and
+          modifies the OpenFF toolkits' ``GLOBAL_TOOLKIT_REGISTRY``.
+
+        Parameters
+        ----------
+        molecule
+            The molecule to fragment.
+        toolkit_registry
+            The underlying cheminformatics toolkits to use for things like conformer
+            generation, WBO computation etc. If no value is provided, the current
+            ``GLOBAL_TOOLKIT_REGISTRY`` will be used. See the OpenFF toolkit
+            documentation for more information.
+
+        Returns
+        -------
+            The results of the fragmentation including the fragments and provenance
+            about the fragmentation.
+        """
+
+        if toolkit_registry is None:
+            toolkit_registry = GLOBAL_TOOLKIT_REGISTRY
+
+        with global_toolkit_registry(toolkit_registry):
+
+            result = self._fragment(molecule)
+
+            result.provenance["toolkits"] = [
+                (toolkit.__class__.__name__, toolkit.toolkit_version)
+                for toolkit in GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
+            ]
+
+        return result
 
     def _default_provenance(self) -> Dict[str, Any]:
         """Returns a dictionary containing default provenance information."""
@@ -879,7 +931,7 @@ class WBOFragmenter(Fragmenter):
         "threshold.",
     )
 
-    def fragment(self, molecule: Molecule) -> FragmentationResult:
+    def _fragment(self, molecule: Molecule) -> FragmentationResult:
         """Fragments a molecule in such a way that the WBO of the bond that a fragment
         is being built around does not change beyond the specified threshold.
         """
@@ -1334,7 +1386,7 @@ class PfizerFragmenter(Fragmenter):
 
     scheme: Literal["Pfizer"] = "Pfizer"
 
-    def fragment(self, molecule: Molecule) -> FragmentationResult:
+    def _fragment(self, molecule: Molecule) -> FragmentationResult:
         """Fragments a molecule according to Pfizer protocol."""
 
         (

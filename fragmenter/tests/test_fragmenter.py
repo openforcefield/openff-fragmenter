@@ -7,9 +7,19 @@ import logging
 import numpy
 import pytest
 from openff.toolkit.topology import Molecule
+from openff.toolkit.utils import (
+    GLOBAL_TOOLKIT_REGISTRY,
+    RDKitToolkitWrapper,
+    ToolkitRegistry,
+)
 
 from fragmenter.chemi import assign_elf10_am1_bond_orders, smiles_to_molecule
-from fragmenter.fragment import Fragmenter, PfizerFragmenter, WBOFragmenter
+from fragmenter.fragment import (
+    FragmentationResult,
+    Fragmenter,
+    PfizerFragmenter,
+    WBOFragmenter,
+)
 from fragmenter.tests.utils import (
     key_smarts_to_map_indices,
     smarts_set_to_map_indices,
@@ -388,8 +398,36 @@ def test_prepare_molecule():
     assert len(ring_systems[1][0]) == 5
 
 
+@pytest.mark.parametrize(
+    "toolkit_registry, expected_provenance",
+    [
+        (
+            None,
+            [
+                toolkit.__class__.__name__
+                for toolkit in GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
+            ],
+        ),
+        (RDKitToolkitWrapper(), ["RDKitToolkitWrapper"]),
+        (ToolkitRegistry([RDKitToolkitWrapper]), ["RDKitToolkitWrapper"]),
+    ],
+)
+def test_fragmenter_provenance(toolkit_registry, expected_provenance):
+    class DummyFragmenter(Fragmenter):
+        def _fragment(self, molecule: Molecule) -> FragmentationResult:
+
+            return FragmentationResult(
+                parent_smiles="[He:1]", fragments=[], provenance={}
+            )
+
+    result = DummyFragmenter().fragment(Molecule.from_smiles("[He]"), toolkit_registry)
+
+    assert "toolkits" in result.provenance
+    assert [name for name, _ in result.provenance["toolkits"]] == expected_provenance
+
+
 def test_wbo_fragment():
-    """ Test build fragment"""
+    """Test build fragment"""
 
     result = WBOFragmenter().fragment(Molecule.from_smiles("CCCCC"))
 

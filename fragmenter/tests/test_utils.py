@@ -2,8 +2,18 @@ from contextlib import nullcontext
 
 import pytest
 from openff.toolkit.topology import Molecule
+from openff.toolkit.utils import (
+    GLOBAL_TOOLKIT_REGISTRY,
+    ToolkitRegistry,
+    ToolkitWrapper,
+)
 
-from fragmenter.utils import default_functional_groups, get_atom_index, get_map_index
+from fragmenter.utils import (
+    default_functional_groups,
+    get_atom_index,
+    get_map_index,
+    global_toolkit_registry,
+)
 
 
 def test_default_functional_groups():
@@ -45,3 +55,29 @@ def test_get_atom_index():
 
     molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
     assert get_atom_index(molecule, 5) == 0
+
+
+def test_global_toolkit_registry():
+    class DummyToolkitWrapper(ToolkitWrapper):
+        def from_smiles(self, *args, **kwargs):
+            return type(self)
+
+    original_toolkits = GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
+
+    with global_toolkit_registry(DummyToolkitWrapper()):
+        return_value = Molecule.from_smiles("C")
+
+    assert return_value == DummyToolkitWrapper
+
+    # Make sure the registry is returned to it's previous state.
+    assert isinstance(Molecule.from_smiles("C"), Molecule)
+
+    assert all(
+        type(original) == type(current)
+        for original, current in zip(
+            original_toolkits, GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
+        )
+    )
+
+    with global_toolkit_registry(ToolkitRegistry([DummyToolkitWrapper])):
+        assert Molecule.from_smiles("C") == DummyToolkitWrapper
