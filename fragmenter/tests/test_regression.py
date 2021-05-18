@@ -1,17 +1,10 @@
 """
 Regression tests for the WBO and Pfizer fragmentation schemes.
 """
-from collections import Counter
-
 import pytest
 from openff.toolkit.topology import Molecule
 
-from fragmenter.fragment import (
-    FragmentationResult,
-    Fragmenter,
-    PfizerFragmenter,
-    WBOFragmenter,
-)
+from fragmenter.fragment import WBOFragmenter
 
 
 @pytest.mark.parametrize(
@@ -50,32 +43,3 @@ def test_wbo_regression(parent, fragments):
     for fragment in fragments:
         fragment_mol = Molecule.from_mapped_smiles(fragment)
         assert fragment_mol in result_fragments
-
-
-def test_pfizer_regression():
-    """Make sure we can reproduce the example fragmentation from the implimentation paper."""
-    parent = Molecule.from_smiles(
-        "[H]c1c(c(c(c(c1C([H])([H])[H])[C@@]([H])(C([H])([H])[H])N([H])C(=O)N([H])C2=NC(=C(S2)[H])c3c(c(nc(c3[H])[H])[H])[H])C([H])([H])[H])OC([H])([H])[H])[H]",
-        hydrogens_are_explicit=True,
-    )
-    engine = PfizerFragmenter()
-    result = engine.fragment(molecule=parent)
-    # build the expected fragments
-    g_i_j = Molecule.from_smiles(
-        "[H]c1c(c(c(c(c1[H])C([H])([H])[H])[C@@]([H])(C([H])([H])[H])N([H])C(=O)N([H])C([H])([H])[H])C([H])([H])[H])[H]",
-        hydrogens_are_explicit=True,
-    )
-    h_l = Molecule.from_smiles(
-        "[H]C1=C(SC(=N1)N([H])C(=O)N([H])C([H])([H])[H])[H]",
-        hydrogens_are_explicit=True,
-    )
-    m = Molecule.from_smiles(
-        "[H]c1c(nc(c(c1C2=C(SC(=N2)[H])[H])[H])[H])[H]", hydrogens_are_explicit=True
-    )
-    k = Molecule.from_smiles(
-        "[H]c1c(c(c(c(c1[H])C([H])([H])[H])OC([H])([H])[H])[H])[H]",
-        hydrogens_are_explicit=True,
-    )
-    result_fragments = [fragment.molecule for fragment in result.fragments]
-    expected_fragments = [g_i_j, g_i_j, g_i_j, h_l, h_l, m, k]
-    assert Counter(result_fragments) == Counter(expected_fragments)

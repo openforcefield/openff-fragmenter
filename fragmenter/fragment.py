@@ -587,7 +587,6 @@ class Fragmenter(BaseModel, abc.ABC):
         parent_rings: RingSystems,
         atoms: Set[int],
         bonds: Set[BondTuple],
-        rot_bond: BondTuple,
     ) -> AtomAndBondSet:
         """Adds the atom and bond indices of groups ortho to those already in
         a fragment, such that they are retained during fragmentation.
@@ -614,7 +613,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
         # Find the sets of atoms which are located ortho to one of the bonds being
         # fragmented.
-        ortho_atoms, ortho_bonds = cls._find_ortho_substituents(parent, bonds, rot_bond)
+        ortho_atoms, ortho_bonds = cls._find_ortho_substituents(parent, bonds)
 
         atoms.update(ortho_atoms)
         bonds.update(ortho_bonds)
@@ -654,7 +653,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
     @classmethod
     def _find_ortho_substituents(
-        cls, parent: Molecule, bonds: Set[BondTuple], rot_bond: BondTuple
+        cls, parent: Molecule, bonds: Set[BondTuple]
     ) -> AtomAndBondSet:
         """Find ring substituents that are ortho to one of the rotatable bonds specified
         in a list of bonds.
@@ -684,9 +683,8 @@ class Fragmenter(BaseModel, abc.ABC):
             if map_tuple[:2] not in bonds and map_tuple[:2][::-1] not in bonds:
                 continue
 
-            if map_tuple[0] in rot_bond or map_tuple[3] in rot_bond:
-                matched_atoms.update(map_tuple[::3])
-                matched_bonds.update((map_tuple[i], map_tuple[i + 1]) for i in [0, 2])
+            matched_atoms.update(map_tuple[::3])
+            matched_bonds.update((map_tuple[i], map_tuple[i + 1]) for i in [0, 2])
 
         # Ensure the matched bonds doesn't include duplicates.
         matched_bonds = {tuple(sorted(bond)) for bond in matched_bonds}
