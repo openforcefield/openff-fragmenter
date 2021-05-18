@@ -587,6 +587,7 @@ class Fragmenter(BaseModel, abc.ABC):
         parent_rings: RingSystems,
         atoms: Set[int],
         bonds: Set[BondTuple],
+        rot_bond: BondTuple,
     ) -> AtomAndBondSet:
         """Adds the atom and bond indices of groups ortho to those already in
         a fragment, such that they are retained during fragmentation.
@@ -613,7 +614,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
         # Find the sets of atoms which are located ortho to one of the bonds being
         # fragmented.
-        ortho_atoms, ortho_bonds = cls._find_ortho_substituents(parent, bonds)
+        ortho_atoms, ortho_bonds = cls._find_ortho_substituents(parent, bonds, rot_bond)
 
         atoms.update(ortho_atoms)
         bonds.update(ortho_bonds)
@@ -653,7 +654,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
     @classmethod
     def _find_ortho_substituents(
-        cls, parent: Molecule, bonds: Set[BondTuple]
+        cls, parent: Molecule, bonds: Set[BondTuple], rot_bond: BondTuple
     ) -> AtomAndBondSet:
         """Find ring substituents that are ortho to one of the rotatable bonds specified
         in a list of bonds.
@@ -683,8 +684,9 @@ class Fragmenter(BaseModel, abc.ABC):
             if map_tuple[:2] not in bonds and map_tuple[:2][::-1] not in bonds:
                 continue
 
-            matched_atoms.update(map_tuple[::3])
-            matched_bonds.update((map_tuple[i], map_tuple[i + 1]) for i in [0, 2])
+            if map_tuple[0] in rot_bond or map_tuple[3] in rot_bond:
+                matched_atoms.update(map_tuple[::3])
+                matched_bonds.update((map_tuple[i], map_tuple[i + 1]) for i in [0, 2])
 
         # Ensure the matched bonds doesn't include duplicates.
         matched_bonds = {tuple(sorted(bond)) for bond in matched_bonds}
@@ -1405,7 +1407,7 @@ class PfizerFragmenter(Fragmenter):
             atoms, bonds = self._get_torsion_quartet(parent, bond)
 
             atoms, bonds = self._get_ring_and_fgroups(
-                parent, parent_groups, parent_rings, atoms, bonds
+                parent, parent_groups, parent_rings, atoms, bonds, bond
             )
 
             atoms, bonds = self._cap_open_valence(parent, parent_groups, atoms, bonds)
@@ -1413,9 +1415,8 @@ class PfizerFragmenter(Fragmenter):
             fragments[bond] = self._atom_bond_set_to_mol(
                 parent, parent_stereo, atoms, bonds
             )
-
         return FragmentationResult(
-            parent_smiles=molecule.to_smiles(mapped=True),
+            parent_smiles=parent.to_smiles(mapped=True),
             fragments=[
                 Fragment(smiles=fragment.to_smiles(mapped=True), bond_indices=bond)
                 for bond, fragment in fragments.items()
