@@ -69,7 +69,7 @@ jobs:
         pytest -v --cov=fragmenter --cov-report=xml --color=yes fragmenter/tests/
 
     - name: CodeCov
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v1.5.0
       with:
         file: ./coverage.xml
         flags: unittests
