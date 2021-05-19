@@ -1413,7 +1413,6 @@ class PfizerFragmenter(Fragmenter):
             fragments[bond] = self._atom_bond_set_to_mol(
                 parent, parent_stereo, atoms, bonds
             )
-
         return FragmentationResult(
             parent_smiles=parent.to_smiles(mapped=True),
             fragments=[
