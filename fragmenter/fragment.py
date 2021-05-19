@@ -1415,7 +1415,7 @@ class PfizerFragmenter(Fragmenter):
             )
 
         return FragmentationResult(
-            parent_smiles=molecule.to_smiles(mapped=True),
+            parent_smiles=parent.to_smiles(mapped=True),
             fragments=[
                 Fragment(smiles=fragment.to_smiles(mapped=True), bond_indices=bond)
                 for bond, fragment in fragments.items()
