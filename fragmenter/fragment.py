@@ -1405,7 +1405,7 @@ class PfizerFragmenter(Fragmenter):
             atoms, bonds = self._get_torsion_quartet(parent, bond)
 
             atoms, bonds = self._get_ring_and_fgroups(
-                parent, parent_groups, parent_rings, atoms, bonds, bond
+                parent, parent_groups, parent_rings, atoms, bonds
             )
 
             atoms, bonds = self._cap_open_valence(parent, parent_groups, atoms, bonds)
