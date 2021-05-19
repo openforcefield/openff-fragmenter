@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.abspath('.'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'fragmenter'
+project = 'OpenFF Fragmenter'
 copyright = "2018, Chaya D. Stern"
 author = 'Chaya D. Stern'
 
@@ -131,7 +131,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'fragmenter.tex', 'Fragmenter Documentation', author, 'manual'),
+    (master_doc, 'fragmenter.tex', 'OpenFF Fragmenter Documentation', author, 'manual'),
 ]
 
 
@@ -140,7 +140,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'fragmenter', 'Fragmenter Documentation', [author], 1)
+    (master_doc, 'openff-fragmenter', 'OpenFF Fragmenter Documentation', [author], 1)
 ]
 
 # -- Options for Texinfo output ----------------------------------------------
@@ -149,7 +149,7 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'fragmenter', 'Fragmenter Documentation',
-     author, 'fragmenter', 'Fragment molecules for quantum mechanics torsion scans.',
+    (master_doc, 'openff-fragmenter', 'OpenFF Fragmenter Documentation',
+     author, 'openff-fragmenter', 'Fragment molecules for quantum mechanics torsion scans.',
      'Miscellaneous'),
 ]

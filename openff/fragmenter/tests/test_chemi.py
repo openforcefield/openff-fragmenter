@@ -1,16 +1,8 @@
 """Test chemi module"""
 import numpy
 import pytest
-from openff.toolkit.topology import Molecule
-from openff.toolkit.utils import (
-    AmberToolsToolkitWrapper,
-    OpenEyeToolkitWrapper,
-    ToolkitRegistry,
-)
-from simtk import unit
-
-from fragmenter import chemi
-from fragmenter.chemi import (
+from openff.fragmenter import chemi
+from openff.fragmenter.chemi import (
     _extract_oe_fragment,
     _extract_rd_fragment,
     _find_oe_stereocenters,
@@ -21,8 +13,15 @@ from fragmenter.chemi import (
     find_stereocenters,
     smiles_to_molecule,
 )
-from fragmenter.tests.utils import using_openeye
-from fragmenter.utils import global_toolkit_registry
+from openff.fragmenter.tests.utils import using_openeye
+from openff.fragmenter.utils import global_toolkit_registry
+from openff.toolkit.topology import Molecule
+from openff.toolkit.utils import (
+    AmberToolsToolkitWrapper,
+    OpenEyeToolkitWrapper,
+    ToolkitRegistry,
+)
+from simtk import unit
 
 
 def test_assign_elf10_am1_bond_orders():

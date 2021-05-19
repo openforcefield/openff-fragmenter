@@ -3,10 +3,9 @@ from collections import defaultdict
 from typing import Dict, Set, TypeVar, Union
 
 import pytest
+from openff.fragmenter.fragment import BondTuple
+from openff.fragmenter.utils import get_map_index
 from openff.toolkit.topology import Molecule
-
-from fragmenter.fragment import BondTuple
-from fragmenter.utils import get_map_index
 
 T = TypeVar("T")
 

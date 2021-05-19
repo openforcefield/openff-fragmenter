@@ -1,18 +1,17 @@
 from contextlib import nullcontext
 
 import pytest
+from openff.fragmenter.utils import (
+    default_functional_groups,
+    get_atom_index,
+    get_map_index,
+    global_toolkit_registry,
+)
 from openff.toolkit.topology import Molecule
 from openff.toolkit.utils import (
     GLOBAL_TOOLKIT_REGISTRY,
     ToolkitRegistry,
     ToolkitWrapper,
-)
-
-from fragmenter.utils import (
-    default_functional_groups,
-    get_atom_index,
-    get_map_index,
-    global_toolkit_registry,
 )
 
 

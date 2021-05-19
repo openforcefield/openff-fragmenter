@@ -1,7 +1,6 @@
 import pytest
+from openff.fragmenter.states import _enumerate_stereoisomers
 from openff.toolkit.topology import Molecule
-
-from fragmenter.states import _enumerate_stereoisomers
 
 
 @pytest.mark.parametrize(

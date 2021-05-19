@@ -2,9 +2,8 @@
 Regression tests for the WBO and Pfizer fragmentation schemes.
 """
 import pytest
+from openff.fragmenter.fragment import WBOFragmenter
 from openff.toolkit.topology import Molecule
-
-from fragmenter.fragment import WBOFragmenter
 
 
 @pytest.mark.parametrize(
