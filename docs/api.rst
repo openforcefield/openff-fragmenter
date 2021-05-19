@@ -1,8 +1,8 @@
 API
 ===
 
-Below is an outline of the API for the main functions of ``openff-fragmenter`` See :doc:`examples <examples>` for details on
-how to use these functions.
+Below is an outline of the API for the main functions of ``openff-fragmenter`` See the examples for details on how to
+use these objects.
 
 .. warning:: The ``openff-fragmenter`` package is still pre-alpha so the API is still in flux.
 
