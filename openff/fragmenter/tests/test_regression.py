@@ -32,6 +32,7 @@ from openff.toolkit.topology import Molecule
         ),
     ],
 )
+@pytest.mark.slow
 def test_wbo_regression(parent, fragments):
     """Make sure we can produce the expected fragments using both openeye and AT+RDKIT."""
     parent = Molecule.from_mapped_smiles(parent)
