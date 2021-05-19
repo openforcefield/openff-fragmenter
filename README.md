@@ -1,5 +1,5 @@
-Fragmenter
-==========
+# Fragmenter
+
 [![Test Status](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml/badge.svg?branch=master)](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml)
 [![Documentation Status](https://readthedocs.org/projects/fragmenter/badge/?version=latest)](https://fragmenter.readthedocs.io/en/latest/?badge=latest)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/openforcefield/fragmenter.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/openforcefield/fragmenter/context:python)
@@ -7,32 +7,82 @@ Fragmenter
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://zenodo.org/badge/127185286.svg)](https://zenodo.org/badge/latestdoi/127185286)
 
-Fragment molecules for quantum mechanics torsion scans.
+A package for fragmenting molecules for quantum mechanics torsion scans.
 
-# License
+More information about using this package and its features can be found in the [documentation](
+https://fragmenter.readthedocs.io/en/latest/).
 
-This software is licences under the [MIT Licence](https://opensource.org/licenses/MIT), a permissive open source license.
+**Warning:** This code is currently experimental and under active development. If you are using this code,
+be aware that it is not guaranteed to provide the correct results, and the API can change without notice.
 
-# Warning
+## Installation
 
-This code is currently experimental and under active development. If you are using this code,
-be aware that it is not guaranteed to provide the correct results, the documentation and testing is incomplete and the
-API can change without notice.
+The package and its dependencies can be installed using the `conda` package manager:
 
-# Documentation
+```shell
+conda install -c conda-forge openff-fragmenter
+```
 
-See [documentation](https://fragmenter.readthedocs.io/en/latest/) for more information.
+## Getting Started
 
-# Dependencies
+*We recommend viewing the getting started example in a Jupyter notebook. [This full example can be found here](
+https://github.com/openforcefield/fragmenter/blob/master/examples/fragment-molecules.ipynb)*. 
 
-Dependencies are in [`meta.yaml`](https://github.com/openforcefield/fragmenter/blob/master/devtools/conda-envs/meta.yaml)
+Here will will show how a drug-like molecule can be fragmented using this framework, and how those fragments can 
+be easily visualised using its built-in helper utilities.
+
+To begin with we load in the molecule to be fragmented. Here we load Cobimetinib directly using its SMILES 
+representation using the [Open Force Field toolkit](https://github.com/openforcefield/openff-toolkit):
+
+```python
+from openff.toolkit.topology import Molecule
+
+parent_molecule = Molecule.from_smiles(
+    "OC1(CN(C1)C(=O)C1=C(NC2=C(F)C=C(I)C=C2)C(F)=C(F)C=C1)[C@@H]1CCCCN1"
+)
+```
+
+Next we create the fragmentation engine which will perform the actual fragmentation. Here we will use the recommended 
+`WBOFragmenter` with default options:
+
+```python
+from openff.fragmenter.fragment import WBOFragmenter
+
+frag_engine = WBOFragmenter()
+# Export the engine's settings directly to JSON
+frag_engine.json()
+```
+
+Use the engine to fragment the molecule:
+
+```python
+result = frag_engine.fragment(parent_molecule)
+# Export the result directly to JSON
+result.json()
+```
+
+Any generated fragments will be returned in a ``FragmentationResult`` object. We can loop over each of the generated 
+fragments and print both the SMILES representation of the fragment as well as the map indices of the bond that the
+fragment was built around:
+
+```python
+for fragment in result.fragments:
+    print(f"{fragment.bond_indices}: {fragment.smiles}")
+```
+
+Finally, we can visualize the produced fragments:
+
+```python
+from openff.fragmenter.depiction import depict_fragmentation_result
+
+depict_fragmentation_result(result=result, output_file="example_fragments.html")
+```
 
 ### Copyright
 
 Copyright (c) 2018, Chaya D. Stern
 
-
 #### Acknowledgements
 
-Project based on the
-[Computational Chemistry Python Cookiecutter](https://github.com/choderalab/cookiecutter-python-comp-chem)
+Project based on the 
+[Computational Molecular Science Python Cookiecutter](https://github.com/molssi/cookiecutter-cms) version 1.5.
