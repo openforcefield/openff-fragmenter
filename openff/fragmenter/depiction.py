@@ -3,11 +3,10 @@ import os
 from typing import Collection, Dict, Optional
 
 from jinja2 import Template
+from openff.fragmenter.fragment import BondTuple, FragmentationResult
+from openff.fragmenter.utils import get_map_index
 from openff.toolkit.topology import Molecule
 from pkg_resources import resource_filename
-
-from fragmenter.fragment import BondTuple, FragmentationResult
-from fragmenter.utils import get_map_index
 
 
 def _oe_fragment_predicates(map_indices: Collection[int]):
@@ -345,7 +344,7 @@ def depict_fragments(
         ]
 
     template_path = resource_filename(
-        "fragmenter", os.path.join("data", "report-template.html")
+        "openff.fragmenter", os.path.join("data", "report-template.html")
     )
 
     with open(template_path) as file:

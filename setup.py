@@ -1,11 +1,11 @@
 """
-fragmenter
+openff-fragmenter
 
 Fragment molecules for quantum mechanics torsion scans.
 """
 import sys
 
-from setuptools import find_packages, setup
+from setuptools import find_namespace_packages, setup
 
 import versioneer
 
@@ -23,7 +23,7 @@ except IOError:
 
 
 setup(
-    name='fragmenter',
+    name='openff-fragmenter',
     author='Chaya D. Stern',
     description=short_description[0],
     long_description=long_description,
@@ -31,10 +31,8 @@ setup(
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     license='MIT',
-    packages=find_packages(),
+    packages=find_namespace_packages(include=['openff.*']),
     include_package_data=True,
     setup_requires=[] + pytest_runner,
-    extras_require={
-        'docs': ['numpydoc']
-    }
+    python_requires=">=3.6",
 )

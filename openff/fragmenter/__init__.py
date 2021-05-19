@@ -1,5 +1,5 @@
 """
-fragmenter
+openff-fragmenter
 
 Fragment molecules for quantum mechanics torsion scans.
 """

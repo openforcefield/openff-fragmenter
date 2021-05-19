@@ -5,10 +5,9 @@ from typing import Dict, List, Set, Tuple
 
 import networkx
 import numpy
+from openff.fragmenter.utils import get_atom_index, get_map_index
 from openff.toolkit.topology import Molecule
 from openff.toolkit.utils import LicenseError, ToolkitUnavailableException
-
-from fragmenter.utils import get_atom_index, get_map_index
 
 logger = logging.getLogger(__name__)
 

@@ -4,6 +4,20 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import networkx
+import openff.fragmenter
+from openff.fragmenter.chemi import (
+    assign_elf10_am1_bond_orders,
+    extract_fragment,
+    find_ring_systems,
+    find_stereocenters,
+)
+from openff.fragmenter.states import _enumerate_stereoisomers
+from openff.fragmenter.utils import (
+    default_functional_groups,
+    get_atom_index,
+    get_map_index,
+    global_toolkit_registry,
+)
 from openff.toolkit.topology import Atom, Molecule
 from openff.toolkit.utils import (
     GLOBAL_TOOLKIT_REGISTRY,
@@ -12,21 +26,6 @@ from openff.toolkit.utils import (
 )
 from pydantic import BaseModel, Field
 from typing_extensions import Literal
-
-import fragmenter
-from fragmenter.chemi import (
-    assign_elf10_am1_bond_orders,
-    extract_fragment,
-    find_ring_systems,
-    find_stereocenters,
-)
-from fragmenter.states import _enumerate_stereoisomers
-from fragmenter.utils import (
-    default_functional_groups,
-    get_atom_index,
-    get_map_index,
-    global_toolkit_registry,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -878,8 +877,8 @@ class Fragmenter(BaseModel, abc.ABC):
         """Returns a dictionary containing default provenance information."""
 
         provenance = {
-            "creator": fragmenter.__package__,
-            "version": fragmenter.__version__,
+            "creator": openff.fragmenter.__package__,
+            "version": openff.fragmenter.__version__,
             "options": self.dict(),
         }
         return provenance

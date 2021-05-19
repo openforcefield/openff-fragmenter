@@ -1,9 +1,7 @@
 import os
 
 import pytest
-from openff.toolkit.topology import Molecule
-
-from fragmenter.depiction import (
+from openff.fragmenter.depiction import (
     _oe_render_fragment,
     _oe_render_parent,
     _rd_render_fragment,
@@ -11,7 +9,8 @@ from fragmenter.depiction import (
     depict_fragmentation_result,
     depict_fragments,
 )
-from fragmenter.fragment import Fragment, FragmentationResult
+from openff.fragmenter.fragment import Fragment, FragmentationResult
+from openff.toolkit.topology import Molecule
 
 
 @pytest.mark.parametrize("draw_function", [_oe_render_parent, _rd_render_parent])

@@ -29,7 +29,7 @@ def default_functional_groups() -> Dict[str, str]:
     """
 
     file_name = resource_filename(
-        "fragmenter", os.path.join("data", "default-functional-groups.json")
+        "openff.fragmenter", os.path.join("data", "default-functional-groups.json")
     )
 
     with open(file_name, "r") as file:

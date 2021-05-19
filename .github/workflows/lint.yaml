@@ -30,12 +30,12 @@ jobs:
 
       - name: Run isort
         run: |
-          isort --recursive --check-only fragmenter
+          isort --recursive --check-only openff/fragmenter
 
       - name: Run black
         run: |
-          black fragmenter --check
+          black openff/fragmenter --check
 
       - name: Run flake8
         run: |
-          flake8 fragmenter
+          flake8 openff/fragmenter
