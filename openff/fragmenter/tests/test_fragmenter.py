@@ -165,9 +165,9 @@ def test_find_rotatable_bonds_default(abemaciclib):
 @pytest.mark.parametrize(
     "smarts, expected_raises",
     [
-        ("[#6:1]-[#6:2]", does_not_raise()),
+        (["[#6:1]-[#6:2]"], does_not_raise()),
         (
-            "[#6]-[#6]",
+            ["[#6]-[#6]"],
             pytest.raises(ValueError, match="The `rotatable_bond_smarts` pattern "),
         ),
     ],

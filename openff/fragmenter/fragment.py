@@ -291,7 +291,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
     @classmethod
     def find_rotatable_bonds(
-        cls, molecule: Molecule, rotatable_bond_smarts: Optional[str]
+        cls, molecule: Molecule, rotatable_bond_smarts: Optional[List[str]]
     ) -> List[BondTuple]:
         """Finds the rotatable bonds in a molecule *including* rotatable double
         bonds.
@@ -301,10 +301,10 @@ class Fragmenter(BaseModel, abc.ABC):
         molecule
             The molecule to search for rotatable bonds.
         rotatable_bond_smarts
-            An optional SMARTS pattern that should be used to identify the bonds within
-            the parent molecule to grow fragments around. The SMARTS pattern should
-            include **two** indexed atoms that correspond to the two atoms involved in
-            the central bond.
+            An optional list of SMARTS patterns that should be used to identify the bonds
+            within the parent molecule to grow fragments around. Each SMARTS pattern
+            should include **two** indexed atoms that correspond to the two atoms
+            involved in the central bond.
 
             If no pattern is provided fragments will be constructed around all 'rotatable
             bonds'. A 'rotatable bond' here means any bond matched by a
@@ -326,7 +326,11 @@ class Fragmenter(BaseModel, abc.ABC):
 
         else:
 
-            matches = molecule.chemical_environment_matches(rotatable_bond_smarts)
+            matches = [
+                match
+                for smarts in rotatable_bond_smarts
+                for match in molecule.chemical_environment_matches(smarts)
+            ]
 
             if not all(len(match) == 2 for match in matches):
 
@@ -841,7 +845,7 @@ class Fragmenter(BaseModel, abc.ABC):
     def _fragment(
         self,
         molecule: Molecule,
-        rotatable_bond_smarts: Optional[str],
+        rotatable_bond_smarts: Optional[List[str]],
     ) -> FragmentationResult:
         """The internal implementation of ``fragment``.
 
@@ -864,7 +868,7 @@ class Fragmenter(BaseModel, abc.ABC):
     def fragment(
         self,
         molecule: Molecule,
-        rotatable_bond_smarts: Optional[str] = None,
+        rotatable_bond_smarts: Optional[List[str]] = None,
         toolkit_registry: Optional[Union[ToolkitRegistry, ToolkitWrapper]] = None,
     ) -> FragmentationResult:
         """Fragments a molecule according to this class' settings.
@@ -879,10 +883,10 @@ class Fragmenter(BaseModel, abc.ABC):
         molecule
             The molecule to fragment.
         rotatable_bond_smarts
-            An optional SMARTS pattern that should be used to identify the bonds within
-            the parent molecule to grow fragments around. The SMARTS pattern should
-            include **two** indexed atoms that correspond to the two atoms involved in
-            the central bond.
+            An optional list of SMARTS patterns that should be used to identify the bonds
+            within the parent molecule to grow fragments around. Each SMARTS pattern
+            should include **two** indexed atoms that correspond to the two atoms
+            involved in the central bond.
 
             If no pattern is provided fragments will be constructed around all 'rotatable
             bonds'. A 'rotatable bond' here means any bond matched by a
@@ -973,7 +977,7 @@ class WBOFragmenter(Fragmenter):
     )
 
     def _fragment(
-        self, molecule: Molecule, rotatable_bond_smarts: Optional[str]
+        self, molecule: Molecule, rotatable_bond_smarts: Optional[List[str]]
     ) -> FragmentationResult:
         """Fragments a molecule in such a way that the WBO of the bond that a fragment
         is being built around does not change beyond the specified threshold.
@@ -1426,7 +1430,7 @@ class PfizerFragmenter(Fragmenter):
     scheme: Literal["Pfizer"] = "Pfizer"
 
     def _fragment(
-        self, molecule: Molecule, rotatable_bond_smarts: Optional[str]
+        self, molecule: Molecule, rotatable_bond_smarts: Optional[List[str]]
     ) -> FragmentationResult:
         """Fragments a molecule according to Pfizer protocol."""
 
