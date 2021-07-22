@@ -449,7 +449,9 @@ def test_fragmenter_provenance(toolkit_registry, expected_provenance):
                 parent_smiles="[He:1]", fragments=[], provenance={}
             )
 
-    result = DummyFragmenter().fragment(Molecule.from_smiles("[He]"), toolkit_registry)
+    result = DummyFragmenter().fragment(
+        Molecule.from_smiles("[He]"), None, toolkit_registry
+    )
 
     assert "toolkits" in result.provenance
     assert [name for name, _ in result.provenance["toolkits"]] == expected_provenance
