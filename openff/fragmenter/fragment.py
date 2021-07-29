@@ -869,7 +869,6 @@ class Fragmenter(BaseModel, abc.ABC):
         self,
         molecule: Molecule,
         target_bond_smarts: Optional[List[str]] = None,
-        ignore_bond_smarts: Optional[List[str]] = None,
         toolkit_registry: Optional[Union[ToolkitRegistry, ToolkitWrapper]] = None,
     ) -> FragmentationResult:
         """Fragments a molecule according to this class' settings.
