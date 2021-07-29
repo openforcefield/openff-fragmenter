@@ -290,43 +290,70 @@ class Fragmenter(BaseModel, abc.ABC):
         return found_groups
 
     @classmethod
-    def _find_rotatable_bonds(cls, molecule: Molecule) -> List[BondTuple]:
+    def find_rotatable_bonds(
+        cls, molecule: Molecule, target_bond_smarts: Optional[List[str]]
+    ) -> List[BondTuple]:
         """Finds the rotatable bonds in a molecule *including* rotatable double
         bonds.
-
-        Notes
-        -----
-        * This does not find terminal rotatable bonds such as -OH, -NH2 -CH3.
-
-        Todos
-        -----
-        * Add the option to build fragments around terminal torsions (-OH, -NH2, -CH3)
 
         Parameters
         ----------
         molecule
             The molecule to search for rotatable bonds.
+        target_bond_smarts
+            An optional list of SMARTS patterns that should be used to identify the bonds
+            within the parent molecule to grow fragments around. Each SMARTS pattern
+            should include **two** indexed atoms that correspond to the two atoms
+            involved in the central bond.
+
+            If no pattern is provided fragments will be constructed around all 'rotatable
+            bonds'. A 'rotatable bond' here means any bond matched by a
+            `[!$(*#*)&!D1:1]-,=;!@[!$(*#*)&!D1:2]` SMARTS pattern with the added
+            constraint that the **heavy** degree (i.e. the degree excluding hydrogen) of
+            both atoms in the bond must be >= 2.
 
         Returns
         -------
-            A list of the rotatable map indices of the atoms which form the rotatable
+            A list of the **map** indices of the atoms that form the rotatable
             bonds, ``[(m1, m2),...]``.
         """
 
-        matches = molecule.chemical_environment_matches(
-            "[!$(*#*)&!D1:1]-,=;!@[!$(*#*)&!D1:2]"
-        )
+        if target_bond_smarts is None:
+
+            matches = molecule.chemical_environment_matches(
+                "[!$(*#*)&!D1:1]-,=;!@[!$(*#*)&!D1:2]"
+            )
+
+        else:
+
+            matches = [
+                match
+                for smarts in target_bond_smarts
+                for match in molecule.chemical_environment_matches(smarts)
+            ]
+
+            if not all(len(match) == 2 for match in matches):
+
+                raise ValueError(
+                    f"The `target_bond_smarts` pattern ({target_bond_smarts}) "
+                    f"must define exactly two indexed atoms to match."
+                )
+
         unique_matches = {tuple(sorted(match)) for match in matches}
 
-        # Drop bonds without a heavy degree of at least 2 on each end to avoid finding
-        # terminal bonds
-        def heavy_degree(atom_index: int) -> int:
-            atom = molecule.atoms[atom_index]
-            return sum(1 for atom in atom.bonded_atoms if atom.atomic_number != 1)
+        if target_bond_smarts is None:
 
-        unique_matches = {
-            match for match in unique_matches if all(heavy_degree(i) > 1 for i in match)
-        }
+            # Drop bonds without a heavy degree of at least 2 on each end to avoid
+            # finding terminal bonds
+            def heavy_degree(atom_index: int) -> int:
+                atom = molecule.atoms[atom_index]
+                return sum(1 for atom in atom.bonded_atoms if atom.atomic_number != 1)
+
+            unique_matches = {
+                match
+                for match in unique_matches
+                if all(heavy_degree(i) > 1 for i in match)
+            }
 
         return [
             (
@@ -815,13 +842,20 @@ class Fragmenter(BaseModel, abc.ABC):
         return molecule, stereo, found_functional_groups, found_ring_systems
 
     @abc.abstractmethod
-    def _fragment(self, molecule: Molecule) -> FragmentationResult:
+    def _fragment(
+        self,
+        molecule: Molecule,
+        target_bond_smarts: Optional[List[str]],
+    ) -> FragmentationResult:
         """The internal implementation of ``fragment``.
 
         Parameters
         ----------
         molecule
             The molecule to fragment.
+        target_bond_smarts
+            An optional SMARTS pattern that should be used to identify the bonds within
+            the parent molecule to grow fragments around.
 
         Returns
         -------
@@ -834,6 +868,7 @@ class Fragmenter(BaseModel, abc.ABC):
     def fragment(
         self,
         molecule: Molecule,
+        target_bond_smarts: Optional[List[str]] = None,
         toolkit_registry: Optional[Union[ToolkitRegistry, ToolkitWrapper]] = None,
     ) -> FragmentationResult:
         """Fragments a molecule according to this class' settings.
@@ -847,6 +882,18 @@ class Fragmenter(BaseModel, abc.ABC):
         ----------
         molecule
             The molecule to fragment.
+        target_bond_smarts
+            An optional list of SMARTS patterns that should be used to identify the bonds
+            within the parent molecule to grow fragments around. Each SMARTS pattern
+            should include **two** indexed atoms that correspond to the two atoms
+            involved in the central bond.
+
+            If no pattern is provided fragments will be constructed around all 'rotatable
+            bonds'. A 'rotatable bond' here means any bond matched by a
+            `[!$(*#*)&!D1:1]-,=;!@[!$(*#*)&!D1:2]` SMARTS pattern with the added
+            constraint that the **heavy** degree (i.e. the degree excluding hydrogen) of
+            both atoms in the bond must be >= 2. Note this will not find terminal
+            rotatable bonds such as -OH, -NH2 -CH3.
         toolkit_registry
             The underlying cheminformatics toolkits to use for things like conformer
             generation, WBO computation etc. If no value is provided, the current
@@ -864,12 +911,18 @@ class Fragmenter(BaseModel, abc.ABC):
 
         with global_toolkit_registry(toolkit_registry):
 
-            result = self._fragment(molecule)
+            result = self._fragment(molecule, target_bond_smarts)
 
             result.provenance["toolkits"] = [
                 (toolkit.__class__.__name__, toolkit.toolkit_version)
                 for toolkit in GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
             ]
+
+        if "options" not in result.provenance:
+            result.provenance["options"] = {}
+
+        if target_bond_smarts is not None:
+            result.provenance["options"]["target_bond_smarts"] = target_bond_smarts
 
         return result
 
@@ -881,6 +934,7 @@ class Fragmenter(BaseModel, abc.ABC):
             "version": openff.fragmenter.__version__,
             "options": self.dict(),
         }
+
         return provenance
 
 
@@ -930,7 +984,9 @@ class WBOFragmenter(Fragmenter):
         "threshold.",
     )
 
-    def _fragment(self, molecule: Molecule) -> FragmentationResult:
+    def _fragment(
+        self, molecule: Molecule, target_bond_smarts: Optional[List[str]]
+    ) -> FragmentationResult:
         """Fragments a molecule in such a way that the WBO of the bond that a fragment
         is being built around does not change beyond the specified threshold.
         """
@@ -955,7 +1011,8 @@ class WBOFragmenter(Fragmenter):
             molecule, self.wbo_options.max_conformers, self.wbo_options.rms_threshold
         )
 
-        wbo_rotor_bonds = self._get_rotor_wbo(molecule)
+        rotatable_bonds = self.find_rotatable_bonds(molecule, target_bond_smarts)
+        wbo_rotor_bonds = self._get_rotor_wbo(molecule, rotatable_bonds)
 
         fragments = {
             bond: self._build_fragment(
@@ -982,11 +1039,9 @@ class WBOFragmenter(Fragmenter):
 
     @classmethod
     def _get_rotor_wbo(
-        cls, molecule: Molecule, rotor_bonds: Optional[List[BondTuple]] = None
+        cls, molecule: Molecule, rotor_bonds: List[BondTuple]
     ) -> Dict[BondTuple, float]:
-        """Cache the WBO of each bond in a specific set of rotor bonds. If no list is
-        provided, the WBO for each rotatable bond (as defined by
-        ``_find_rotatable_bonds``) will be returned.
+        """Cache the WBO of each bond in a specific set of rotor bonds..
 
         Parameters
         ----------
@@ -1005,9 +1060,6 @@ class WBOFragmenter(Fragmenter):
             raise RuntimeError(
                 "WBO was not calculated for this molecule. Calculating WBO..."
             )
-
-        if rotor_bonds is None:
-            rotor_bonds = cls._find_rotatable_bonds(molecule)
 
         rotors_wbo = {}
 
@@ -1385,7 +1437,9 @@ class PfizerFragmenter(Fragmenter):
 
     scheme: Literal["Pfizer"] = "Pfizer"
 
-    def _fragment(self, molecule: Molecule) -> FragmentationResult:
+    def _fragment(
+        self, molecule: Molecule, target_bond_smarts: Optional[List[str]]
+    ) -> FragmentationResult:
         """Fragments a molecule according to Pfizer protocol."""
 
         (
@@ -1395,7 +1449,7 @@ class PfizerFragmenter(Fragmenter):
             parent_rings,
         ) = self._prepare_molecule(molecule, self.functional_groups, False)
 
-        rotatable_bonds = self._find_rotatable_bonds(parent)
+        rotatable_bonds = self.find_rotatable_bonds(parent, target_bond_smarts)
 
         fragments = {}
 

@@ -13,6 +13,7 @@ from openff.fragmenter.fragment import (
     PfizerFragmenter,
     WBOFragmenter,
 )
+from openff.fragmenter.tests import does_not_raise
 from openff.fragmenter.tests.utils import (
     key_smarts_to_map_indices,
     smarts_set_to_map_indices,
@@ -140,9 +141,9 @@ def test_find_functional_groups(potanib):
         )
 
 
-def test_find_rotatable_bonds(abemaciclib):
+def test_find_rotatable_bonds_default(abemaciclib):
 
-    rotatable_bonds = Fragmenter._find_rotatable_bonds(abemaciclib)
+    rotatable_bonds = Fragmenter.find_rotatable_bonds(abemaciclib, None)
     assert len(rotatable_bonds) == 7
 
     expected_rotatable_bonds = smarts_set_to_map_indices(
@@ -159,6 +160,29 @@ def test_find_rotatable_bonds(abemaciclib):
     )
 
     assert {*rotatable_bonds} == expected_rotatable_bonds
+
+
+@pytest.mark.parametrize(
+    "smarts, expected_raises",
+    [
+        (["[#6:1]-[#6:2]"], does_not_raise()),
+        (
+            ["[#6]-[#6]"],
+            pytest.raises(ValueError, match="The `target_bond_smarts` pattern "),
+        ),
+    ],
+)
+def test_find_rotatable_bonds_custom(smarts, expected_raises):
+
+    ethane = Molecule.from_smiles("CC")
+    ethane.properties["atom_map"] = {i: i + 1 for i in range(ethane.n_atoms)}
+
+    with expected_raises:
+
+        rotatable_bonds = Fragmenter.find_rotatable_bonds(ethane, smarts)
+        assert len(rotatable_bonds) == 1
+
+        assert rotatable_bonds == [(1, 2)]
 
 
 def test_atom_bond_set_to_mol(abemaciclib):
@@ -417,16 +441,23 @@ def test_prepare_molecule():
 )
 def test_fragmenter_provenance(toolkit_registry, expected_provenance):
     class DummyFragmenter(Fragmenter):
-        def _fragment(self, molecule: Molecule) -> FragmentationResult:
+        def _fragment(
+            self, molecule: Molecule, target_bond_smarts: str
+        ) -> FragmentationResult:
 
             return FragmentationResult(
                 parent_smiles="[He:1]", fragments=[], provenance={}
             )
 
-    result = DummyFragmenter().fragment(Molecule.from_smiles("[He]"), toolkit_registry)
+    result = DummyFragmenter().fragment(
+        Molecule.from_smiles("[He]"), ["[*:1]~[*:2]"], toolkit_registry
+    )
 
     assert "toolkits" in result.provenance
     assert [name for name, _ in result.provenance["toolkits"]] == expected_provenance
+
+    assert "options" in result.provenance
+    assert result.provenance["options"]["target_bond_smarts"] == ["[*:1]~[*:2]"]
 
 
 def test_wbo_fragment():
@@ -462,7 +493,9 @@ def test_get_rotor_wbo():
         for match in molecule.chemical_environment_matches("[#6:1]-[#6:2]")
     }
 
-    rotors_wbo = WBOFragmenter._get_rotor_wbo(molecule)
+    rotors_wbo = WBOFragmenter._get_rotor_wbo(
+        molecule, WBOFragmenter.find_rotatable_bonds(molecule, None)
+    )
 
     assert len(rotors_wbo) == 1
 
@@ -475,7 +508,9 @@ def test_get_rotor_wbo():
 def test_compare_wbo():
 
     parent = assign_elf10_am1_bond_orders(smiles_to_molecule("CCCC", add_atom_map=True))
-    rotors_wbo = WBOFragmenter._get_rotor_wbo(parent)
+    rotors_wbo = WBOFragmenter._get_rotor_wbo(
+        parent, WBOFragmenter.find_rotatable_bonds(parent, None)
+    )
 
     fragment = smiles_to_molecule("CCCC", add_atom_map=True)
 
@@ -496,7 +531,9 @@ def test_compare_wbo():
 def test_build_fragment():
 
     parent = assign_elf10_am1_bond_orders(smiles_to_molecule("CCCCCC", True))
-    rotors_wbo = WBOFragmenter._get_rotor_wbo(parent)
+    rotors_wbo = WBOFragmenter._get_rotor_wbo(
+        parent, WBOFragmenter.find_rotatable_bonds(parent, None)
+    )
 
     fragments = {
         bond: WBOFragmenter._build_fragment(
