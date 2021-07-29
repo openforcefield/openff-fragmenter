@@ -6,9 +6,11 @@ dependencies:
 
   # Base depends
   - python
+  - pip
   - setuptools
 
   # Sphinx specific
+  - sphinx ==4.0.2
   - nbsphinx
   - nbsphinx-link
   - sphinx_rtd_theme
