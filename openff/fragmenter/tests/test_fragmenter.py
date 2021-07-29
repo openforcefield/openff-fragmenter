@@ -168,7 +168,7 @@ def test_find_rotatable_bonds_default(abemaciclib):
         (["[#6:1]-[#6:2]"], does_not_raise()),
         (
             ["[#6]-[#6]"],
-            pytest.raises(ValueError, match="The `rotatable_bond_smarts` pattern "),
+            pytest.raises(ValueError, match="The `target_bond_smarts` pattern "),
         ),
     ],
 )
@@ -442,7 +442,7 @@ def test_prepare_molecule():
 def test_fragmenter_provenance(toolkit_registry, expected_provenance):
     class DummyFragmenter(Fragmenter):
         def _fragment(
-            self, molecule: Molecule, rotatable_bond_smarts: str
+            self, molecule: Molecule, target_bond_smarts: str
         ) -> FragmentationResult:
 
             return FragmentationResult(
@@ -450,11 +450,14 @@ def test_fragmenter_provenance(toolkit_registry, expected_provenance):
             )
 
     result = DummyFragmenter().fragment(
-        Molecule.from_smiles("[He]"), None, toolkit_registry
+        Molecule.from_smiles("[He]"), ["[*:1]~[*:2]"], toolkit_registry
     )
 
     assert "toolkits" in result.provenance
     assert [name for name, _ in result.provenance["toolkits"]] == expected_provenance
+
+    assert "options" in result.provenance
+    assert result.provenance["options"]["target_bond_smarts"] == ["[*:1]~[*:2]"]
 
 
 def test_wbo_fragment():
