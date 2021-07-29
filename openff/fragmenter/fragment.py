@@ -892,7 +892,8 @@ class Fragmenter(BaseModel, abc.ABC):
             bonds'. A 'rotatable bond' here means any bond matched by a
             `[!$(*#*)&!D1:1]-,=;!@[!$(*#*)&!D1:2]` SMARTS pattern with the added
             constraint that the **heavy** degree (i.e. the degree excluding hydrogen) of
-            both atoms in the bond must be >= 2.
+            both atoms in the bond must be >= 2. Note this will not find terminal
+            rotatable bonds such as -OH, -NH2 -CH3.
         toolkit_registry
             The underlying cheminformatics toolkits to use for things like conformer
             generation, WBO computation etc. If no value is provided, the current
