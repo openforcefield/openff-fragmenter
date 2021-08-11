@@ -99,7 +99,7 @@ def test_fix_stereo(smiles, fragment_smiles):
     parent_stereo = Fragmenter._find_stereo(smiles_to_molecule(smiles, True))
 
     fragment = smiles_to_molecule(fragment_smiles, add_atom_map=True)
-    fixed = Fragmenter._fix_stereo(fragment, parent_stereo)
+    fixed, _ = Fragmenter._fix_stereo(fragment, parent_stereo)
 
     assert Fragmenter._check_stereo(fixed, parent_stereo) is True
 
@@ -207,7 +207,9 @@ def test_atom_bond_set_to_mol(abemaciclib):
         and get_map_index(molecule, bond.atom2_index) in atoms
     }
 
-    fragment = Fragmenter._atom_bond_set_to_mol(molecule, {}, atoms=atoms, bonds=bonds)
+    fragment, _ = Fragmenter._atom_bond_set_to_mol(
+        molecule, {}, atoms=atoms, bonds=bonds
+    )
 
     for bond in fragment.bonds:
 
@@ -600,7 +602,7 @@ def test_add_substituent():
         if bond.atom1.atomic_number != 1 and bond.atom2.atomic_number != 1
     )
 
-    fragment = WBOFragmenter._add_next_substituent(
+    fragment, _ = WBOFragmenter._add_next_substituent(
         result.parent_molecule, {}, {}, {}, atoms, bonds, target_bond=(3, 5)
     )
 
