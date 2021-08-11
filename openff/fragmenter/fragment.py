@@ -61,7 +61,7 @@ class Fragment(BaseModel):
     @property
     def molecule(self) -> Molecule:
         """The fragment represented as an OpenFF molecule object."""
-        return Molecule.from_smiles(self.smiles)
+        return Molecule.from_smiles(self.smiles, allow_undefined_stereo=True)
 
 
 class FragmentationResult(BaseModel):
@@ -217,7 +217,7 @@ class Fragmenter(BaseModel, abc.ABC):
     @classmethod
     def _fix_stereo(
         cls, fragment: Molecule, parent_stereo: Stereochemistries
-    ) -> Molecule:
+    ) -> Tuple[Molecule, bool]:
         """Flip all stereocenters and find the stereoisomer that matches the parent
 
         Parameters
@@ -229,7 +229,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
         Returns
         -------
-            A fragment with the same stereochemistry as parent molecule
+            A fragment with the same stereochemistry as parent molecule if possible else a fragment and a bool to indicate it was note possible.
         """
 
         for stereoisomer in _enumerate_stereoisomers(fragment, 200, True):
@@ -237,11 +237,9 @@ class Fragmenter(BaseModel, abc.ABC):
             if not cls._check_stereo(stereoisomer, parent_stereo):
                 continue
 
-            return stereoisomer
+            return stereoisomer, True
 
-        raise RuntimeError(
-            f"The stereochemistry of {fragment.to_smiles()} could not be fixed."
-        )
+        return fragment, False
 
     @classmethod
     def _find_functional_groups(
@@ -370,7 +368,7 @@ class Fragmenter(BaseModel, abc.ABC):
         parent_stereo: Stereochemistries,
         atoms: Set[int],
         bonds: Set[BondTuple],
-    ) -> Molecule:
+    ) -> Tuple[Molecule, bool]:
         """Extracts a subset of a molecule based on a set of atom and bond indices.
 
         Parameters
@@ -387,15 +385,17 @@ class Fragmenter(BaseModel, abc.ABC):
 
         Returns
         -------
-            The subset molecule.
+            The subset molecule and a flag to indicate if the stereo is correct or not.
         """
 
         fragment = extract_fragment(parent, atoms, bonds)
 
         if not cls._check_stereo(fragment, parent_stereo):
-            fragment = cls._fix_stereo(fragment, parent_stereo)
+            fragment, correct_stereo = cls._fix_stereo(fragment, parent_stereo)
+        else:
+            correct_stereo = True
 
-        return fragment
+        return fragment, correct_stereo
 
     @classmethod
     def _get_torsion_quartet(
@@ -1186,13 +1186,17 @@ class WBOFragmenter(Fragmenter):
         if cap:
             atoms, bonds = cls._cap_open_valence(parent, parent_groups, atoms, bonds)
 
-        fragment = cls._atom_bond_set_to_mol(parent, parent_stereo, atoms, bonds)
+        fragment, correct_stereo = cls._atom_bond_set_to_mol(
+            parent, parent_stereo, atoms, bonds
+        )
 
         wbo_difference = cls._compare_wbo(fragment, bond_tuple, parent_wbo, **kwargs)
+        if not correct_stereo:
+            wbo_difference = 1.0
 
         while fragment is not None and wbo_difference > threshold:
 
-            fragment = cls._add_next_substituent(
+            fragment, correct_stereo = cls._add_next_substituent(
                 parent,
                 parent_stereo,
                 parent_groups,
@@ -1209,13 +1213,15 @@ class WBOFragmenter(Fragmenter):
             wbo_difference = cls._compare_wbo(
                 fragment, bond_tuple, parent_wbo, **kwargs
             )
+            if not correct_stereo:
+                wbo_difference = 1.0
 
         # A work around for a known bug where if stereochemistry changes or gets removed,
         # the WBOs can change more than the threshold (this will sometimes happen if a
         # very small threshold is chosen) and even the parent will have a WBO difference
         # greater than the threshold. In this case, return the molecule
         if fragment is None:
-            fragment = cls._atom_bond_set_to_mol(parent, parent_stereo, atoms, bonds)
+            fragment, _ = cls._atom_bond_set_to_mol(parent, parent_stereo, atoms, bonds)
 
         return fragment
 
@@ -1357,7 +1363,7 @@ class WBOFragmenter(Fragmenter):
         bonds: Set[BondTuple],
         target_bond: BondTuple,
         heuristic: Heuristic = "path_length",
-    ) -> Optional[Molecule]:
+    ) -> Tuple[Optional[Molecule], bool]:
         """Expand the fragment to include the next set of substituents / ring systems.
 
         Parameters
@@ -1463,7 +1469,7 @@ class PfizerFragmenter(Fragmenter):
 
             atoms, bonds = self._cap_open_valence(parent, parent_groups, atoms, bonds)
 
-            fragments[bond] = self._atom_bond_set_to_mol(
+            fragments[bond], _ = self._atom_bond_set_to_mol(
                 parent, parent_stereo, atoms, bonds
             )
         return FragmentationResult(
