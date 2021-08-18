@@ -217,7 +217,7 @@ class Fragmenter(BaseModel, abc.ABC):
     @classmethod
     def _fix_stereo(
         cls, fragment: Molecule, parent_stereo: Stereochemistries
-    ) -> Tuple[Molecule, bool]:
+    ) -> Optional[Molecule]:
         """Flip all stereocenters and find the stereoisomer that matches the parent
 
         Parameters
@@ -229,7 +229,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
         Returns
         -------
-            A fragment with the same stereochemistry as parent molecule if possible else a fragment and a bool to indicate it was note possible.
+            A fragment with the same stereochemistry as parent molecule if possible else ``None``.
         """
 
         for stereoisomer in _enumerate_stereoisomers(fragment, 200, True):
@@ -237,9 +237,9 @@ class Fragmenter(BaseModel, abc.ABC):
             if not cls._check_stereo(stereoisomer, parent_stereo):
                 continue
 
-            return stereoisomer, True
+            return stereoisomer
 
-        return fragment, False
+        return None
 
     @classmethod
     def _find_functional_groups(
@@ -385,17 +385,19 @@ class Fragmenter(BaseModel, abc.ABC):
 
         Returns
         -------
-            The subset molecule and a flag to indicate if the stereo is correct or not.
+            The subset molecule and a flag to indicate whether any new stereocenters are present in the fragment.
         """
 
         fragment = extract_fragment(parent, atoms, bonds)
 
         if not cls._check_stereo(fragment, parent_stereo):
-            fragment, correct_stereo = cls._fix_stereo(fragment, parent_stereo)
-        else:
-            correct_stereo = True
+            fixed_fragment = cls._fix_stereo(fragment, parent_stereo)
+            if fixed_fragment is None:
+                return fragment, True
+            else:
+                return fixed_fragment, False
 
-        return fragment, correct_stereo
+        return fragment, False
 
     @classmethod
     def _get_torsion_quartet(
@@ -1186,13 +1188,16 @@ class WBOFragmenter(Fragmenter):
         if cap:
             atoms, bonds = cls._cap_open_valence(parent, parent_groups, atoms, bonds)
 
-        fragment, correct_stereo = cls._atom_bond_set_to_mol(
+        fragment, has_new_stereocenter = cls._atom_bond_set_to_mol(
             parent, parent_stereo, atoms, bonds
         )
 
-        wbo_difference = cls._compare_wbo(fragment, bond_tuple, parent_wbo, **kwargs)
-        if not correct_stereo:
-            wbo_difference = 1.0
+        if has_new_stereocenter:
+            wbo_difference = threshold + 1.0
+        else:
+            wbo_difference = cls._compare_wbo(
+                fragment, bond_tuple, parent_wbo, **kwargs
+            )
 
         while fragment is not None and wbo_difference > threshold:
 
@@ -1210,11 +1215,14 @@ class WBOFragmenter(Fragmenter):
             if fragment is None:
                 break
 
-            wbo_difference = cls._compare_wbo(
-                fragment, bond_tuple, parent_wbo, **kwargs
-            )
-            if not correct_stereo:
-                wbo_difference = 1.0
+            if has_new_stereocenter:
+                # For now keep growing the fragment as it is not yet clear how to handle such cases robustly.
+                wbo_difference = threshold + 1.0
+
+            else:
+                wbo_difference = cls._compare_wbo(
+                    fragment, bond_tuple, parent_wbo, **kwargs
+                )
 
         # A work around for a known bug where if stereochemistry changes or gets removed,
         # the WBOs can change more than the threshold (this will sometimes happen if a

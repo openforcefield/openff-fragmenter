@@ -99,7 +99,7 @@ def test_fix_stereo(smiles, fragment_smiles):
     parent_stereo = Fragmenter._find_stereo(smiles_to_molecule(smiles, True))
 
     fragment = smiles_to_molecule(fragment_smiles, add_atom_map=True)
-    fixed, _ = Fragmenter._fix_stereo(fragment, parent_stereo)
+    fixed = Fragmenter._fix_stereo(fragment, parent_stereo)
 
     assert Fragmenter._check_stereo(fixed, parent_stereo) is True
 
