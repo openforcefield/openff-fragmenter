@@ -1415,7 +1415,7 @@ class WBOFragmenter(Fragmenter):
             )
 
         if neighbour_atom_and_bond is None:
-            return None
+            return None, False
 
         neighbour_atom, neighbour_bond = neighbour_atom_and_bond
 
