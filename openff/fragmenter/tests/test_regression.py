@@ -43,3 +43,15 @@ def test_wbo_regression(parent, fragments):
     for fragment in fragments:
         fragment_mol = Molecule.from_mapped_smiles(fragment)
         assert fragment_mol in result_fragments
+
+
+def test_stereo_error():
+    """
+    Make sure the molecule can be fragmented, before PR123 this molecule would result in a runtime error as new
+    stereocenters would be created.
+    """
+    parent = Molecule.from_smiles(
+        "[H][O][C]([H])([H])[C]([H])([H])[C]([H])([N]([H])[C]1=[N][C]([H])=[C]2[C](=[N]1)[N]([C]([H])([H])[H])[C](=[O])[C]([O][C]1=[C]([F])[C]([H])=[C]([F])[C]([H])=[C]1[H])=[C]2[H])[C]([H])([H])[C]([H])([H])[O][H]"
+    )
+    engine = WBOFragmenter()
+    _ = engine.fragment(parent)

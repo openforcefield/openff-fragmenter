@@ -1201,7 +1201,7 @@ class WBOFragmenter(Fragmenter):
 
         while fragment is not None and wbo_difference > threshold:
 
-            fragment, correct_stereo = cls._add_next_substituent(
+            fragment, has_new_stereocenter = cls._add_next_substituent(
                 parent,
                 parent_stereo,
                 parent_groups,
