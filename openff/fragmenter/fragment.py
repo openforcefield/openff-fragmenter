@@ -1009,9 +1009,14 @@ class WBOFragmenter(Fragmenter):
                 "WBOs can currently only be computed using 'am1-wiberg-elf10'."
             )
 
-        molecule = assign_elf10_am1_bond_orders(
-            molecule, self.wbo_options.max_conformers, self.wbo_options.rms_threshold
-        )
+        try:
+            molecule = assign_elf10_am1_bond_orders(
+                molecule, self.wbo_options.max_conformers, self.wbo_options.rms_threshold
+            )
+        except RuntimeError:
+            logger.warning("There was a problem with ELF conformer selection. Computing "
+                           "fractional bond orders using a single conformer instead.")
+            molecule.assign_fractional_bond_orders(bond_order_model='AM1-Wiberg')
 
         rotatable_bonds = self.find_rotatable_bonds(molecule, target_bond_smarts)
         wbo_rotor_bonds = self._get_rotor_wbo(molecule, rotatable_bonds)
