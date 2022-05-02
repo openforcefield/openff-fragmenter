@@ -122,6 +122,11 @@ html_theme_options = {
 
 html_static_path = ["_static"]
 
+# sphinx-notfound-page
+# https://github.com/readthedocs/sphinx-notfound-page
+# Renders a 404 page with absolute links
+import importlib
+
 if importlib.util.find_spec("notfound"):
     extensions.append("notfound.extension")
 
