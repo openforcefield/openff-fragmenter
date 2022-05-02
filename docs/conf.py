@@ -60,6 +60,11 @@ pygments_style = "default"
 
 # Autodoc settings
 autosummary_generate = True
+autodoc_preserve_defaults = True
+autodoc_typehints_format = "short"
+# Workaround for autodoc_typehints_format not working for attributes
+# see https://github.com/sphinx-doc/sphinx/issues/10290#issuecomment-1079740009
+python_use_unqualified_type_names = True
 
 autodoc_default_options = {
     "member-order": "bysource",
