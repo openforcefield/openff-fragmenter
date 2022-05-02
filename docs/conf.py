@@ -130,9 +130,7 @@ from importlib.util import find_spec as find_import_spec
 if find_import_spec("notfound"):
     extensions.append("notfound.extension")
 
-    notfound_urls_prefix = (
-        "https://docs.openforcefield.org/projects/fragmenter/en/stable/"
-    )
+    notfound_urls_prefix = "/projects/fragmenter/en/stable/"
     notfound_context = {
         "title": "404: File Not Found",
         "body": f"""
