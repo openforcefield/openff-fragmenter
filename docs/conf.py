@@ -106,9 +106,9 @@ html_sidebars = {"**": ["globaltoc.html", "localtoc.html", "searchbox.html"]}
 html_theme_options = {
     # Repository integration
     # Set the repo url for the link to appear
-    "repo_url": "https://github.com/openforcefield/openff-toolkit",
+    "repo_url": "https://github.com/openforcefield/openff-fragmenter",
     # The name of the repo. If must be set if repo_url is set
-    "repo_name": "openff-toolkit",
+    "repo_name": "openff-fragmenter",
     # Must be one of github, gitlab or bitbucket
     "repo_type": "github",
     # Colour for sidebar captions and other accents. One of
