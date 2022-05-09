@@ -5,16 +5,17 @@ channels:
 dependencies:
 
   # Base depends
-  - python
+  - python=3.7
   - pip
   - setuptools
 
   # Sphinx specific
-  - sphinx ==4.0.2
+  - sphinx>=4.4,<5
   - nbsphinx
   - nbsphinx-link
-  - sphinx_rtd_theme
   - sphinxcontrib-bibtex
+  - autodoc-pydantic
+  - sphinx-notfound-page
   - pandoc
   - ipython
 
@@ -26,4 +27,4 @@ dependencies:
   - jinja2
 
   - pip:
-      - autodoc_pydantic
+      - git+https://github.com/openforcefield/openff-sphinx-theme.git@main

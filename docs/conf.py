@@ -20,52 +20,58 @@ sys.path.insert(0, os.path.abspath(os.pardir))
 
 # -- Project information -----------------------------------------------------
 
-project = 'OpenFF Fragmenter'
+project = "OpenFF Fragmenter"
 copyright = "2018, Chaya D. Stern"
-author = 'Chaya D. Stern'
+author = "Chaya D. Stern"
 
 # The short X.Y version
-version = ''
+version = ""
 # The full version, including alpha/beta/rc tags
-release = ''
+release = ""
 
 
 # -- General configuration ---------------------------------------------------
 
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.mathjax',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.autosummary',
-    'sphinx.ext.doctest',
-    'sphinx.ext.intersphinx',
-    'nbsphinx',
-    'nbsphinx_link',
-    'sphinxcontrib.bibtex',
-    'sphinxcontrib.autodoc_pydantic',
+    "sphinx.ext.autodoc",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.doctest",
+    "sphinx.ext.intersphinx",
+    "nbsphinx",
+    "nbsphinx_link",
+    "sphinxcontrib.bibtex",
+    "sphinxcontrib.autodoc_pydantic",
+    "openff_sphinx_theme",
 ]
 
-source_suffix = '.rst'
+source_suffix = ".rst"
 
-master_doc = 'index'
+master_doc = "index"
 
 language = None
 
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'default'
+pygments_style = "default"
 
 # Autodoc settings
 autosummary_generate = True
+autodoc_preserve_defaults = True
+autodoc_typehints_format = "short"
+# Workaround for autodoc_typehints_format not working for attributes
+# see https://github.com/sphinx-doc/sphinx/issues/10290#issuecomment-1079740009
+python_use_unqualified_type_names = True
 
 autodoc_default_options = {
-    'member-order': 'bysource',
+    "member-order": "bysource",
 }
 
 autodoc_mock_imports = [
-    'openff.toolkit',
+    "openff.toolkit",
 ]
 
 # Napoleon settings
@@ -79,18 +85,19 @@ autodoc_pydantic_show_validators = False
 autodoc_pydantic_model_show_validators = False
 
 # nbsphinx settings
-nbsphinx_execute = 'never'
+nbsphinx_execute = "never"
 
 # sphinx bibtext settings
-bibtex_bibfiles = [
-    'index.bib'
-]
+bibtex_bibfiles = ["index.bib"]
 
 # Set up the intershinx mappings.
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/', None),
-    'numpy': ('https://docs.scipy.org/doc/numpy/', None),
-    'openff.toolkit': ('https://open-forcefield-toolkit.readthedocs.io/en/latest/', None),
+    "python": ("https://docs.python.org/", None),
+    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
+    "openff.toolkit": (
+        "https://open-forcefield-toolkit.readthedocs.io/en/latest/",
+        None,
+    ),
 }
 
 # Set up mathjax.
@@ -98,40 +105,72 @@ mathjax_path = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"
 
 # -- Options for HTML output -------------------------------------------------
 
-html_theme = 'sphinx_rtd_theme'
+html_theme = "openff_sphinx_theme"
+html_sidebars = {"**": ["globaltoc.html", "localtoc.html", "searchbox.html"]}
 
 html_theme_options = {
-    'prev_next_buttons_location': None,
-    'sticky_navigation': False
+    # Repository integration
+    # Set the repo url for the link to appear
+    "repo_url": "https://github.com/openforcefield/openff-fragmenter",
+    # The name of the repo. If must be set if repo_url is set
+    "repo_name": "openff-fragmenter",
+    # Must be one of github, gitlab or bitbucket
+    "repo_type": "github",
+    # Colour for sidebar captions and other accents. One of
+    # openff-blue, openff-toolkit-blue, openff-dataset-yellow,
+    # openff-evaluator-orange, aquamarine, lilac, amaranth, grape,
+    # violet, pink, pale-green, green, crimson, eggplant, turquoise,
+    # or a tuple of three ints in the range [0, 255] corresponding to
+    # a position in RGB space.
+    "color_accent": "aquamarine",
 }
 
-html_static_path = ['_static']
+html_static_path = ["_static"]
 
-html_context = {
-    'css_files': [
-        '_static/css/theme_overrides.css',  # override wide tables in RTD theme
-    ],
-}
+# sphinx-notfound-page
+# https://github.com/readthedocs/sphinx-notfound-page
+# Renders a 404 page with absolute links
+from importlib.util import find_spec as find_import_spec
+
+if find_import_spec("notfound"):
+    extensions.append("notfound.extension")
+
+    notfound_urls_prefix = "/projects/fragmenter/en/stable/"
+    notfound_context = {
+        "title": "404: File Not Found",
+        "body": f"""
+    <h1>404: File Not Found</h1>
+    <p>
+        Sorry, we couldn't find that page. This often happens as a result of
+        following an outdated link. Please check the
+        <a href="{notfound_urls_prefix}">latest stable version</a>
+        of the docs, unless you're sure you want an earlier version, and
+        try using the search box or the navigation menu on the left.
+    </p>
+    <p>
+    </p>
+    """,
+    }
 
 # -- Options for HTMLHelp output ---------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'fragmenterdoc'
+htmlhelp_basename = "fragmenterdoc"
 
 # -- Options for LaTeX output ------------------------------------------------
 
 latex_elements = {
-    'papersize': 'letterpaper',
-    'pointsize': '10pt',
-    'preamble': '',
-    'figure_align': 'htbp',
+    "papersize": "letterpaper",
+    "pointsize": "10pt",
+    "preamble": "",
+    "figure_align": "htbp",
 }
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'fragmenter.tex', 'OpenFF Fragmenter Documentation', author, 'manual'),
+    (master_doc, "fragmenter.tex", "OpenFF Fragmenter Documentation", author, "manual"),
 ]
 
 
@@ -140,7 +179,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'openff-fragmenter', 'OpenFF Fragmenter Documentation', [author], 1)
+    (master_doc, "openff-fragmenter", "OpenFF Fragmenter Documentation", [author], 1)
 ]
 
 # -- Options for Texinfo output ----------------------------------------------
@@ -149,7 +188,13 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'openff-fragmenter', 'OpenFF Fragmenter Documentation',
-     author, 'openff-fragmenter', 'Fragment molecules for quantum mechanics torsion scans.',
-     'Miscellaneous'),
+    (
+        master_doc,
+        "openff-fragmenter",
+        "OpenFF Fragmenter Documentation",
+        author,
+        "openff-fragmenter",
+        "Fragment molecules for quantum mechanics torsion scans.",
+        "Miscellaneous",
+    ),
 ]
