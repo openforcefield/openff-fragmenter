@@ -34,7 +34,7 @@ jobs:
       with:
         environment-file: devtools/conda-envs/meta.yaml
         extra-specs: |
-          python: ${{ matrix.python-version }}
+          python=${{ matrix.python-version }}
 
     - name: Install OpenEye
       if: matrix.openeye
