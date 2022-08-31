@@ -83,7 +83,7 @@ def _generate_conformers(
         A new multi-conformer molecule with up to max_confs conformers.
     """
 
-    from simtk import unit
+    from openff.units import unit
 
     molecule = copy.deepcopy(molecule)
 

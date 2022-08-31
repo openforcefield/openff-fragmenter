@@ -9,7 +9,9 @@ dependencies:
     # Core dependencies
   - python
 
-  - openff-toolkit >=0.11.0
+  - openff-toolkit-base >=0.11.0
+  - ambertools
+  - rdkit
   - pydantic
   - jinja2
 
