@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macOS-latest]
-        python-version: [3.8, 3.9]
+        python-version: ["3.8", "3.9"]
         openeye: [false, true]
 
     env:
@@ -34,7 +34,7 @@ jobs:
       with:
         environment-file: devtools/conda-envs/meta.yaml
         extra-specs: |
-          python-version: ${{ matrix.python-version }}
+          python: ${{ matrix.python-version }}
 
     - name: Install OpenEye
       if: matrix.openeye
