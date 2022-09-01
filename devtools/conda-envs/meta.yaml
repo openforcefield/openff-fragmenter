@@ -9,16 +9,11 @@ dependencies:
     # Core dependencies
   - python
 
-  - openff-toolkit-base >=0.9.2
-  - numpy
-  - pydantic
-  - networkx
-  - jinja2
-  - typing-extensions # py<3.8
-
-    # Optional dependencies
-  - rdkit
+  - openff-toolkit-base >=0.11.0
   - ambertools
+  - rdkit
+  - pydantic
+  - jinja2
 
     # Testing
   - pytest

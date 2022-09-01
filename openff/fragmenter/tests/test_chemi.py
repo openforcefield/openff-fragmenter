@@ -21,7 +21,7 @@ from openff.toolkit.utils import (
     OpenEyeToolkitWrapper,
     ToolkitRegistry,
 )
-from simtk import unit
+from openff.units import unit
 
 
 def test_assign_elf10_am1_bond_orders():
@@ -88,8 +88,8 @@ def test_generate_conformers_canonical_check():
     )
     remapped_molecule = chemi._generate_conformers(remapped_molecule, max_confs=1)
 
-    original_conformer = original_molecule.conformers[0].value_in_unit(unit.angstrom)
-    remapped_conformer = remapped_molecule.conformers[0].value_in_unit(unit.angstrom)
+    original_conformer = original_molecule.conformers[0].m_as(unit.angstrom)
+    remapped_conformer = remapped_molecule.conformers[0].m_as(unit.angstrom)
 
     assert numpy.allclose(original_conformer[:4], remapped_conformer[atom_map][:4])
 
