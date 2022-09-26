@@ -236,7 +236,9 @@ def test_extract_fragment_bonds_in_atoms():
 @using_openeye
 def test_extract_fragment_disconnected_fragment_warning():
 
-    molecule = Molecule.from_smiles("[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])")
+    molecule = Molecule.from_smiles(
+        "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
+    )
 
     with pytest.raises(AssertionError, match="An atom that is not bonded"):
         extract_fragment(molecule, {1, 2}, set())
