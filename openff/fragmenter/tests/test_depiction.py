@@ -17,7 +17,11 @@ from openff.toolkit.topology import Molecule
 def test_xx_render_parent(draw_function):
 
     try:
-        svg_contents = draw_function(Molecule.from_smiles("[C:1][C:2][C:3][C:4]"))
+        svg_contents = draw_function(
+            Molecule.from_smiles(
+                "[C:1]([H:5])([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])([H:14])"
+            )
+        )
     except ModuleNotFoundError as e:
         pytest.skip(str(e))
 
@@ -31,8 +35,12 @@ def test_xx_render_fragment(draw_function):
     try:
 
         svg_contents = draw_function(
-            Molecule.from_smiles("[C:1][C:2][C:3][C:4]"),
-            Molecule.from_smiles("[C:1][C:2]"),
+            Molecule.from_smiles(
+                "[C:1]([H:5])([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])([H:14])"
+            ),
+            Molecule.from_smiles(
+                "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
+            ),
             (1, 2),
         )
 
@@ -48,8 +56,14 @@ def test_depict_fragments(tmpdir):
     output_file = os.path.join(tmpdir, "report.html")
 
     depict_fragments(
-        Molecule.from_smiles("[C:1][C:2][C:3][C:4]"),
-        {(1, 2): Molecule.from_smiles("[C:1][C:2]")},
+        Molecule.from_smiles(
+            "[C:1]([H:5])([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])([H:14])"
+        ),
+        {
+            (1, 2): Molecule.from_smiles(
+                "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
+            )
+        },
         output_file,
     )
 
@@ -66,8 +80,13 @@ def test_depict_fragmentation_result(tmpdir):
 
     depict_fragmentation_result(
         FragmentationResult(
-            parent_smiles="[C:1][C:2][C:3][C:4]",
-            fragments=[Fragment(smiles="[C:1][C:2]", bond_indices=(1, 2))],
+            parent_smiles="[C:1]([H:5])([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])([H:14])",
+            fragments=[
+                Fragment(
+                    smiles="[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])",
+                    bond_indices=(1, 2),
+                )
+            ],
             provenance={},
         ),
         output_file,
