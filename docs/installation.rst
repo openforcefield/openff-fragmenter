@@ -10,6 +10,8 @@ The recommended way to install ``openff-fragmenter`` is via the ``conda`` packag
 
     conda install -c conda-forge openff-fragmenter
 
+If you do not have Conda installed, see the `OpenFF installation guide <openff.docs:install>`_.
+
 If you have access to the OpenEye toolkits (namely ``oechem``, ``oequacpac`` and ``oeomega``) we recommend installing
 these also as these can speed up fragmentation times significantly:
 

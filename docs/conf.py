@@ -98,6 +98,10 @@ intersphinx_mapping = {
         "https://open-forcefield-toolkit.readthedocs.io/en/latest/",
         None,
     ),
+    "openff.docs": (
+        "https://docs.openforcefield.org/en/latest/",
+        None,
+    ),
 }
 
 # Set up mathjax.
