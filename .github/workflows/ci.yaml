@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macOS-latest]
-        python-version: ["3.8", "3.9"]
+        python-version: ["3.9", "3.10", "3.11"]
         openeye: [false, true]
 
     env:
@@ -29,11 +29,11 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Setup Conda Environment
-      uses: mamba-org/provision-with-micromamba@main
+    - name: Set up conda environment
+      uses: mamba-org/setup-micromamba@v1
       with:
-        environment-file: devtools/conda-envs/meta.yaml
-        extra-specs: |
+        environment-file: devtools/conda-envs/test_env.yaml
+        create-args: >-
           python=${{ matrix.python-version }}
 
     - name: Install OpenEye
@@ -49,7 +49,7 @@ jobs:
     - name: Install Package
       shell: bash -l {0}
       run: |
-        python setup.py develop --no-deps
+        python -m pip install -e .
 
     - name: Conda Environment Information
       shell: bash -l {0}
