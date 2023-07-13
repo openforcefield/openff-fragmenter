@@ -96,7 +96,6 @@ def get_atom_index(molecule: Molecule, map_index: int) -> int:
 
 @contextmanager
 def global_toolkit_registry(toolkit_registry: Union[ToolkitRegistry, ToolkitWrapper]):
-
     if isinstance(toolkit_registry, ToolkitRegistry):
         toolkits = toolkit_registry.registered_toolkits
     elif isinstance(toolkit_registry, ToolkitWrapper):

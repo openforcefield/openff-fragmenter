@@ -29,7 +29,6 @@ def test_default_functional_groups():
 
 
 def test_get_map_index():
-
     molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
     assert get_map_index(molecule, 0) == 5
 
@@ -42,7 +41,6 @@ def test_get_map_index():
     ],
 )
 def test_get_map_index_error(raise_error, expected_raises):
-
     molecule = Molecule.from_smiles("C")
 
     with expected_raises:
@@ -51,7 +49,6 @@ def test_get_map_index_error(raise_error, expected_raises):
 
 
 def test_get_atom_index():
-
     molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
     assert get_atom_index(molecule, 5) == 0
 

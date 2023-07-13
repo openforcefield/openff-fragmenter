@@ -169,18 +169,15 @@ class Fragmenter(BaseModel, abc.ABC):
 
         # Check for new / flipped chiral centers.
         for atom_index in atom_stereocenters:
-
             map_index = get_map_index(fragment, atom_index)
 
             if map_index not in parent_stereo:
-
                 logger.warning(f"A new stereocenter formed at atom {map_index}")
                 return False
 
             fragment_stereo = fragment.atoms[atom_index].stereochemistry
 
             if fragment_stereo != parent_stereo[map_index]:
-
                 logger.warning(
                     f"Stereochemistry for atom {map_index} flipped from "
                     f"{parent_stereo[map_index]} to {fragment_stereo}"
@@ -189,7 +186,6 @@ class Fragmenter(BaseModel, abc.ABC):
                 return False
 
         for index_tuple in bond_stereocenters:
-
             map_tuple = tuple(get_map_index(fragment, i) for i in index_tuple)
 
             map_tuple = (
@@ -197,14 +193,12 @@ class Fragmenter(BaseModel, abc.ABC):
             )
 
             if map_tuple not in parent_stereo:
-
                 logger.warning(f"A new chiral bond formed at bond {map_tuple}")
                 return False
 
             fragment_stereo = fragment.get_bond_between(*index_tuple).stereochemistry
 
             if fragment_stereo != parent_stereo[map_tuple]:
-
                 logger.warning(
                     f"Stereochemistry for bond {map_tuple} flipped from "
                     f"{parent_stereo[map_tuple]} to {fragment_stereo}"
@@ -233,7 +227,6 @@ class Fragmenter(BaseModel, abc.ABC):
         """
 
         for stereoisomer in _enumerate_stereoisomers(fragment, 200, True):
-
             if not cls._check_stereo(stereoisomer, parent_stereo):
                 continue
 
@@ -265,14 +258,12 @@ class Fragmenter(BaseModel, abc.ABC):
         found_groups = {}
 
         for functional_group, smarts in functional_groups.items():
-
             unique_matches = {
                 tuple(sorted(match))
                 for match in molecule.chemical_environment_matches(smarts)
             }
 
             for i, match in enumerate(unique_matches):
-
                 atoms = set(get_map_index(molecule, index) for index in match)
                 bonds = set(
                     (
@@ -317,13 +308,11 @@ class Fragmenter(BaseModel, abc.ABC):
         """
 
         if target_bond_smarts is None:
-
             matches = molecule.chemical_environment_matches(
                 "[!$(*#*)&!D1:1]-,=;!@[!$(*#*)&!D1:2]"
             )
 
         else:
-
             matches = [
                 match
                 for smarts in target_bond_smarts
@@ -331,7 +320,6 @@ class Fragmenter(BaseModel, abc.ABC):
             ]
 
             if not all(len(match) == 2 for match in matches):
-
                 raise ValueError(
                     f"The `target_bond_smarts` pattern ({target_bond_smarts}) "
                     f"must define exactly two indexed atoms to match."
@@ -340,7 +328,6 @@ class Fragmenter(BaseModel, abc.ABC):
         unique_matches = {tuple(sorted(match)) for match in matches}
 
         if target_bond_smarts is None:
-
             # Drop bonds without a heavy degree of at least 2 on each end to avoid
             # finding terminal bonds
             def heavy_degree(atom_index: int) -> int:
@@ -427,11 +414,9 @@ class Fragmenter(BaseModel, abc.ABC):
         ]
 
         for atom in atoms:
-
             map_index = get_map_index(molecule, atom.molecule_atom_index)
 
             for neighbor in atom.bonded_atoms:
-
                 neighbour_map_index = get_map_index(
                     molecule, neighbor.molecule_atom_index
                 )
@@ -440,7 +425,6 @@ class Fragmenter(BaseModel, abc.ABC):
                 bond_map_indices.add((map_index, neighbour_map_index))
 
                 for next_neighbour in neighbor.bonded_atoms:
-
                     next_neighbour_map_index = get_map_index(
                         molecule, next_neighbour.molecule_atom_index
                     )
@@ -493,7 +477,6 @@ class Fragmenter(BaseModel, abc.ABC):
         ring_system_bonds = defaultdict(set)
 
         for bond in molecule.bonds:
-
             ring_index_1 = atom_to_ring_indices.get(bond.atom1_index, -1)
             ring_index_2 = atom_to_ring_indices.get(bond.atom2_index, -2)
 
@@ -510,7 +493,6 @@ class Fragmenter(BaseModel, abc.ABC):
         # Scan the neighbours of the ring system atoms for any functional groups
         # / non-rotor substituents which should be included in the ring systems.
         for ring_index in ring_system_atoms:
-
             # If any atoms are part of a functional group, include the other atoms in the
             # group in the ring system lists
             ring_functional_groups = {
@@ -585,7 +567,6 @@ class Fragmenter(BaseModel, abc.ABC):
         non_rotor_bonds = set()
 
         for bond in molecule.bonds:
-
             # Check if the bond is a rotor.
             if bond in rotor_bonds:
                 continue
@@ -705,7 +686,6 @@ class Fragmenter(BaseModel, abc.ABC):
         for match in parent.chemical_environment_matches(
             "[!#1:1]~&!@[*:2]@[*:3]~&!@[!#1*:4]"
         ):
-
             map_tuple = tuple(get_map_index(parent, i) for i in match)
 
             if map_tuple[:2] not in bonds and map_tuple[:2][::-1] not in bonds:
@@ -752,7 +732,6 @@ class Fragmenter(BaseModel, abc.ABC):
         bonds_to_add = set()
 
         for map_index in atoms:
-
             atom_index = get_atom_index(parent, map_index)
             atom = parent.atoms[atom_index]
 
@@ -766,7 +745,6 @@ class Fragmenter(BaseModel, abc.ABC):
             should_cap = False
 
             for neighbour in atom.bonded_atoms:
-
                 neighbour_map_index = get_map_index(
                     parent, neighbour.molecule_atom_index
                 )
@@ -781,7 +759,6 @@ class Fragmenter(BaseModel, abc.ABC):
                 continue
 
             for neighbour in atom.bonded_atoms:
-
                 if neighbour.atomic_number != 6:
                     continue
 
@@ -912,7 +889,6 @@ class Fragmenter(BaseModel, abc.ABC):
             toolkit_registry = GLOBAL_TOOLKIT_REGISTRY
 
         with global_toolkit_registry(toolkit_registry):
-
             result = self._fragment(molecule, target_bond_smarts)
 
             result.provenance["toolkits"] = [
@@ -1004,7 +980,6 @@ class WBOFragmenter(Fragmenter):
 
         # Calculate WBO for molecule
         if self.wbo_options.method != "am1-wiberg-elf10":
-
             raise NotImplementedError(
                 "WBOs can currently only be computed using 'am1-wiberg-elf10'."
             )
@@ -1058,7 +1033,6 @@ class WBOFragmenter(Fragmenter):
         """
 
         if any(bond.fractional_bond_order is None for bond in molecule.bonds):
-
             raise RuntimeError(
                 "WBO was not calculated for this molecule. Calculating WBO..."
             )
@@ -1066,7 +1040,6 @@ class WBOFragmenter(Fragmenter):
         rotors_wbo = {}
 
         for bond_indices in rotor_bonds:
-
             bond = molecule.get_bond_between(
                 get_atom_index(molecule, bond_indices[0]),
                 get_atom_index(molecule, bond_indices[1]),
@@ -1108,7 +1081,6 @@ class WBOFragmenter(Fragmenter):
             fragment = assign_elf10_am1_bond_orders(fragment, **kwargs)
 
         except RuntimeError:
-
             # Most of the time it fails because it is either missing parameters or a
             # functional group that should not be fragmented was fragmented
             logger.warning(
@@ -1200,7 +1172,6 @@ class WBOFragmenter(Fragmenter):
             )
 
         while fragment is not None and wbo_difference > threshold:
-
             fragment, has_new_stereocenter = cls._add_next_substituent(
                 parent,
                 parent_stereo,
@@ -1237,7 +1208,6 @@ class WBOFragmenter(Fragmenter):
     def _select_neighbour_by_path_length(
         cls, molecule: Molecule, atoms: Set[int], target_bond: BondTuple
     ) -> Optional[Tuple[int, BondTuple]]:
-
         atom_indices = {get_atom_index(molecule, atom) for atom in atoms}
 
         atoms_to_add = [
@@ -1287,7 +1257,6 @@ class WBOFragmenter(Fragmenter):
             sort_by = path_lengths_2
 
         else:
-
             # If there are multiple neighbouring atoms the same path length away
             # from the target bond fall back to sorting by the WBO.
             map_atoms_to_add = [
@@ -1422,7 +1391,6 @@ class WBOFragmenter(Fragmenter):
         # If the neighbour to include is part of a functional group / ring system
         # the entire group should be included in the fragment.
         for group, group_atoms in parent_groups.items():
-
             if neighbour_atom not in group_atoms[0]:
                 continue
 
@@ -1430,7 +1398,6 @@ class WBOFragmenter(Fragmenter):
             bonds.update(parent_groups[group][1])
 
         for ring_index, ring_atoms in parent_rings.items():
-
             if neighbour_atom not in ring_atoms[0]:
                 continue
 
@@ -1468,7 +1435,6 @@ class PfizerFragmenter(Fragmenter):
         fragments = {}
 
         for bond in rotatable_bonds:
-
             atoms, bonds = self._get_torsion_quartet(parent, bond)
 
             atoms, bonds = self._get_ring_and_fgroups(

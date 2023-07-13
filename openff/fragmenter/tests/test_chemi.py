@@ -25,7 +25,6 @@ from openff.units import unit
 
 
 def test_assign_elf10_am1_bond_orders():
-
     molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("CCCC"))
 
     for bond in molecule.bonds:
@@ -34,9 +33,7 @@ def test_assign_elf10_am1_bond_orders():
 
 @using_openeye
 def test_assign_elf10_am1_bond_orders_simple_parity():
-
     with global_toolkit_registry(OpenEyeToolkitWrapper()):
-
         molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("C"))
         oe_bond_orders = [bond.fractional_bond_order for bond in molecule.bonds]
 
@@ -51,7 +48,6 @@ def test_assign_elf10_am1_bond_orders_simple_parity():
 
 @pytest.mark.parametrize("smiles, max_confs", [("CCCCCCC", 1), ("CCCCCCC", 3)])
 def test_generate_conformers(smiles, max_confs):
-
     returned_molecule = chemi._generate_conformers(
         Molecule.from_smiles(smiles), max_confs=max_confs
     )
@@ -60,7 +56,6 @@ def test_generate_conformers(smiles, max_confs):
 
 
 def test_generate_conformers_ordering():
-
     original_molecule = Molecule.from_smiles("CCCC")
 
     returned_molecule = chemi._generate_conformers(original_molecule, max_confs=1)
@@ -75,7 +70,6 @@ def test_generate_conformers_ordering():
 
 
 def test_generate_conformers_canonical_check():
-
     original_molecule = Molecule.from_smiles("CCCCl").canonical_order_atoms()
     original_molecule = chemi._generate_conformers(original_molecule, max_confs=1)
 
@@ -110,7 +104,6 @@ def test_generate_conformers_canonical_check():
     ],
 )
 def test_find_ring_systems(smiles):
-
     from openeye import oechem
 
     molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
@@ -121,7 +114,6 @@ def test_find_ring_systems(smiles):
     ring_systems = find_ring_systems(molecule)
 
     for i, ring_system in enumerate(expected):
-
         if ring_system > 0:
             assert ring_systems[i] == ring_system
 
@@ -131,7 +123,6 @@ def test_find_ring_systems(smiles):
 
 @pytest.mark.parametrize("add_atom_map", [True, False])
 def test_smiles_to_molecule(add_atom_map):
-
     molecule = smiles_to_molecule("CCCC", add_atom_map=add_atom_map)
 
     assert isinstance(molecule, Molecule)
@@ -154,7 +145,6 @@ def test_smiles_to_molecule(add_atom_map):
     "find_method", [_find_oe_stereocenters, _find_rd_stereocenters, find_stereocenters]
 )
 def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method):
-
     molecule = Molecule.from_mapped_smiles(smiles, allow_undefined_stereo=True)
 
     stereogenic_atoms, stereogenic_bonds = None, None
@@ -205,7 +195,6 @@ def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method)
     "extract_method", [_extract_rd_fragment, _extract_oe_fragment, extract_fragment]
 )
 def test_extract_fragment(smiles, atoms, bonds, expected, extract_method):
-
     molecule = Molecule.from_mapped_smiles(smiles)
     molecule.properties["atom_map"] = {i: i + 1 for i in range(molecule.n_atoms)}
 
@@ -235,7 +224,6 @@ def test_extract_fragment_bonds_in_atoms():
 
 @using_openeye
 def test_extract_fragment_disconnected_fragment_warning():
-
     molecule = Molecule.from_smiles(
         "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
     )
