@@ -37,7 +37,6 @@ def potanib() -> Molecule:
 
 @pytest.fixture()
 def abemaciclib() -> Molecule:
-
     return Molecule.from_smiles(
         "[H:38][c:1]1[c:2]([c:14]([n:28][c:5]([c:8]1[C:25]([H:64])([H:65])[N:33]2"
         "[C:17]([C:19]([N:34]([C:20]([C:18]2([H:46])[H:47])([H:50])[H:51])[C:26]"
@@ -52,7 +51,6 @@ def abemaciclib() -> Molecule:
 
 @pytest.fixture()
 def dasatanib() -> Molecule:
-
     return Molecule.from_smiles(
         "[H:34][c:1]1[c:2]([c:6]([c:7]([c:8]([c:3]1[H:36])[Cl:33])[N:28]([H:57])[C:14]"
         "(=[O:30])[c:9]2[c:5]([n:23][c:13]([s:32]2)[N:29]([H:58])[c:11]3[c:4]([c:10]"

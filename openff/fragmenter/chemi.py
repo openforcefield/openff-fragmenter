@@ -44,7 +44,6 @@ def assign_elf10_am1_bond_orders(
     per_conformer_bond_orders = []
 
     for conformer in molecule.conformers:
-
         molecule.assign_fractional_bond_orders("am1-wiberg", use_conformers=[conformer])
 
         per_conformer_bond_orders.append(
@@ -158,7 +157,6 @@ def find_ring_systems(molecule: Molecule) -> Dict[int, int]:
     ring_systems = {}
 
     for i, ring_system in enumerate(networkx.connected_components(graph)):
-
         for atom_index in ring_system:
             assert atom_index not in ring_systems
             ring_systems[atom_index] = i + 1
@@ -288,7 +286,6 @@ def find_stereocenters(molecule: Molecule) -> Tuple[List[int], List[Tuple[int, i
 def _extract_rd_fragment(
     molecule: Molecule, atom_indices: Set[int], bond_indices: Set[Tuple[int, int]]
 ) -> Molecule:
-
     from rdkit import Chem
 
     rd_molecule = Chem.RWMol(molecule.to_rdkit())
@@ -311,9 +308,7 @@ def _extract_rd_fragment(
     # Make sure to include any Hs bonded to the included atom set otherwise radicals
     # will form.
     for map_index in atom_indices:
-
         for neighbour in rd_atoms_by_map[map_index].GetNeighbors():
-
             if (
                 neighbour.GetAtomicNum() != 1
                 or neighbour.GetAtomMapNum() < 1
@@ -333,14 +328,12 @@ def _extract_rd_fragment(
     rd_atoms_by_index = {atom.GetIdx(): atom for atom in rd_molecule.GetAtoms()}
 
     for atom_index in [*atoms_to_use]:
-
         atom = rd_atoms_by_index[atom_index]
 
         old_valence = atom.GetTotalValence()
         new_valence = atom.GetTotalValence()
 
         for neighbour_bond in rd_atoms_by_index[atom_index].GetBonds():
-
             if (
                 neighbour_bond.GetBeginAtomIdx() in atoms_to_use
                 and neighbour_bond.GetEndAtomIdx() in atoms_to_use
@@ -361,7 +354,6 @@ def _extract_rd_fragment(
             )
             == 1
         ):
-
             # This is likely a cap carbon which was retained from an existing ring. It's
             # aromaticity needs to be cleared before calling ``MolFragmentToSmiles``
             # otherwise will (understandably) be confused and throw an exception.
@@ -369,7 +361,6 @@ def _extract_rd_fragment(
 
         # Add a hydrogen to the atom whose valence will change.
         for _ in range(int(numpy.rint(old_valence - new_valence))):
-
             new_atom = Chem.Atom(1)
             new_atom_index = rd_molecule.AddAtom(new_atom)
 
@@ -391,25 +382,21 @@ def _extract_rd_fragment(
 def _extract_oe_fragment(
     molecule: Molecule, atom_indices: Set[int], bond_indices: Set[Tuple[int, int]]
 ) -> Molecule:
-
     from openeye import oechem
 
     oe_molecule = molecule.to_openeye()
 
     # Restore the map indices as to_openeye does not automatically add them.
     for atom_index, map_index in molecule.properties["atom_map"].items():
-
         oe_atom = oe_molecule.GetAtom(oechem.OEHasAtomIdx(atom_index))
         oe_atom.SetMapIdx(map_index)
 
     # Include any Hs bonded to the included atom set so we can retain their map
     # indices.
     for map_index in {*atom_indices}:
-
         oe_atom = oe_molecule.GetAtom(oechem.OEHasMapIdx(map_index))
 
         for neighbour in oe_atom.GetAtoms():
-
             if (
                 neighbour.GetAtomicNum() != 1
                 or neighbour.GetMapIdx() < 1
@@ -427,7 +414,6 @@ def _extract_oe_fragment(
         atom_bond_set.AddAtom(atom)
 
     for map_index_1, map_index_2 in bond_indices:
-
         atom_1 = oe_molecule.GetAtom(oechem.OEHasMapIdx(map_index_1))
         atom_2 = oe_molecule.GetAtom(oechem.OEHasMapIdx(map_index_2))
 
@@ -479,7 +465,6 @@ def extract_fragment(
     # Make sure that the bond and atom indices are self consistent and that there
     # are no disconnected bonds.
     if not all(i in atom_indices for map_tuple in bond_indices for i in map_tuple):
-
         raise ValueError(
             "The ``bond_indices`` set includes atoms not in the ``atom_indices`` set."
         )
@@ -520,7 +505,6 @@ def smiles_to_molecule(smiles, add_atom_map: bool = False) -> Molecule:
 
     # Add canonical ordered atom maps
     if add_atom_map:
-
         molecule = molecule.canonical_order_atoms()
         molecule.properties["atom_map"] = {i: i + 1 for i in range(molecule.n_atoms)}
 

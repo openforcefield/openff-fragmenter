@@ -30,7 +30,6 @@ from openff.toolkit.topology import Molecule
     ],
 )
 def test_enumerate_stereoisomers(smiles, force_flip, expected):
-
     molecule = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
 
     stereoisomers = _enumerate_stereoisomers(molecule, force_flip=force_flip)

@@ -15,7 +15,6 @@ from openff.toolkit.topology import Molecule
 
 @pytest.mark.parametrize("draw_function", [_oe_render_parent, _rd_render_parent])
 def test_xx_render_parent(draw_function):
-
     try:
         svg_contents = draw_function(
             Molecule.from_smiles(
@@ -31,9 +30,7 @@ def test_xx_render_parent(draw_function):
 
 @pytest.mark.parametrize("draw_function", [_oe_render_fragment, _rd_render_fragment])
 def test_xx_render_fragment(draw_function):
-
     try:
-
         svg_contents = draw_function(
             Molecule.from_smiles(
                 "[C:1]([H:5])([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])([H:14])"
@@ -52,7 +49,6 @@ def test_xx_render_fragment(draw_function):
 
 
 def test_depict_fragments(tmpdir):
-
     output_file = os.path.join(tmpdir, "report.html")
 
     depict_fragments(
@@ -75,7 +71,6 @@ def test_depict_fragments(tmpdir):
 
 
 def test_depict_fragmentation_result(tmpdir):
-
     output_file = os.path.join(tmpdir, "report.html")
 
     depict_fragmentation_result(

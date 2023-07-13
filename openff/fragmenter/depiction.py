@@ -56,7 +56,6 @@ def _oe_wbo_label_display(bond_tuples: Collection[BondTuple]):
             self.bond_tuples = inner_bond_tuples
 
         def __call__(self, bond):
-
             map_tuple = (bond.GetBgn().GetMapIdx(), bond.GetEnd().GetMapIdx())
 
             if (
@@ -82,7 +81,6 @@ def _oe_render_parent(
     image_width: int = 572,
     image_height: int = 198,
 ) -> str:
-
     from openeye import oedepict
 
     rotor_bonds = [] if rotor_bonds is None else rotor_bonds
@@ -122,7 +120,6 @@ def _oe_render_fragment(
     image_width: int = 283,
     image_height: int = 169,
 ) -> str:
-
     from openeye import oechem, oedepict
 
     # Map the OpenFF molecules into OE ones, making sure to explicitly set the atom
@@ -197,7 +194,6 @@ def _rd_render_parent(
     image_width: int = 572,
     image_height: int = 198,
 ) -> str:
-
     from rdkit import Chem
     from rdkit.Chem import Draw
     from rdkit.Chem.rdDepictor import Compute2DCoords
@@ -222,7 +218,6 @@ def _rd_render_fragment(
     image_width: int = 283,
     image_height: int = 169,
 ) -> str:
-
     from rdkit import Chem
     from rdkit.Chem import Draw
     from rdkit.Chem.rdDepictor import Compute2DCoords
@@ -287,7 +282,6 @@ def _rd_render_fragment(
 
 
 def _compress_svg(svg_contents: str) -> str:
-
     encoded_image = base64.b64encode(svg_contents.encode()).decode()
     return f"data:image/svg+xml;base64,{encoded_image}"
 
@@ -328,7 +322,6 @@ def depict_fragments(
     """
 
     try:
-
         header_svg = _oe_render_parent(parent, [*fragments])
         fragment_svg = [
             _oe_render_fragment(parent, fragment, bond_tuple)
@@ -336,7 +329,6 @@ def depict_fragments(
         ]
 
     except ModuleNotFoundError:
-
         header_svg = _rd_render_parent(parent)
         fragment_svg = [
             _rd_render_fragment(parent, fragment, bond_tuple)

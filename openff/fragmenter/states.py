@@ -30,7 +30,6 @@ def _enumerate_stereoisomers(
     """
 
     if max_states > 200:
-
         raise NotImplementedError(
             "The max states must currently be less than 200 due to a hard coded maximum "
             "value in the OpenFF toolkit"
@@ -50,7 +49,6 @@ def _enumerate_stereoisomers(
 
     # Attach the atom map to any stereoisomers.
     if "atom_map" in molecule.properties:
-
         for stereoisomer in stereoisomers:
             stereoisomer.properties["atom_map"] = molecule.properties["atom_map"]
 

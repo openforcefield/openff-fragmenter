@@ -35,7 +35,6 @@ def smarts_set_to_map_indices(
     return_value = set()
 
     for smarts in input_set:
-
         matches = list(
             {
                 tuple(sorted(match))
@@ -70,7 +69,6 @@ def key_smarts_to_map_indices(
     return_value = {}
 
     for smarts, expected in input_dictionary.items():
-
         matches = list(
             {
                 tuple(sorted(match))
@@ -107,9 +105,7 @@ def value_smarts_to_map_indices(
     return_value = defaultdict(set)
 
     for key, values in input_dictionary.items():
-
         for smarts in values:
-
             matches = list(
                 {
                     tuple(sorted(match))
@@ -118,7 +114,6 @@ def value_smarts_to_map_indices(
             )
 
             for match in matches:
-
                 assert 0 < len(match) <= 2
 
                 if len(match) == 1:

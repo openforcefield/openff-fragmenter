@@ -48,7 +48,6 @@ from openff.toolkit.utils import (
     ],
 )
 def test_find_stereo(smiles, output):
-
     molecule = smiles_to_molecule(smiles, add_atom_map=True)
 
     actual_stereo = Fragmenter._find_stereo(molecule)
@@ -69,7 +68,6 @@ def test_find_stereo(smiles, output):
     ],
 )
 def test_check_stereo(smiles, fragment_smiles, output, warning, caplog):
-
     parent = smiles_to_molecule(smiles, add_atom_map=True)
     fragment = smiles_to_molecule(fragment_smiles, add_atom_map=True)
 
@@ -95,7 +93,6 @@ def test_check_stereo(smiles, fragment_smiles, output, warning, caplog):
     ],
 )
 def test_fix_stereo(smiles, fragment_smiles):
-
     parent_stereo = Fragmenter._find_stereo(smiles_to_molecule(smiles, True))
 
     fragment = smiles_to_molecule(fragment_smiles, add_atom_map=True)
@@ -105,7 +102,6 @@ def test_fix_stereo(smiles, fragment_smiles):
 
 
 def test_find_functional_groups(potanib):
-
     found_groups = Fragmenter._find_functional_groups(
         molecule=potanib,
         functional_groups={
@@ -133,7 +129,6 @@ def test_find_functional_groups(potanib):
     assert actual_functional_groups == expected_functional_groups
 
     for group in found_groups:
-
         assert all(
             index in expected_functional_groups[group]
             for bond in found_groups[group][1]
@@ -142,7 +137,6 @@ def test_find_functional_groups(potanib):
 
 
 def test_find_rotatable_bonds_default(abemaciclib):
-
     rotatable_bonds = Fragmenter.find_rotatable_bonds(abemaciclib, None)
     assert len(rotatable_bonds) == 7
 
@@ -173,12 +167,10 @@ def test_find_rotatable_bonds_default(abemaciclib):
     ],
 )
 def test_find_rotatable_bonds_custom(smarts, expected_raises):
-
     ethane = Molecule.from_smiles("CC")
     ethane.properties["atom_map"] = {i: i + 1 for i in range(ethane.n_atoms)}
 
     with expected_raises:
-
         rotatable_bonds = Fragmenter.find_rotatable_bonds(ethane, smarts)
         assert len(rotatable_bonds) == 1
 
@@ -186,7 +178,6 @@ def test_find_rotatable_bonds_custom(smarts, expected_raises):
 
 
 def test_atom_bond_set_to_mol(abemaciclib):
-
     molecule = smiles_to_molecule(abemaciclib.to_smiles(mapped=False), True)
 
     atoms = {
@@ -212,7 +203,6 @@ def test_atom_bond_set_to_mol(abemaciclib):
     )
 
     for bond in fragment.bonds:
-
         if bond.atom1.atomic_number == 1 or bond.atom2.atomic_number == 1:
             continue
 
@@ -226,7 +216,6 @@ def test_atom_bond_set_to_mol(abemaciclib):
     "input_smiles, expected_n_atoms, expected_n_bonds", [("CCCCCCC", 14, 20)]
 )
 def test_get_torsion_quartet(input_smiles, expected_n_atoms, expected_n_bonds):
-
     molecule = smiles_to_molecule(input_smiles, True)
 
     bond_match = molecule.chemical_environment_matches("C[C:1][C:2]CCCC")[0]
@@ -248,7 +237,6 @@ def test_get_torsion_quartet(input_smiles, expected_n_atoms, expected_n_bonds):
     "input_smiles, n_ring_systems", [("CCCC", 0), ("c1ccccc1", 1), ("c1ccccc1C", 1)]
 )
 def test_find_ring_systems(input_smiles, n_ring_systems):
-
     ring_systems = Fragmenter._find_ring_systems(
         smiles_to_molecule(input_smiles, True), {}
     )
@@ -260,7 +248,6 @@ def test_find_ring_systems(input_smiles, n_ring_systems):
     "keep_non_rotor_ring_substituents, n_output", [(True, 7), (False, 6)]
 )
 def test_keep_non_rotor(keep_non_rotor_ring_substituents, n_output):
-
     ring_systems = Fragmenter._find_ring_systems(
         smiles_to_molecule("c1ccccc1C", True),
         {},
@@ -278,7 +265,6 @@ def test_keep_non_rotor(keep_non_rotor_ring_substituents, n_output):
     ],
 )
 def test_get_ring_and_fgroup(input_smiles, bond_smarts, expected):
-
     molecule, _, functional_groups, ring_systems = Fragmenter._prepare_molecule(
         smiles_to_molecule(input_smiles, True), default_functional_groups(), False
     )
@@ -358,7 +344,6 @@ def test_get_ring_and_fgroup_ortho(input_smiles, bond_smarts, expected_pattern):
 
 
 def test_find_ortho_substituents(dasatanib):
-
     # TODO: add test to test adding substituent directly bonded to rotatable bond
     ortho_atoms, ortho_bonds = Fragmenter._find_ortho_substituents(
         dasatanib,
@@ -376,7 +361,6 @@ def test_find_ortho_substituents(dasatanib):
 
 
 def test_cap_open_valance():
-
     molecule, _, functional_groups, ring_systems = Fragmenter._prepare_molecule(
         smiles_to_molecule("CNCCc1ccccc1", True), default_functional_groups(), False
     )
@@ -409,7 +393,6 @@ def test_cap_open_valance():
 
 
 def test_prepare_molecule():
-
     molecule, stereo, functional_groups, ring_systems = Fragmenter._prepare_molecule(
         Molecule.from_smiles("C[C@H](O)C1CCCC1"), {"alcohol": "[#6:1]-[#8X2H1:2]"}, True
     )
@@ -446,7 +429,6 @@ def test_fragmenter_provenance(toolkit_registry, expected_provenance):
         def _fragment(
             self, molecule: Molecule, target_bond_smarts: str
         ) -> FragmentationResult:
-
             return FragmentationResult(
                 parent_smiles="[He:1]", fragments=[], provenance={}
             )
@@ -472,7 +454,6 @@ def test_wbo_fragment():
 
 
 def test_keep_track_of_map():
-
     result = WBOFragmenter().fragment(Molecule.from_smiles("CCCCC"))
 
     assert all(
@@ -481,7 +462,6 @@ def test_keep_track_of_map():
 
 
 def test_get_rotor_wbo():
-
     molecule = smiles_to_molecule("CCCC", True)
 
     for bond in molecule.bonds:
@@ -508,7 +488,6 @@ def test_get_rotor_wbo():
 
 
 def test_compare_wbo():
-
     parent = assign_elf10_am1_bond_orders(smiles_to_molecule("CCCC", add_atom_map=True))
     rotors_wbo = WBOFragmenter._get_rotor_wbo(
         parent, WBOFragmenter.find_rotatable_bonds(parent, None)
@@ -517,7 +496,6 @@ def test_compare_wbo():
     fragment = smiles_to_molecule("CCCC", add_atom_map=True)
 
     for bond_tuple, value in rotors_wbo.items():
-
         assert numpy.isclose(
             WBOFragmenter._compare_wbo(fragment, bond_tuple, value),
             0.0,
@@ -531,7 +509,6 @@ def test_compare_wbo():
 
 
 def test_build_fragment():
-
     parent = assign_elf10_am1_bond_orders(smiles_to_molecule("CCCCCC", True))
     rotors_wbo = WBOFragmenter._get_rotor_wbo(
         parent, WBOFragmenter.find_rotatable_bonds(parent, None)
@@ -568,7 +545,6 @@ def test_build_fragment():
     ],
 )
 def test_ring_fgroups(input_smiles, n_output):
-
     parent = smiles_to_molecule(input_smiles, True)
     parent_groups = Fragmenter._find_functional_groups(
         parent, default_functional_groups()
@@ -580,7 +556,6 @@ def test_ring_fgroups(input_smiles, n_output):
 
 
 def test_add_substituent():
-
     result = WBOFragmenter().fragment(Molecule.from_smiles("CCCCCC"))
 
     fragment = result.fragments_by_bond[(3, 5)].molecule
@@ -611,6 +586,5 @@ def test_add_substituent():
 
 @pytest.mark.parametrize("input_smiles, n_output", [("CCCCCCC", 4)])
 def test_pfizer_fragmenter(input_smiles, n_output):
-
     result = PfizerFragmenter().fragment(Molecule.from_smiles(input_smiles))
     assert len(result.fragments) == n_output
