@@ -8,6 +8,7 @@ import numpy
 from openff.fragmenter.utils import get_atom_index, get_map_index
 from openff.toolkit.topology import Molecule
 from openff.toolkit.utils import LicenseError, ToolkitUnavailableException
+from openff.utilities import MissingOptionalDependencyError, requires_oe_module
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,7 @@ def find_ring_systems(molecule: Molecule) -> Dict[int, int]:
     return ring_systems
 
 
+@requires_oe_module("oechem")
 def _find_oe_stereocenters(
     molecule: Molecule,
 ) -> Tuple[List[int], List[Tuple[int, int]]]:
@@ -277,7 +279,12 @@ def find_stereocenters(molecule: Molecule) -> Tuple[List[int], List[Tuple[int, i
 
     try:
         stereogenic_atoms, stereogenic_bonds = _find_oe_stereocenters(molecule)
-    except (ModuleNotFoundError, ToolkitUnavailableException, LicenseError):
+    except (
+        ModuleNotFoundError,
+        ToolkitUnavailableException,
+        LicenseError,
+        MissingOptionalDependencyError,
+    ):
         stereogenic_atoms, stereogenic_bonds = _find_rd_stereocenters(molecule)
 
     return stereogenic_atoms, stereogenic_bonds
@@ -379,6 +386,7 @@ def _extract_rd_fragment(
     return fragment
 
 
+@requires_oe_module("oechem")
 def _extract_oe_fragment(
     molecule: Molecule, atom_indices: Set[int], bond_indices: Set[Tuple[int, int]]
 ) -> Molecule:
@@ -471,7 +479,12 @@ def extract_fragment(
 
     try:
         fragment = _extract_oe_fragment(molecule, atom_indices, bond_indices)
-    except (ModuleNotFoundError, ToolkitUnavailableException, LicenseError):
+    except (
+        ModuleNotFoundError,
+        ToolkitUnavailableException,
+        LicenseError,
+        MissingOptionalDependencyError,
+    ):
         fragment = _extract_rd_fragment(molecule, atom_indices, bond_indices)
 
     # Sanity check that all atoms are still bonded
