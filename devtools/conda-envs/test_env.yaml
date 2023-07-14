@@ -19,4 +19,5 @@ dependencies:
     # Testing
   - pytest
   - pytest-cov
-  - codecov
+  - pytest-xdist
+  - pytest-randomly
