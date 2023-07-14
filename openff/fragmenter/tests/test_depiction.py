@@ -11,6 +11,7 @@ from openff.fragmenter.depiction import (
 )
 from openff.fragmenter.fragment import Fragment, FragmentationResult
 from openff.toolkit.topology import Molecule
+from openff.utilities import MissingOptionalDependencyError
 
 
 @pytest.mark.parametrize("draw_function", [_oe_render_parent, _rd_render_parent])
@@ -21,7 +22,7 @@ def test_xx_render_parent(draw_function):
                 "[C:1]([H:5])([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])([H:14])"
             )
         )
-    except ModuleNotFoundError as e:
+    except (ModuleNotFoundError, MissingOptionalDependencyError) as e:
         pytest.skip(str(e))
 
     assert isinstance(svg_contents, str)
@@ -41,7 +42,7 @@ def test_xx_render_fragment(draw_function):
             (1, 2),
         )
 
-    except ModuleNotFoundError as e:
+    except (ModuleNotFoundError, MissingOptionalDependencyError) as e:
         pytest.skip(str(e))
 
     assert isinstance(svg_contents, str)

@@ -1,4 +1,4 @@
-name: test
+name: openff-fragmenter-test
 
 channels:
   - conda-forge
