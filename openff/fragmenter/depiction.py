@@ -6,9 +6,11 @@ from jinja2 import Template
 from openff.fragmenter.fragment import BondTuple, FragmentationResult
 from openff.fragmenter.utils import get_map_index
 from openff.toolkit.topology import Molecule
+from openff.utilities import MissingOptionalDependencyError, requires_oe_module
 from pkg_resources import resource_filename
 
 
+@requires_oe_module("oechem")
 def _oe_fragment_predicates(map_indices: Collection[int]):
     """Returns an atom and bond predicate which matches atoms whose map index
     appears in the specified ``map_indices`` collection"""
@@ -43,6 +45,7 @@ def _oe_fragment_predicates(map_indices: Collection[int]):
     return PredicateAtoms(map_indices), PredicateBonds(map_indices)
 
 
+@requires_oe_module("oedepict")
 def _oe_wbo_label_display(bond_tuples: Collection[BondTuple]):
     """Returns a ``OEDisplayBondPropBase`` subclass which will label bonds with the
     specified map indices with their WBO values if present.
@@ -75,6 +78,7 @@ def _oe_wbo_label_display(bond_tuples: Collection[BondTuple]):
     return LabelWibergBondOrder(bond_tuples)
 
 
+@requires_oe_module("oedepict")
 def _oe_render_parent(
     parent: Molecule,
     rotor_bonds: Optional[Collection[BondTuple]] = None,
@@ -113,6 +117,8 @@ def _oe_render_parent(
     return svg_contents.decode()
 
 
+@requires_oe_module("oedepict")
+@requires_oe_module("oechem")
 def _oe_render_fragment(
     parent: Molecule,
     fragment: Molecule,
@@ -328,7 +334,7 @@ def depict_fragments(
             for bond_tuple, fragment in fragments.items()
         ]
 
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, MissingOptionalDependencyError):
         header_svg = _rd_render_parent(parent)
         fragment_svg = [
             _rd_render_fragment(parent, fragment, bond_tuple)

@@ -22,6 +22,7 @@ from openff.toolkit.utils import (
     ToolkitRegistry,
 )
 from openff.units import unit
+from openff.utilities import MissingOptionalDependencyError
 
 
 def test_assign_elf10_am1_bond_orders():
@@ -151,7 +152,7 @@ def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method)
 
     try:
         stereogenic_atoms, stereogenic_bonds = find_method(molecule)
-    except ModuleNotFoundError as e:
+    except (ModuleNotFoundError, MissingOptionalDependencyError) as e:
         pytest.skip(str(e))
 
     assert stereogenic_atoms == expected_atoms
@@ -202,7 +203,7 @@ def test_extract_fragment(smiles, atoms, bonds, expected, extract_method):
 
     try:
         fragment = extract_method(molecule, atoms, bonds)
-    except ModuleNotFoundError as e:
+    except (ModuleNotFoundError, MissingOptionalDependencyError) as e:
         pytest.skip(str(e))
 
     expected_fragment = Molecule.from_smiles(expected)
