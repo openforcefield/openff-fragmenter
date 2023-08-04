@@ -23,6 +23,13 @@ jobs:
         python-version: ["3.9", "3.10", "3.11"]
         pydantic-version: ["1", "2"]
         openeye: [false, true]
+        exclude:
+          - pydantic: "1"
+            python: "3.9"
+          - pydantic: "1"
+            python: "3.10"
+          - pydantic: "1"
+            openeye: false
 
     env:
       OE_LICENSE: ${{ github.workspace }}/oe_license.txt
