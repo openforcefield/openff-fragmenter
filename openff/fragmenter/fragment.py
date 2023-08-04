@@ -24,8 +24,12 @@ from openff.toolkit.utils import (
     ToolkitRegistry,
     ToolkitWrapper,
 )
-from pydantic import BaseModel, Field
 from typing_extensions import Literal
+
+try:
+    from pydantic.v1 import BaseModel, Field
+except ImportError:
+    from pydantic.v1 import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 

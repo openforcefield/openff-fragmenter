@@ -13,7 +13,7 @@ on:
 jobs:
   test:
 
-    name: ${{ matrix.os }} python=${{ matrix.python-version }} OE=${{ matrix.openeye }}
+    name: ${{ matrix.os }} python=${{ matrix.python-version }} pydantic=${{ matrix.pydantic-version }} OE=${{ matrix.openeye }}
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -21,6 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest]
         python-version: ["3.9", "3.10", "3.11"]
+        pydantic-version: ["1", "2"]
         openeye: [false, true]
 
     env:
@@ -35,6 +36,7 @@ jobs:
         environment-file: devtools/conda-envs/test_env.yaml
         create-args: >-
           python=${{ matrix.python-version }}
+          pydantic=${{ matrix.pydantic-version }}
 
     - name: Install OpenEye
       if: matrix.openeye
