@@ -6,8 +6,11 @@ from jinja2 import Template
 from openff.fragmenter.fragment import BondTuple, FragmentationResult
 from openff.fragmenter.utils import get_map_index
 from openff.toolkit.topology import Molecule
-from openff.utilities import MissingOptionalDependencyError, requires_oe_module
-from pkg_resources import resource_filename
+from openff.utilities import (
+    MissingOptionalDependencyError,
+    get_data_file_path,
+    requires_oe_module,
+)
 
 
 @requires_oe_module("oechem")
@@ -341,8 +344,9 @@ def depict_fragments(
             for bond_tuple, fragment in fragments.items()
         ]
 
-    template_path = resource_filename(
-        "openff.fragmenter", os.path.join("data", "report-template.html")
+    template_path = get_data_file_path(
+        os.path.join("data", "report-template.html"),
+        "openff.fragmenter",
     )
 
     with open(template_path) as file:

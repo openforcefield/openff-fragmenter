@@ -9,7 +9,7 @@ from openff.toolkit.utils import (
     ToolkitRegistry,
     ToolkitWrapper,
 )
-from pkg_resources import resource_filename
+from openff.utilities import get_data_file_path
 
 
 def default_functional_groups() -> Dict[str, str]:
@@ -28,8 +28,9 @@ def default_functional_groups() -> Dict[str, str]:
         the corresponding SMARTS pattern.
     """
 
-    file_name = resource_filename(
-        "openff.fragmenter", os.path.join("data", "default-functional-groups.json")
+    file_name = get_data_file_path(
+        os.path.join("data", "default-functional-groups.json"),
+        "openff.fragmenter",
     )
 
     with open(file_name, "r") as file:

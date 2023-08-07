@@ -2,19 +2,19 @@ name: openff-fragmenter-test
 
 channels:
   - conda-forge
-  - defaults
-
 dependencies:
-
-    # Core dependencies
+    # Core
   - python
-
-  - openff-toolkit-base >=0.11.0
-  - openff-utilities >=0.1.9
-  - ambertools
-  - rdkit
   - pydantic
   - jinja2
+
+    # OpenFF stack
+  - openff-toolkit-base >=0.11.0
+  - openff-utilities >=0.1.9
+
+    # Optional tools
+  - ambertools
+  - rdkit
 
     # Testing
   - pytest
