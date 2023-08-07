@@ -69,7 +69,7 @@ def test_global_toolkit_registry():
     assert isinstance(Molecule.from_smiles("C"), Molecule)
 
     assert all(
-        type(original) == type(current)
+        type(original) is type(current)
         for original, current in zip(
             original_toolkits, GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
         )
