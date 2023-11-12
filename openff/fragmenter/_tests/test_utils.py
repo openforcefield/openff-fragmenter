@@ -5,14 +5,8 @@ from openff.fragmenter.utils import (
     default_functional_groups,
     get_atom_index,
     get_map_index,
-    global_toolkit_registry,
 )
 from openff.toolkit.topology import Molecule
-from openff.toolkit.utils import (
-    GLOBAL_TOOLKIT_REGISTRY,
-    ToolkitRegistry,
-    ToolkitWrapper,
-)
 
 
 def test_default_functional_groups():
@@ -51,34 +45,3 @@ def test_get_map_index_error(raise_error, expected_raises):
 def test_get_atom_index():
     molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
     assert get_atom_index(molecule, 5) == 0
-
-
-def test_global_toolkit_registry():
-    class DummyToolkitWrapper(ToolkitWrapper):
-        def from_inchi(self, *args, **kwargs):
-            return type(self)
-
-    original_toolkits = GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
-
-    with global_toolkit_registry(DummyToolkitWrapper()):
-        return_value = Molecule.from_inchi("InChI=1S/CH4/h1H4")
-
-    assert return_value == DummyToolkitWrapper
-
-    # Make sure the registry is returned to it's previous state.
-    assert isinstance(
-        Molecule.from_inchi(
-            "InChI=1S/CH4/h1H4",
-        ),
-        Molecule,
-    )
-
-    assert all(
-        type(original) is type(current)
-        for original, current in zip(
-            original_toolkits, GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
-        )
-    )
-
-    with global_toolkit_registry(ToolkitRegistry([DummyToolkitWrapper])):
-        assert Molecule.from_inchi("InChI=1S/CH4/h1H4") == DummyToolkitWrapper

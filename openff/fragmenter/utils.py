@@ -1,14 +1,9 @@
 import json
 import os
-from contextlib import contextmanager
-from typing import Dict, Union
+from typing import Dict
 
 from openff.toolkit.topology import Molecule
-from openff.toolkit.utils import (
-    GLOBAL_TOOLKIT_REGISTRY,
-    ToolkitRegistry,
-    ToolkitWrapper,
-)
+from openff.toolkit.utils import toolkit_registry_manager
 from openff.utilities import get_data_file_path
 
 
@@ -95,29 +90,5 @@ def get_atom_index(molecule: Molecule, map_index: int) -> int:
     return atom_index
 
 
-@contextmanager
-def global_toolkit_registry(toolkit_registry: Union[ToolkitRegistry, ToolkitWrapper]):
-    if isinstance(toolkit_registry, ToolkitRegistry):
-        toolkits = toolkit_registry.registered_toolkits
-    elif isinstance(toolkit_registry, ToolkitWrapper):
-        toolkits = [toolkit_registry]
-    else:
-        raise NotImplementedError(
-            "Only ``ToolkitRegistry`` and ``ToolkitWrapper`` are supported."
-        )
-
-    original_toolkits = GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
-
-    for toolkit in original_toolkits:
-        GLOBAL_TOOLKIT_REGISTRY.deregister_toolkit(toolkit)
-
-    for toolkit in toolkits:
-        GLOBAL_TOOLKIT_REGISTRY.register_toolkit(toolkit)
-
-    yield
-
-    for toolkit in toolkits:
-        GLOBAL_TOOLKIT_REGISTRY.deregister_toolkit(toolkit)
-
-    for toolkit in original_toolkits:
-        GLOBAL_TOOLKIT_REGISTRY.register_toolkit(toolkit)
+# Public with openff-toolkit >=0.14.4
+global_toolkit_registry = toolkit_registry_manager
