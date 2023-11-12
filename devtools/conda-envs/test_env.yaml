@@ -9,7 +9,7 @@ dependencies:
   - jinja2
 
     # OpenFF stack
-  - openff-toolkit-base >=0.11.0
+  - openff-toolkit-base >=0.14.4
   - openff-utilities >=0.1.9
 
     # Optional tools
