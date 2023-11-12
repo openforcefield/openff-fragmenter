@@ -2,6 +2,7 @@
 import numpy
 import pytest
 from openff.fragmenter import chemi
+from openff.fragmenter._tests.utils import using_openeye
 from openff.fragmenter.chemi import (
     _extract_oe_fragment,
     _extract_rd_fragment,
@@ -13,7 +14,6 @@ from openff.fragmenter.chemi import (
     find_stereocenters,
     smiles_to_molecule,
 )
-from openff.fragmenter.tests.utils import using_openeye
 from openff.fragmenter.utils import global_toolkit_registry
 from openff.toolkit.topology import Molecule
 from openff.toolkit.utils import (

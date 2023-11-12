@@ -6,18 +6,18 @@ import logging
 
 import numpy
 import pytest
+from openff.fragmenter._tests import does_not_raise
+from openff.fragmenter._tests.utils import (
+    key_smarts_to_map_indices,
+    smarts_set_to_map_indices,
+    value_smarts_to_map_indices,
+)
 from openff.fragmenter.chemi import assign_elf10_am1_bond_orders, smiles_to_molecule
 from openff.fragmenter.fragment import (
     FragmentationResult,
     Fragmenter,
     PfizerFragmenter,
     WBOFragmenter,
-)
-from openff.fragmenter.tests import does_not_raise
-from openff.fragmenter.tests.utils import (
-    key_smarts_to_map_indices,
-    smarts_set_to_map_indices,
-    value_smarts_to_map_indices,
 )
 from openff.fragmenter.utils import (
     default_functional_groups,

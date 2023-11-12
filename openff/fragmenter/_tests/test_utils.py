@@ -55,18 +55,23 @@ def test_get_atom_index():
 
 def test_global_toolkit_registry():
     class DummyToolkitWrapper(ToolkitWrapper):
-        def from_smiles(self, *args, **kwargs):
+        def from_inchi(self, *args, **kwargs):
             return type(self)
 
     original_toolkits = GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
 
     with global_toolkit_registry(DummyToolkitWrapper()):
-        return_value = Molecule.from_smiles("C")
+        return_value = Molecule.from_inchi("InChI=1S/CH4/h1H4")
 
     assert return_value == DummyToolkitWrapper
 
     # Make sure the registry is returned to it's previous state.
-    assert isinstance(Molecule.from_smiles("C"), Molecule)
+    assert isinstance(
+        Molecule.from_inchi(
+            "InChI=1S/CH4/h1H4",
+        ),
+        Molecule,
+    )
 
     assert all(
         type(original) is type(current)
@@ -76,4 +81,4 @@ def test_global_toolkit_registry():
     )
 
     with global_toolkit_registry(ToolkitRegistry([DummyToolkitWrapper])):
-        assert Molecule.from_smiles("C") == DummyToolkitWrapper
+        assert Molecule.from_inchi("InChI=1S/CH4/h1H4") == DummyToolkitWrapper
