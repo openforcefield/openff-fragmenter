@@ -1,9 +1,8 @@
 # Fragmenter
 
-[![Test Status](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml/badge.svg?branch=master)](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml)
+[![Test Status](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml)
 [![Documentation Status](https://readthedocs.org/projects/fragmenter/badge/?version=latest)](https://fragmenter.readthedocs.io/en/latest/?badge=latest)
-[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/openforcefield/fragmenter.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/openforcefield/fragmenter/context:python)
-[![codecov](https://codecov.io/gh/openforcefield/fragmenter/branch/master/graph/badge.svg)](https://codecov.io/gh/openforcefield/fragmenter/branch/master)
+[![codecov](https://codecov.io/gh/openforcefield/openff-fragmenter/branch/main/graph/badge.svg)](https://codecov.io/gh/openforcefield/openff-fragmenter/branch/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Software DOI](https://img.shields.io/badge/Code%20DOI-zenodo.127185286-blue)](https://zenodo.org/badge/latestdoi/127185286)
 [![Paper DOI](https://img.shields.io/badge/Paper%20DOI-10.1101%2F2020.08.27.270934-blue)](https://doi.org/10.1101/2020.08.27.270934)
