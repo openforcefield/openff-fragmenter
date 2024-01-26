@@ -1,4 +1,7 @@
 """Test chemi module"""
+
+import warnings
+
 import numpy
 import pytest
 from openff.fragmenter import chemi
@@ -21,6 +24,7 @@ from openff.toolkit.utils import (
     OpenEyeToolkitWrapper,
     ToolkitRegistry,
 )
+from openff.toolkit.utils.exceptions import AtomMappingWarning
 from openff.units import unit
 from openff.utilities import MissingOptionalDependencyError
 
@@ -217,7 +221,10 @@ def test_extract_fragment_bonds_in_atoms():
     """Tests that an exception is raised when the bonds set contains atoms not in the
     atoms set."""
 
-    molecule = Molecule.from_smiles("[H:1][C:2]#[C:3][H:4]")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AtomMappingWarning)
+
+        molecule = Molecule.from_smiles("[H:1][C:2]#[C:3][H:4]")
 
     with pytest.raises(ValueError, match="set includes atoms not in the"):
         extract_fragment(molecule, {2}, {(2, 3)})
@@ -225,9 +232,12 @@ def test_extract_fragment_bonds_in_atoms():
 
 @using_openeye
 def test_extract_fragment_disconnected_fragment_warning():
-    molecule = Molecule.from_smiles(
-        "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AtomMappingWarning)
+
+        molecule = Molecule.from_smiles(
+            "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
+        )
 
     with pytest.raises(AssertionError, match="An atom that is not bonded"):
         extract_fragment(molecule, {1, 2}, set())

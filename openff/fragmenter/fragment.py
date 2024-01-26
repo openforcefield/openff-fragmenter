@@ -1,5 +1,6 @@
 import abc
 import logging
+import warnings
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -24,6 +25,7 @@ from openff.toolkit.utils import (
     ToolkitRegistry,
     ToolkitWrapper,
 )
+from openff.toolkit.utils.exceptions import AtomMappingWarning
 from typing_extensions import Literal
 
 try:
@@ -65,7 +67,10 @@ class Fragment(BaseModel):
     @property
     def molecule(self) -> Molecule:
         """The fragment represented as an OpenFF molecule object."""
-        return Molecule.from_smiles(self.smiles, allow_undefined_stereo=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", AtomMappingWarning)
+
+            return Molecule.from_smiles(self.smiles, allow_undefined_stereo=True)
 
 
 class FragmentationResult(BaseModel):
@@ -88,7 +93,10 @@ class FragmentationResult(BaseModel):
     @property
     def parent_molecule(self) -> Molecule:
         """The parent molecule represented as an OpenFF molecule object."""
-        return Molecule.from_smiles(self.parent_smiles)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", AtomMappingWarning)
+
+            return Molecule.from_smiles(self.parent_smiles)
 
     @property
     def fragment_molecules(self) -> Dict[BondTuple, Molecule]:
@@ -1075,9 +1083,13 @@ class WBOFragmenter(Fragmenter):
 
         # Create new fragment object because sometimes the molecule created from atom
         # bond set is wonky and then the WBOs are not reproducible
-        fragment = Molecule.from_smiles(
-            fragment.to_smiles(mapped=True), allow_undefined_stereo=True
-        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", AtomMappingWarning)
+
+            fragment = Molecule.from_smiles(
+                fragment.to_smiles(mapped=True), allow_undefined_stereo=True
+            )
 
         fragment_map = fragment.properties.pop("atom_map", None)
 
