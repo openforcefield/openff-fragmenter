@@ -277,9 +277,11 @@ def _rd_render_fragment(
         },
         highlightBonds=fragment_bond_indices + rotatable_bond_index,
         highlightBondColors={
-            index: (239.0 / 255.0, 134.0 / 255.0, 131.0 / 255.0)
-            if index in rotatable_bond_index
-            else (52.0 / 255.0, 143.0 / 255.0, 235.0 / 255.0)
+            index: (
+                (239.0 / 255.0, 134.0 / 255.0, 131.0 / 255.0)
+                if index in rotatable_bond_index
+                else (52.0 / 255.0, 143.0 / 255.0, 235.0 / 255.0)
+            )
             for index in fragment_bond_indices + rotatable_bond_index
         },
     )
