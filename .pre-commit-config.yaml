@@ -2,7 +2,7 @@ ci:
   autoupdate_schedule: "quarterly"
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.5.0
+  rev: v4.6.0
   hooks:
   - id: check-yaml
   - id: debug-statements
@@ -10,14 +10,16 @@ repos:
   rev: 24.3.0
   hooks:
   - id: black
-    files: ^openff
 - repo: https://github.com/PyCQA/isort
   rev: 5.13.2
   hooks:
   - id: isort
-    files: ^openff
 - repo: https://github.com/PyCQA/flake8
   rev: 7.0.0
   hooks:
   - id: flake8
-    files: ^openff
+- repo: https://github.com/asottile/pyupgrade
+  rev: v3.15.2
+  hooks:
+  - id: pyupgrade
+    args: ["--py310-plus"]

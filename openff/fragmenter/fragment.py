@@ -2,7 +2,7 @@ import abc
 import logging
 import warnings
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Literal, Union
 
 import networkx
 import openff.fragmenter
@@ -26,7 +26,6 @@ from openff.toolkit.utils import (
     ToolkitWrapper,
 )
 from openff.toolkit.utils.exceptions import AtomMappingWarning
-from typing_extensions import Literal
 
 try:
     from pydantic.v1 import BaseModel, Field
@@ -35,13 +34,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-BondTuple = Tuple[int, int]
-AtomAndBondSet = Tuple[Set[int], Set[BondTuple]]
+BondTuple = tuple[int, int]
+AtomAndBondSet = tuple[set[int], set[BondTuple]]
 
-Stereochemistries = Dict[Union[int, BondTuple], str]
-RingSystems = Dict[int, AtomAndBondSet]
+Stereochemistries = dict[Union[int, BondTuple], str]
+RingSystems = dict[int, AtomAndBondSet]
 
-FunctionalGroups = Dict[str, AtomAndBondSet]
+FunctionalGroups = dict[str, AtomAndBondSet]
 
 Heuristic = Literal["path_length", "wbo"]
 
@@ -58,7 +57,7 @@ class Fragment(BaseModel):
         "has a sensible valence.",
     )
 
-    bond_indices: Tuple[int, int] = Field(
+    bond_indices: tuple[int, int] = Field(
         ...,
         description="The map indices of the atoms involved in the bond that the "
         "fragment was built around.",
@@ -82,9 +81,9 @@ class FragmentationResult(BaseModel):
         "fragmented.",
     )
 
-    fragments: List[Fragment] = Field(..., description="The generated fragments.")
+    fragments: list[Fragment] = Field(..., description="The generated fragments.")
 
-    provenance: Dict[str, Any] = Field(
+    provenance: dict[str, Any] = Field(
         ...,
         description="A dictionary storing provenance information about how the "
         "fragments were generated.",
@@ -99,14 +98,14 @@ class FragmentationResult(BaseModel):
             return Molecule.from_smiles(self.parent_smiles)
 
     @property
-    def fragment_molecules(self) -> Dict[BondTuple, Molecule]:
+    def fragment_molecules(self) -> dict[BondTuple, Molecule]:
         """A dictionary of the fragment molecules represented as OpenFF molecule
         objects, indexed by the map indices of the bond that each fragment was built
         around."""
         return {fragment.bond_indices: fragment.molecule for fragment in self.fragments}
 
     @property
-    def fragments_by_bond(self) -> Dict[BondTuple, Fragment]:
+    def fragments_by_bond(self) -> dict[BondTuple, Fragment]:
         """Returns a dictionary of fragments indexed by the bond (defined in terms of
         the map indices of the atoms that form it) that the fragment was built around.
         """
@@ -116,7 +115,7 @@ class FragmentationResult(BaseModel):
 class Fragmenter(BaseModel, abc.ABC):
     """The base class that all fragmentation engines should inherit from."""
 
-    functional_groups: Dict[str, str] = Field(
+    functional_groups: dict[str, str] = Field(
         default_factory=default_functional_groups,
         description="A dictionary of SMARTS of functional groups that should not be "
         "fragmented, indexed by an informative name, e.g. 'alcohol': '[#6]-[#8X2H1]'.",
@@ -223,7 +222,7 @@ class Fragmenter(BaseModel, abc.ABC):
     @classmethod
     def _fix_stereo(
         cls, fragment: Molecule, parent_stereo: Stereochemistries
-    ) -> Optional[Molecule]:
+    ) -> Molecule | None:
         """Flip all stereocenters and find the stereoisomer that matches the parent
 
         Parameters
@@ -248,7 +247,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
     @classmethod
     def _find_functional_groups(
-        cls, molecule: Molecule, functional_groups: Dict[str, str]
+        cls, molecule: Molecule, functional_groups: dict[str, str]
     ) -> FunctionalGroups:
         """Find the atoms and bonds involved in the functional groups specified by
         ``functional_groups``.
@@ -276,15 +275,15 @@ class Fragmenter(BaseModel, abc.ABC):
             }
 
             for i, match in enumerate(unique_matches):
-                atoms = set(get_map_index(molecule, index) for index in match)
-                bonds = set(
+                atoms = {get_map_index(molecule, index) for index in match}
+                bonds = {
                     (
                         get_map_index(molecule, bond.atom1_index),
                         get_map_index(molecule, bond.atom2_index),
                     )
                     for bond in molecule.bonds
                     if bond.atom1_index in match and bond.atom2_index in match
-                )
+                }
 
                 found_groups[f"{functional_group}_{i}"] = (atoms, bonds)
 
@@ -292,8 +291,8 @@ class Fragmenter(BaseModel, abc.ABC):
 
     @classmethod
     def find_rotatable_bonds(
-        cls, molecule: Molecule, target_bond_smarts: Optional[List[str]]
-    ) -> List[BondTuple]:
+        cls, molecule: Molecule, target_bond_smarts: list[str] | None
+    ) -> list[BondTuple]:
         """Finds the rotatable bonds in a molecule *including* rotatable double
         bonds.
 
@@ -365,9 +364,9 @@ class Fragmenter(BaseModel, abc.ABC):
         cls,
         parent: Molecule,
         parent_stereo: Stereochemistries,
-        atoms: Set[int],
-        bonds: Set[BondTuple],
-    ) -> Tuple[Molecule, bool]:
+        atoms: set[int],
+        bonds: set[BondTuple],
+    ) -> tuple[Molecule, bool]:
         """Extracts a subset of a molecule based on a set of atom and bond indices.
 
         Parameters
@@ -547,7 +546,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
     @classmethod
     def _find_non_rotor_ring_substituents(
-        cls, molecule: Molecule, ring_system_atoms: Set[int]
+        cls, molecule: Molecule, ring_system_atoms: set[int]
     ) -> AtomAndBondSet:
         """Find the non-rotor substituents attached to a particular ring system.
 
@@ -606,8 +605,8 @@ class Fragmenter(BaseModel, abc.ABC):
         parent: Molecule,
         parent_groups: FunctionalGroups,
         parent_rings: RingSystems,
-        atoms: Set[int],
-        bonds: Set[BondTuple],
+        atoms: set[int],
+        bonds: set[BondTuple],
     ) -> AtomAndBondSet:
         """Adds the atom and bond indices of groups ortho to those already in
         a fragment, such that they are retained during fragmentation.
@@ -674,7 +673,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
     @classmethod
     def _find_ortho_substituents(
-        cls, parent: Molecule, bonds: Set[BondTuple]
+        cls, parent: Molecule, bonds: set[BondTuple]
     ) -> AtomAndBondSet:
         """Find ring substituents that are ortho to one of the rotatable bonds specified
         in a list of bonds.
@@ -716,8 +715,8 @@ class Fragmenter(BaseModel, abc.ABC):
         cls,
         parent: Molecule,
         parent_groups: FunctionalGroups,
-        atoms: Set[int],
-        bonds: Set[BondTuple],
+        atoms: set[int],
+        bonds: set[BondTuple],
     ) -> AtomAndBondSet:
         """Cap with methyl for fragments that ends with N, O or S. Otherwise cap with H
 
@@ -790,9 +789,9 @@ class Fragmenter(BaseModel, abc.ABC):
     def _prepare_molecule(
         cls,
         molecule: Molecule,
-        functional_groups: Dict[str, str],
+        functional_groups: dict[str, str],
         keep_non_rotor_ring_substituents: bool,
-    ) -> Tuple[Molecule, Stereochemistries, FunctionalGroups, RingSystems]:
+    ) -> tuple[Molecule, Stereochemistries, FunctionalGroups, RingSystems]:
         """Prepare a molecule for fragmentation.
 
         This involves canonically ordering the molecule, determining the stereochemistry
@@ -836,7 +835,7 @@ class Fragmenter(BaseModel, abc.ABC):
     def _fragment(
         self,
         molecule: Molecule,
-        target_bond_smarts: Optional[List[str]],
+        target_bond_smarts: list[str] | None,
     ) -> FragmentationResult:
         """The internal implementation of ``fragment``.
 
@@ -859,8 +858,8 @@ class Fragmenter(BaseModel, abc.ABC):
     def fragment(
         self,
         molecule: Molecule,
-        target_bond_smarts: Optional[List[str]] = None,
-        toolkit_registry: Optional[Union[ToolkitRegistry, ToolkitWrapper]] = None,
+        target_bond_smarts: list[str] | None = None,
+        toolkit_registry: ToolkitRegistry | ToolkitWrapper | None = None,
     ) -> FragmentationResult:
         """Fragments a molecule according to this class' settings.
 
@@ -916,7 +915,7 @@ class Fragmenter(BaseModel, abc.ABC):
 
         return result
 
-    def _default_provenance(self) -> Dict[str, Any]:
+    def _default_provenance(self) -> dict[str, Any]:
         """Returns a dictionary containing default provenance information."""
 
         provenance = {
@@ -975,7 +974,7 @@ class WBOFragmenter(Fragmenter):
     )
 
     def _fragment(
-        self, molecule: Molecule, target_bond_smarts: Optional[List[str]]
+        self, molecule: Molecule, target_bond_smarts: list[str] | None
     ) -> FragmentationResult:
         """Fragments a molecule in such a way that the WBO of the bond that a fragment
         is being built around does not change beyond the specified threshold.
@@ -1028,8 +1027,8 @@ class WBOFragmenter(Fragmenter):
 
     @classmethod
     def _get_rotor_wbo(
-        cls, molecule: Molecule, rotor_bonds: List[BondTuple]
-    ) -> Dict[BondTuple, float]:
+        cls, molecule: Molecule, rotor_bonds: list[BondTuple]
+    ) -> dict[BondTuple, float]:
         """Cache the WBO of each bond in a specific set of rotor bonds..
 
         Parameters
@@ -1222,8 +1221,8 @@ class WBOFragmenter(Fragmenter):
 
     @classmethod
     def _select_neighbour_by_path_length(
-        cls, molecule: Molecule, atoms: Set[int], target_bond: BondTuple
-    ) -> Optional[Tuple[int, BondTuple]]:
+        cls, molecule: Molecule, atoms: set[int], target_bond: BondTuple
+    ) -> tuple[int, BondTuple] | None:
         atom_indices = {get_atom_index(molecule, atom) for atom in atoms}
 
         atoms_to_add = [
@@ -1301,8 +1300,8 @@ class WBOFragmenter(Fragmenter):
 
     @classmethod
     def _select_neighbour_by_wbo(
-        cls, molecule: Molecule, atoms: Set[int]
-    ) -> Optional[Tuple[int, BondTuple]]:
+        cls, molecule: Molecule, atoms: set[int]
+    ) -> tuple[int, BondTuple] | None:
         """A function which return those atoms which neighbour those in the ``atoms``
         list sorted by the WBO of the bond between the input atom and the neighbouring
         atom from largest to smallest.
@@ -1352,11 +1351,11 @@ class WBOFragmenter(Fragmenter):
         parent_stereo: Stereochemistries,
         parent_groups: FunctionalGroups,
         parent_rings: RingSystems,
-        atoms: Set[int],
-        bonds: Set[BondTuple],
+        atoms: set[int],
+        bonds: set[BondTuple],
         target_bond: BondTuple,
         heuristic: Heuristic = "path_length",
-    ) -> Tuple[Optional[Molecule], bool]:
+    ) -> tuple[Molecule | None, bool]:
         """Expand the fragment to include the next set of substituents / ring systems.
 
         Parameters
@@ -1435,7 +1434,7 @@ class PfizerFragmenter(Fragmenter):
     scheme: Literal["Pfizer"] = "Pfizer"
 
     def _fragment(
-        self, molecule: Molecule, target_bond_smarts: Optional[List[str]]
+        self, molecule: Molecule, target_bond_smarts: list[str] | None
     ) -> FragmentationResult:
         """Fragments a molecule according to Pfizer protocol."""
 

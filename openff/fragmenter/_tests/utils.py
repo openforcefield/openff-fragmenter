@@ -1,6 +1,6 @@
 import importlib
 from collections import defaultdict
-from typing import Dict, Set, TypeVar, Union
+from typing import TypeVar
 
 import pytest
 from openff.fragmenter.fragment import BondTuple
@@ -20,8 +20,8 @@ using_openeye = pytest.mark.skipif(not has_openeye, reason="Cannot run without O
 
 
 def smarts_set_to_map_indices(
-    input_set: Set[str], molecule: Molecule
-) -> Set[Union[int, BondTuple]]:
+    input_set: set[str], molecule: Molecule
+) -> set[int | BondTuple]:
     """A utility function which maps a set of the form ``{"SMARTS_1", "SMARTS_2", ...}``
     to one of the form ``{map_index_1, map_index_2, ...}`` when the SMARTS defines a
     single atom or ``{(map_index_1_a, map_index_1_b), ...}`` when the SMARTS defines a
@@ -55,8 +55,8 @@ def smarts_set_to_map_indices(
 
 
 def key_smarts_to_map_indices(
-    input_dictionary: Dict[str, T], molecule: Molecule
-) -> Dict[Union[int, BondTuple], T]:
+    input_dictionary: dict[str, T], molecule: Molecule
+) -> dict[int | BondTuple, T]:
     """A utility function which maps a dictionary of the form ``value["SMARTS"] = x``
     to one of the form ``value[map_index] = x`` when the SMARTS defines a single atom
     or ``value[(map_index_1, map_index_2)] = x`` when the SMARTS defines a bond.
@@ -89,8 +89,8 @@ def key_smarts_to_map_indices(
 
 
 def value_smarts_to_map_indices(
-    input_dictionary: Dict[str, Set[str]], molecule: Molecule
-) -> Dict[str, Set[Union[int, BondTuple]]]:
+    input_dictionary: dict[str, set[str]], molecule: Molecule
+) -> dict[str, set[int | BondTuple]]:
     """A utility function which maps a dictionary of the form
     ``value[key] = {"SMARTS_1", "SMARTS_2", ...}`` to one of the form
     ``value[key] = {map_index_1, map_index_2, ...}`` when the SMARTS defines a single

@@ -1,5 +1,4 @@
 import logging
-from typing import List
 
 from openff.toolkit.topology import Molecule
 
@@ -10,7 +9,7 @@ def _enumerate_stereoisomers(
     molecule: Molecule,
     max_states: int = 200,
     force_flip: bool = True,
-) -> List[Molecule]:
+) -> list[Molecule]:
     """Enumerate stereoisomers
 
     Parameters
