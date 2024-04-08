@@ -1,3 +1,4 @@
+import warnings
 from contextlib import nullcontext
 
 import pytest
@@ -7,6 +8,7 @@ from openff.fragmenter.utils import (
     get_map_index,
 )
 from openff.toolkit.topology import Molecule
+from openff.toolkit.utils.exceptions import AtomMappingWarning
 
 
 def test_default_functional_groups():
@@ -23,7 +25,11 @@ def test_default_functional_groups():
 
 
 def test_get_map_index():
-    molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AtomMappingWarning)
+
+        molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
+
     assert get_map_index(molecule, 0) == 5
 
 
@@ -43,5 +49,9 @@ def test_get_map_index_error(raise_error, expected_raises):
 
 
 def test_get_atom_index():
-    molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", AtomMappingWarning)
+
+        molecule = Molecule.from_smiles("[C:5]([H:1])([H:2])([H:3])([H:4])")
+
     assert get_atom_index(molecule, 5) == 0
