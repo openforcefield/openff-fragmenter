@@ -1,6 +1,6 @@
 import base64
 import os
-from typing import Collection, Dict, Optional
+from collections.abc import Collection
 
 from jinja2 import Template
 from openff.fragmenter.fragment import BondTuple, FragmentationResult
@@ -84,7 +84,7 @@ def _oe_wbo_label_display(bond_tuples: Collection[BondTuple]):
 @requires_oe_module("oedepict")
 def _oe_render_parent(
     parent: Molecule,
-    rotor_bonds: Optional[Collection[BondTuple]] = None,
+    rotor_bonds: Collection[BondTuple] | None = None,
     image_width: int = 572,
     image_height: int = 198,
 ) -> str:
@@ -317,7 +317,7 @@ def depict_fragmentation_result(result: FragmentationResult, output_file: str):
 
 
 def depict_fragments(
-    parent: Molecule, fragments: Dict[BondTuple, Molecule], output_file: str
+    parent: Molecule, fragments: dict[BondTuple, Molecule], output_file: str
 ):
     """Generates a HTML report of fragments for a parent molecule with the rotatable
     bond highlighted.

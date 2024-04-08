@@ -1,13 +1,12 @@
 import json
 import os
-from typing import Dict
 
 from openff.toolkit.topology import Molecule
 from openff.toolkit.utils import toolkit_registry_manager
 from openff.utilities import get_data_file_path
 
 
-def default_functional_groups() -> Dict[str, str]:
+def default_functional_groups() -> dict[str, str]:
     """Returns a dictionary containing the SMARTS representations of the default set
     functional groups which should be preserved during fragmentation (e.g. an amide
     should not be cleaved leaving either a carbonyl or amine group).
@@ -28,7 +27,7 @@ def default_functional_groups() -> Dict[str, str]:
         "openff.fragmenter",
     )
 
-    with open(file_name, "r") as file:
+    with open(file_name) as file:
         functional_groups = json.load(file)
 
     return functional_groups

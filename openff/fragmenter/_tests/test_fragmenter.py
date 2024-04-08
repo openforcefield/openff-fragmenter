@@ -562,20 +562,20 @@ def test_add_substituent():
 
     assert fragment.to_smiles(mapped=False, explicit_hydrogens=False) == "CCCCC"
 
-    atoms = set(
+    atoms = {
         get_map_index(fragment, i)
         for i in range(fragment.n_atoms)
         if fragment.atoms[i].atomic_number != 1
-    )
+    }
 
-    bonds = set(
+    bonds = {
         (
             get_map_index(fragment, bond.atom1_index),
             get_map_index(fragment, bond.atom2_index),
         )
         for bond in fragment.bonds
         if bond.atom1.atomic_number != 1 and bond.atom2.atomic_number != 1
-    )
+    }
 
     fragment, _ = WBOFragmenter._add_next_substituent(
         result.parent_molecule, {}, {}, {}, atoms, bonds, target_bond=(3, 5)

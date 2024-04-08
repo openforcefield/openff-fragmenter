@@ -2,7 +2,6 @@
 
 import copy
 import logging
-from typing import Dict, List, Set, Tuple
 
 import networkx
 import numpy
@@ -113,7 +112,7 @@ def _generate_conformers(
     return molecule
 
 
-def find_ring_systems(molecule: Molecule) -> Dict[int, int]:
+def find_ring_systems(molecule: Molecule) -> dict[int, int]:
     """This function attempts to find all ring systems (see [1] for more details) in
     a given molecule.
 
@@ -169,7 +168,7 @@ def find_ring_systems(molecule: Molecule) -> Dict[int, int]:
 @requires_oe_module("oechem")
 def _find_oe_stereocenters(
     molecule: Molecule,
-) -> Tuple[List[int], List[Tuple[int, int]]]:
+) -> tuple[list[int], list[tuple[int, int]]]:
     """A method which returns the of the stereogenic atom and bonds of a molecule
     using the OpenEye toolkit.
 
@@ -209,7 +208,7 @@ def _find_oe_stereocenters(
 
 def _find_rd_stereocenters(
     molecule: Molecule,
-) -> Tuple[List[int], List[Tuple[int, int]]]:
+) -> tuple[list[int], list[tuple[int, int]]]:
     """A method which returns the of the stereogenic atom and bonds of a molecule
     using the RDKit.
 
@@ -259,7 +258,7 @@ def _find_rd_stereocenters(
     return sorted(stereogenic_atoms), sorted(stereogenic_bonds)
 
 
-def find_stereocenters(molecule: Molecule) -> Tuple[List[int], List[Tuple[int, int]]]:
+def find_stereocenters(molecule: Molecule) -> tuple[list[int], list[tuple[int, int]]]:
     """A method which returns the of the stereogenic atom and bonds of a molecule.
 
     Parameters
@@ -292,12 +291,12 @@ def find_stereocenters(molecule: Molecule) -> Tuple[List[int], List[Tuple[int, i
 
 
 def _extract_rd_fragment(
-    molecule: Molecule, atom_indices: Set[int], bond_indices: Set[Tuple[int, int]]
+    molecule: Molecule, atom_indices: set[int], bond_indices: set[tuple[int, int]]
 ) -> Molecule:
     from rdkit import Chem
 
     rd_molecule = Chem.RWMol(molecule.to_rdkit())
-    rd_atoms_by_map: Dict[int, Chem.Atom] = {}
+    rd_atoms_by_map: dict[int, Chem.Atom] = {}
 
     # Restore the map indices as to_rdkit does not automatically add them.
     for atom in rd_molecule.GetAtoms():
@@ -389,7 +388,7 @@ def _extract_rd_fragment(
 
 @requires_oe_module("oechem")
 def _extract_oe_fragment(
-    molecule: Molecule, atom_indices: Set[int], bond_indices: Set[Tuple[int, int]]
+    molecule: Molecule, atom_indices: set[int], bond_indices: set[tuple[int, int]]
 ) -> Molecule:
     from openeye import oechem
 
@@ -456,7 +455,7 @@ def _extract_oe_fragment(
 
 
 def extract_fragment(
-    molecule: Molecule, atom_indices: Set[int], bond_indices: Set[Tuple[int, int]]
+    molecule: Molecule, atom_indices: set[int], bond_indices: set[tuple[int, int]]
 ) -> Molecule:
     """Returns a fragment which contains the specified atoms and bonds of a parent
     molecule
