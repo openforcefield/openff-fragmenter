@@ -584,6 +584,16 @@ def test_add_substituent():
     assert fragment.to_smiles(mapped=False, explicit_hydrogens=False) == "CCCCCC"
 
 
+def test_issue_177():
+    """
+    There was an where the path search gets tripped up when there are two paths
+    of equal length leading to a 3-membered ring. This test ensures Fragmenter
+    runs on a minimal reproducing example of this problem.
+    More info at https://github.com/openforcefield/openff-fragmenter/issues/177
+    """
+    WBOFragmenter().fragment(Molecule.from_smiles("C1CC1[C@H]2C[C@H]3C[C@H]3C2"))
+
+
 @pytest.mark.parametrize("input_smiles, n_output", [("CCCCCCC", 4)])
 def test_pfizer_fragmenter(input_smiles, n_output):
     result = PfizerFragmenter().fragment(Molecule.from_smiles(input_smiles))
