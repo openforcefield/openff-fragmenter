@@ -1246,7 +1246,7 @@ class WBOFragmenter(Fragmenter):
 
         target_indices = [get_atom_index(molecule, atom) for atom in target_bond]
 
-        path_lengths_1, path_lengths_2 = zip(
+        path_lengths = list(zip(
             *(
                 (
                     networkx.shortest_path_length(
@@ -1256,7 +1256,7 @@ class WBOFragmenter(Fragmenter):
                 )
                 for atom_index, neighbour_index in atoms_to_add
             )
-        )
+        ))
 
         if len(path_lengths) == 0:
             return None
