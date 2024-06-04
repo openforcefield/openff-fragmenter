@@ -1258,8 +1258,9 @@ class WBOFragmenter(Fragmenter):
             )
         )
 
-        if len(path_lengths_1) == 0 and len(path_lengths_2) == 0:
+        if len(path_lengths) == 0:
             return None
+        path_lengths_1, path_lengths_2 = path_lengths
 
         reverse = False
 
