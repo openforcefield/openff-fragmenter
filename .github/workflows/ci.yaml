@@ -63,7 +63,7 @@ jobs:
         pytest -v --cov=openff --cov-report=xml --color=yes openff/fragmenter/_tests/ -nauto
 
     - name: CodeCov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         file: ./coverage.xml
