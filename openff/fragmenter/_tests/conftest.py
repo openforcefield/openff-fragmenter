@@ -5,7 +5,6 @@ from openff.toolkit.topology import Molecule
 from openff.toolkit.utils.exceptions import AtomMappingWarning
 
 
-
 @pytest.fixture()
 def potanib() -> Molecule:
     with warnings.catch_warnings():
