@@ -40,6 +40,7 @@ jobs:
     - name: Set up conda environment
       uses: mamba-org/setup-micromamba@v1
       with:
+        micromamba-binary-path: ~/.local/bin/micromamba
         environment-file: devtools/conda-envs/test_env.yaml
         create-args: >-
           python=${{ matrix.python-version }}
