@@ -5,7 +5,7 @@ channels:
 dependencies:
     # Core
   - python
-  - pydantic
+  - pydantic >=1.10.18,<3
   - jinja2
 
     # OpenFF stack
