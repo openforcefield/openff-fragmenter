@@ -26,11 +26,7 @@ from openff.toolkit.utils import (
     ToolkitWrapper,
 )
 from openff.toolkit.utils.exceptions import AtomMappingWarning
-
-try:
-    from pydantic.v1 import BaseModel, Field
-except ImportError:
-    from pydantic import BaseModel, Field
+from pydantic.v1 import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
