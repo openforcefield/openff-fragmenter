@@ -14,7 +14,7 @@ dependencies:
 
     # Optional tools
   - ambertools
-  - rdkit
+  - rdkit =2024.03.5
 
     # Testing
   - pytest
