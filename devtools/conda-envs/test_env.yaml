@@ -5,12 +5,12 @@ channels:
 dependencies:
     # Core
   - python
-  - pydantic >=1.10.17,<3
+  - pydantic =2
   - jinja2
 
     # OpenFF stack
   - openff-toolkit-base >=0.14.4
-  - openff-utilities >=0.1.9
+  - openff-interchange =0.4
 
     # Optional tools
   - ambertools
