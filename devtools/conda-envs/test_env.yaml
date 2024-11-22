@@ -10,7 +10,7 @@ dependencies:
 
     # OpenFF stack
   - openff-toolkit-base >=0.14.4
-  - openff-interchange =0.4
+  - openff-interchange >=0.4
 
     # Optional tools
   - ambertools
