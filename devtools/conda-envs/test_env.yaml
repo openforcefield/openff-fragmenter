@@ -5,6 +5,7 @@ channels:
 dependencies:
     # Core
   - python
+  - versioningit
   - pydantic =2
   - jinja2
 
