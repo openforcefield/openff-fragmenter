@@ -41,4 +41,4 @@ Finally, install ``openff-fragmenter`` itself:
 
 .. code-block:: bash
 
-    python setup.py develop
+    python -m pip install -e .
