@@ -33,9 +33,7 @@ def default_functional_groups() -> dict[str, str]:
     return functional_groups
 
 
-def get_map_index(
-    molecule: Molecule, atom_index: int, error_on_missing: bool = True
-) -> int:
+def get_map_index(molecule: Molecule, atom_index: int, error_on_missing: bool = True) -> int:
     """Returns the map index of a particular atom in a molecule.
 
     Parameters
@@ -76,15 +74,11 @@ def get_atom_index(molecule: Molecule, map_index: int) -> int:
     -------
         The corresponding atom index
     """
-    inverse_atom_map = {
-        j: i for i, j in molecule.properties.get("atom_map", {}).items()
-    }
+    inverse_atom_map = {j: i for i, j in molecule.properties.get("atom_map", {}).items()}
 
     atom_index = inverse_atom_map.get(map_index, None)
 
-    assert (
-        atom_index is not None
-    ), f"{map_index} does not correspond to an atom in the molecule."
+    assert atom_index is not None, f"{map_index} does not correspond to an atom in the molecule."
 
     return atom_index
 

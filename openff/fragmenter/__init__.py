@@ -4,12 +4,9 @@ openff-fragmenter
 Fragment molecules for quantum mechanics torsion scans.
 """
 
-from . import chemi, fragment, utils
-from ._version import get_versions
+from importlib.metadata import version
 
-versions = get_versions()
-__version__ = versions["version"]
-__git_revision__ = versions["full-revisionid"]
-del get_versions, versions
+from openff.fragmenter import chemi, fragment, utils
 
+__version__ = version("openff.interchange")
 __all__ = [chemi, fragment, utils]

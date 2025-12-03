@@ -2,13 +2,14 @@ import warnings
 from contextlib import nullcontext
 
 import pytest
+from openff.toolkit.topology import Molecule
+from openff.toolkit.utils.exceptions import AtomMappingWarning
+
 from openff.fragmenter.utils import (
     default_functional_groups,
     get_atom_index,
     get_map_index,
 )
-from openff.toolkit.topology import Molecule
-from openff.toolkit.utils.exceptions import AtomMappingWarning
 
 
 def test_default_functional_groups():

@@ -25,7 +25,14 @@ dynamic = [ "version" ]
 [tool.setuptools.packages.find]
 include = [ 'openff.fragmenter*' ]
 
-[tool.versioningit]
+[tool.ruff]
+line-length = 119
+
+lint.select = [ "E", "F", "I", "NPY", "RUF", "UP", "W" ]
+lint.ignore = [ "D105", "D107", "D200", "D203", "D212", "E721", "RUF012" ]
+lint.per-file-ignores."examples/fragment-molecules.ipynb" = [ "E402" ]
+lint.isort.known-first-party = [ "openff.fragmenter" ]
+lint.isort.known-third-party = [ "openff.toolkit", "openff.utilities", "openff.units" ]
 
 [tool.coverage.run]
 omit = [
@@ -40,3 +47,4 @@ exclude_lines = [
   "@overload",
 ]
 
+[tool.versioningit]

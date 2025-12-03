@@ -30,8 +30,7 @@ def _enumerate_stereoisomers(
 
     if max_states > 200:
         raise NotImplementedError(
-            "The max states must currently be less than 200 due to a hard coded maximum "
-            "value in the OpenFF toolkit"
+            "The max states must currently be less than 200 due to a hard coded maximum value in the OpenFF toolkit"
         )
 
     # Check if the input molecule has any undefined stereochemistry. If it does not
@@ -64,6 +63,6 @@ def _enumerate_stereoisomers(
     # If the input molecule had all of the input stereochemistry defined make sure to
     # return it in addition to the newly found stereoisomers.
     if not undefined_atom_stereochemistry and not undefined_bond_stereochemistry:
-        stereoisomers = [molecule] + stereoisomers[: max_states - 1]
+        stereoisomers = [molecule, *stereoisomers[: max_states - 1]]
 
     return stereoisomers

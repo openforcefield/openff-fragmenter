@@ -61,7 +61,6 @@ def butane() -> Molecule:
         warnings.simplefilter("ignore", AtomMappingWarning)
 
         return Molecule.from_smiles(
-            "[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])"
-            "[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]",
+            "[H:5][C:1]([H:6])([H:7])[C:3]([H:11])([H:12])[C:4]([H:13])([H:14])[C:2]([H:8])([H:9])[H:10]",
             allow_undefined_stereo=True,
         )

@@ -5,17 +5,16 @@ import logging
 
 import networkx
 import numpy
-from openff.fragmenter.utils import get_atom_index, get_map_index
 from openff.toolkit.topology import Molecule
 from openff.toolkit.utils import LicenseError, ToolkitUnavailableException
 from openff.utilities import MissingOptionalDependencyError, requires_oe_module
 
+from openff.fragmenter.utils import get_atom_index, get_map_index
+
 logger = logging.getLogger(__name__)
 
 
-def assign_elf10_am1_bond_orders(
-    molecule: Molecule, max_confs: int = 800, rms_threshold: float = 1.0
-) -> Molecule:
+def assign_elf10_am1_bond_orders(molecule: Molecule, max_confs: int = 800, rms_threshold: float = 1.0) -> Molecule:
     """Generate ELF10 AM1 WBOs for a molecule.
 
     Parameters
@@ -47,9 +46,7 @@ def assign_elf10_am1_bond_orders(
     for conformer in molecule.conformers:
         molecule.assign_fractional_bond_orders("am1-wiberg", use_conformers=[conformer])
 
-        per_conformer_bond_orders.append(
-            [bond.fractional_bond_order for bond in molecule.bonds]
-        )
+        per_conformer_bond_orders.append([bond.fractional_bond_order for bond in molecule.bonds])
 
     bond_orders = [*numpy.mean(per_conformer_bond_orders, axis=0)]
 
@@ -63,9 +60,7 @@ def assign_elf10_am1_bond_orders(
     return molecule
 
 
-def _generate_conformers(
-    molecule: Molecule, max_confs: int = 800, rms_threshold: float = 1.0
-) -> Molecule:
+def _generate_conformers(molecule: Molecule, max_confs: int = 800, rms_threshold: float = 1.0) -> Molecule:
     """Generate conformations for the supplied molecule.
 
     Parameters
@@ -95,13 +90,9 @@ def _generate_conformers(
     # independently of their atom order.
     canonical_molecule = molecule.canonical_order_atoms()
 
-    canonical_molecule.generate_conformers(
-        n_conformers=max_confs, rms_cutoff=rms_threshold * unit.angstrom
-    )
+    canonical_molecule.generate_conformers(n_conformers=max_confs, rms_cutoff=rms_threshold * unit.angstrom)
 
-    _, canonical_map = Molecule.are_isomorphic(
-        canonical_molecule, molecule, return_atom_map=True
-    )
+    _, canonical_map = Molecule.are_isomorphic(canonical_molecule, molecule, return_atom_map=True)
 
     molecule = canonical_molecule.remap(canonical_map)
 
@@ -144,10 +135,7 @@ def find_ring_systems(molecule: Molecule) -> dict[int, int]:
     """
 
     # Find the ring atoms
-    ring_atom_index_pairs = {
-        tuple(sorted(pair))
-        for pair in molecule.chemical_environment_matches("[*:1]@[*:2]")
-    }
+    ring_atom_index_pairs = {tuple(sorted(pair)) for pair in molecule.chemical_environment_matches("[*:1]@[*:2]")}
 
     # Construct a networkx graph from the found ring bonds.
     graph = networkx.Graph()
@@ -193,15 +181,9 @@ def _find_oe_stereocenters(
     oe_molecule = molecule.to_openeye()
     oechem.OEPerceiveChiral(oe_molecule)
 
-    stereogenic_atoms = {
-        atom.GetIdx() for atom in oe_molecule.GetAtoms() if atom.IsChiral()
-    }
+    stereogenic_atoms = {atom.GetIdx() for atom in oe_molecule.GetAtoms() if atom.IsChiral()}
 
-    stereogenic_bonds = {
-        (bond.GetBgnIdx(), bond.GetEndIdx())
-        for bond in oe_molecule.GetBonds()
-        if bond.IsChiral()
-    }
+    stereogenic_bonds = {(bond.GetBgnIdx(), bond.GetEndIdx()) for bond in oe_molecule.GetBonds() if bond.IsChiral()}
 
     return sorted(stereogenic_atoms), sorted(stereogenic_bonds)
 
@@ -232,15 +214,9 @@ def _find_rd_stereocenters(
 
     rd_molecule = molecule.to_rdkit()
 
-    Chem.AssignStereochemistry(
-        rd_molecule, cleanIt=True, force=True, flagPossibleStereoCenters=True
-    )
+    Chem.AssignStereochemistry(rd_molecule, cleanIt=True, force=True, flagPossibleStereoCenters=True)
 
-    stereogenic_atoms = {
-        atom.GetIdx()
-        for atom in rd_molecule.GetAtoms()
-        if atom.HasProp("_ChiralityPossible")
-    }
+    stereogenic_atoms = {atom.GetIdx() for atom in rd_molecule.GetAtoms() if atom.HasProp("_ChiralityPossible")}
 
     # Clear any previous assignments on the bonds, since FindPotentialStereo
     # may not overwrite it
@@ -290,9 +266,7 @@ def find_stereocenters(molecule: Molecule) -> tuple[list[int], list[tuple[int, i
     return stereogenic_atoms, stereogenic_bonds
 
 
-def _extract_rd_fragment(
-    molecule: Molecule, atom_indices: set[int], bond_indices: set[tuple[int, int]]
-) -> Molecule:
+def _extract_rd_fragment(molecule: Molecule, atom_indices: set[int], bond_indices: set[tuple[int, int]]) -> Molecule:
     from rdkit import Chem
 
     rd_molecule = Chem.RWMol(molecule.to_rdkit())
@@ -306,9 +280,7 @@ def _extract_rd_fragment(
 
     atoms_to_use = [get_atom_index(molecule, i) for i in atom_indices]
     bonds_to_use = [
-        rd_molecule.GetBondBetweenAtoms(
-            get_atom_index(molecule, pair[0]), get_atom_index(molecule, pair[1])
-        ).GetIdx()
+        rd_molecule.GetBondBetweenAtoms(get_atom_index(molecule, pair[0]), get_atom_index(molecule, pair[1])).GetIdx()
         for pair in bond_indices
     ]
 
@@ -325,9 +297,7 @@ def _extract_rd_fragment(
 
             atoms_to_use.append(neighbour.GetIdx())
             bonds_to_use.append(
-                rd_molecule.GetBondBetweenAtoms(
-                    rd_atoms_by_map[map_index].GetIdx(), neighbour.GetIdx()
-                ).GetIdx()
+                rd_molecule.GetBondBetweenAtoms(rd_atoms_by_map[map_index].GetIdx(), neighbour.GetIdx()).GetIdx()
             )
 
     # Add additional hydrogens to atoms where the total valence will change likewise to
@@ -341,10 +311,7 @@ def _extract_rd_fragment(
         new_valence = atom.GetTotalValence()
 
         for neighbour_bond in rd_atoms_by_index[atom_index].GetBonds():
-            if (
-                neighbour_bond.GetBeginAtomIdx() in atoms_to_use
-                and neighbour_bond.GetEndAtomIdx() in atoms_to_use
-            ):
+            if neighbour_bond.GetBeginAtomIdx() in atoms_to_use and neighbour_bond.GetEndAtomIdx() in atoms_to_use:
                 continue
 
             new_valence -= neighbour_bond.GetValenceContrib(atom)
@@ -356,10 +323,7 @@ def _extract_rd_fragment(
         if (
             atom.GetAtomicNum() == 6
             and atom.GetIsAromatic()
-            and sum(
-                1 for bond_tuple in bond_indices if atom.GetAtomMapNum() in bond_tuple
-            )
-            == 1
+            and sum(1 for bond_tuple in bond_indices if atom.GetAtomMapNum() in bond_tuple) == 1
         ):
             # This is likely a cap carbon which was retained from an existing ring. It's
             # aromaticity needs to be cleared before calling ``MolFragmentToSmiles``
@@ -387,9 +351,7 @@ def _extract_rd_fragment(
 
 
 @requires_oe_module("oechem")
-def _extract_oe_fragment(
-    molecule: Molecule, atom_indices: set[int], bond_indices: set[tuple[int, int]]
-) -> Molecule:
+def _extract_oe_fragment(molecule: Molecule, atom_indices: set[int], bond_indices: set[tuple[int, int]]) -> Molecule:
     from openeye import oechem
 
     oe_molecule = molecule.to_openeye()
@@ -405,11 +367,7 @@ def _extract_oe_fragment(
         oe_atom = oe_molecule.GetAtom(oechem.OEHasMapIdx(map_index))
 
         for neighbour in oe_atom.GetAtoms():
-            if (
-                neighbour.GetAtomicNum() != 1
-                or neighbour.GetMapIdx() < 1
-                or neighbour.GetMapIdx() in atom_indices
-            ):
+            if neighbour.GetAtomicNum() != 1 or neighbour.GetMapIdx() < 1 or neighbour.GetMapIdx() in atom_indices:
                 continue
 
             atom_indices.add(neighbour.GetMapIdx())
@@ -454,9 +412,7 @@ def _extract_oe_fragment(
     return Molecule.from_openeye(fragment, allow_undefined_stereo=True)
 
 
-def extract_fragment(
-    molecule: Molecule, atom_indices: set[int], bond_indices: set[tuple[int, int]]
-) -> Molecule:
+def extract_fragment(molecule: Molecule, atom_indices: set[int], bond_indices: set[tuple[int, int]]) -> Molecule:
     """Returns a fragment which contains the specified atoms and bonds of a parent
     molecule
 
@@ -473,9 +429,7 @@ def extract_fragment(
     # Make sure that the bond and atom indices are self consistent and that there
     # are no disconnected bonds.
     if not all(i in atom_indices for map_tuple in bond_indices for i in map_tuple):
-        raise ValueError(
-            "The ``bond_indices`` set includes atoms not in the ``atom_indices`` set."
-        )
+        raise ValueError("The ``bond_indices`` set includes atoms not in the ``atom_indices`` set.")
 
     try:
         fragment = _extract_oe_fragment(molecule, atom_indices, bond_indices)
