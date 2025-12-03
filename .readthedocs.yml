@@ -13,7 +13,7 @@ sphinx:
   fail_on_warning: true
 
 conda:
-  environment: devtools/conda-envs/docs_env.yaml
+  environment: devtools/conda-envs/docs.yaml
 
 python:
   install:
