@@ -42,7 +42,7 @@ jobs:
           python=${{ matrix.python-version }}
 
     - name: Install OpenEye
-      if: matrix.openeye
+      if: ${{ matrix.openeye == true }}
       run: |
         micromamba install --yes -c openeye openeye-toolkits
         echo "${SECRET_OE_LICENSE}" > ${OE_LICENSE}
