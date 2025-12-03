@@ -1,0 +1,42 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+
+requires = [
+  "setuptools",
+  "versioningit",
+]
+
+[project]
+name = "openff-fragmenter"
+description = "Fragment molecules for quantum mechanics torsion scans."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [ { name = "Chaya D. Stern", email = "info@openforcefield.org" } ]
+requires-python = ">=3.11"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dynamic = [ "version" ]
+
+[tool.setuptools.packages.find]
+include = [ 'openff.fragmenter*' ]
+
+[tool.versioningit]
+
+[tool.coverage.run]
+omit = [
+  "*/*/_tests/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@overload",
+]
+
