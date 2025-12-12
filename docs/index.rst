@@ -4,8 +4,6 @@ OpenFF Fragmenter
 
 The main purpose of ``openff-fragmenter`` is to fragment molecules for quantum chemical (QC) torsion drives.
 
-.. warning:: ``openff-fragmenter`` is still pre-alpha. It is not fully tested and the API is still in flux.
-
 Currently two fragmentation schemes are supported:
 
 .. rst-class:: spaced-list

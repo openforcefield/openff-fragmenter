@@ -5,6 +5,7 @@ channels:
 dependencies:
     # Core
   - python
+  - versioningit
   - pydantic =2
   - jinja2
 
@@ -14,7 +15,7 @@ dependencies:
 
     # Optional tools
   - ambertools
-  - rdkit =2024.03.5
+  - rdkit
 
     # Testing
   - pytest

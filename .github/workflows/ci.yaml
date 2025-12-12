@@ -21,17 +21,21 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
         openeye: [false, true]
+        exclude:
+          - openeye: true
+            python-version: "3.13"
 
     env:
       OE_LICENSE: ${{ github.workspace }}/oe_license.txt
 
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
 
     - name: Set up conda environment
       uses: mamba-org/setup-micromamba@v2
@@ -41,7 +45,7 @@ jobs:
           python=${{ matrix.python-version }}
 
     - name: Install OpenEye
-      if: matrix.openeye
+      if: ${{ matrix.openeye == true }}
       run: |
         micromamba install --yes -c openeye openeye-toolkits
         echo "${SECRET_OE_LICENSE}" > ${OE_LICENSE}

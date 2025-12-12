@@ -3,14 +3,15 @@ import os
 from collections.abc import Collection
 
 from jinja2 import Template
-from openff.fragmenter.fragment import BondTuple, FragmentationResult
-from openff.fragmenter.utils import get_map_index
 from openff.toolkit.topology import Molecule
 from openff.utilities import (
     MissingOptionalDependencyError,
     get_data_file_path,
     requires_oe_module,
 )
+
+from openff.fragmenter.fragment import BondTuple, FragmentationResult
+from openff.fragmenter.utils import get_map_index
 
 
 @requires_oe_module("oechem")
@@ -37,10 +38,7 @@ def _oe_fragment_predicates(map_indices: Collection[int]):
             self.map_indices = inner_map_indices
 
         def __call__(self, bond: oechem.OEBondBase):
-            return (
-                bond.GetBgn().GetMapIdx() in self.map_indices
-                and bond.GetEnd().GetMapIdx() in self.map_indices
-            )
+            return bond.GetBgn().GetMapIdx() in self.map_indices and bond.GetEnd().GetMapIdx() in self.map_indices
 
         def CreateCopy(self):
             return PredicateBonds(self.map_indices).__disown__()
@@ -64,10 +62,7 @@ def _oe_wbo_label_display(bond_tuples: Collection[BondTuple]):
         def __call__(self, bond):
             map_tuple = (bond.GetBgn().GetMapIdx(), bond.GetEnd().GetMapIdx())
 
-            if (
-                map_tuple not in self.bond_tuples
-                and tuple(reversed(map_tuple)) not in self.bond_tuples
-            ):
+            if map_tuple not in self.bond_tuples and tuple(reversed(map_tuple)) not in self.bond_tuples:
                 return " "
 
             if "fractional_bond_order" not in bond.GetData():
@@ -104,9 +99,7 @@ def _oe_render_parent(
     # Set-up common display options.
     image = oedepict.OEImage(image_width, image_height)
 
-    display_options = oedepict.OE2DMolDisplayOptions(
-        image_width, image_height, oedepict.OEScale_AutoScale
-    )
+    display_options = oedepict.OE2DMolDisplayOptions(image_width, image_height, oedepict.OEScale_AutoScale)
     display_options.SetTitleLocation(oedepict.OETitleLocation_Hidden)
     display_options.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
     display_options.SetAtomLabelFontScale(1.2)
@@ -153,9 +146,7 @@ def _oe_render_fragment(
     # Set-up common display options.
     image = oedepict.OEImage(image_width, image_height)
 
-    display_options = oedepict.OE2DMolDisplayOptions(
-        image_width, image_height, oedepict.OEScale_AutoScale
-    )
+    display_options = oedepict.OE2DMolDisplayOptions(image_width, image_height, oedepict.OEScale_AutoScale)
 
     display_options.SetTitleLocation(oedepict.OETitleLocation_Hidden)
     display_options.SetAtomColorStyle(oedepict.OEAtomColorStyle_WhiteMonochrome)
@@ -241,23 +232,17 @@ def _rd_render_fragment(
 
     map_indices = {*fragment.properties["atom_map"].values()} - {0}
 
-    fragment_atom_indices = [
-        atom.GetIdx()
-        for atom in rd_parent.GetAtoms()
-        if atom.GetAtomMapNum() in map_indices
-    ]
+    fragment_atom_indices = [atom.GetIdx() for atom in rd_parent.GetAtoms() if atom.GetAtomMapNum() in map_indices]
     fragment_bond_indices = [
         bond.GetIdx()
         for bond in rd_parent.GetBonds()
-        if bond.GetBeginAtom().GetAtomMapNum() in map_indices
-        and bond.GetEndAtom().GetAtomMapNum() in map_indices
+        if bond.GetBeginAtom().GetAtomMapNum() in map_indices and bond.GetEndAtom().GetAtomMapNum() in map_indices
     ]
 
     rotatable_bond_index = [
         bond.GetIdx()
         for bond in rd_parent.GetBonds()
-        if bond.GetBeginAtom().GetAtomMapNum() in bond_indices
-        and bond.GetEndAtom().GetAtomMapNum() in bond_indices
+        if bond.GetBeginAtom().GetAtomMapNum() in bond_indices and bond.GetEndAtom().GetAtomMapNum() in bond_indices
     ]
 
     for atom in rd_parent.GetAtoms():
@@ -271,10 +256,7 @@ def _rd_render_fragment(
     drawer.DrawMolecule(
         rd_parent,
         highlightAtoms=fragment_atom_indices,
-        highlightAtomColors={
-            index: (52.0 / 255.0, 143.0 / 255.0, 235.0 / 255.0)
-            for index in fragment_atom_indices
-        },
+        highlightAtomColors={index: (52.0 / 255.0, 143.0 / 255.0, 235.0 / 255.0) for index in fragment_atom_indices},
         highlightBonds=fragment_bond_indices + rotatable_bond_index,
         highlightBondColors={
             index: (
@@ -316,9 +298,7 @@ def depict_fragmentation_result(result: FragmentationResult, output_file: str):
     )
 
 
-def depict_fragments(
-    parent: Molecule, fragments: dict[BondTuple, Molecule], output_file: str
-):
+def depict_fragments(parent: Molecule, fragments: dict[BondTuple, Molecule], output_file: str):
     """Generates a HTML report of fragments for a parent molecule with the rotatable
     bond highlighted.
 
@@ -335,15 +315,13 @@ def depict_fragments(
     try:
         header_svg = _oe_render_parent(parent, [*fragments])
         fragment_svg = [
-            _oe_render_fragment(parent, fragment, bond_tuple)
-            for bond_tuple, fragment in fragments.items()
+            _oe_render_fragment(parent, fragment, bond_tuple) for bond_tuple, fragment in fragments.items()
         ]
 
     except (ModuleNotFoundError, MissingOptionalDependencyError):
         header_svg = _rd_render_parent(parent)
         fragment_svg = [
-            _rd_render_fragment(parent, fragment, bond_tuple)
-            for bond_tuple, fragment in fragments.items()
+            _rd_render_fragment(parent, fragment, bond_tuple) for bond_tuple, fragment in fragments.items()
         ]
 
     template_path = get_data_file_path(

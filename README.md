@@ -1,6 +1,6 @@
 # Fragmenter
 
-[![Test Status](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/openforcefield/fragmenter/actions/workflows/ci.yaml)
+[![Test Status](https://github.com/openforcefield/openff-fragmenter/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/openforcefield/openff-fragmenter/actions/workflows/ci.yaml)
 [![Documentation Status](https://readthedocs.org/projects/fragmenter/badge/?version=latest)](https://fragmenter.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/openforcefield/openff-fragmenter/branch/main/graph/badge.svg)](https://codecov.io/gh/openforcefield/openff-fragmenter/branch/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -9,24 +9,20 @@
 
 A package for fragmenting molecules for quantum mechanics torsion scans.
 
-More information about using this package and its features can be found in the [documentation](
-https://fragmenter.readthedocs.io/en/latest/).
-
-**Warning:** This code is currently experimental and under active development. If you are using this code,
-be aware that it is not guaranteed to provide the correct results, and the API can change without notice.
+More information about using this package and its features can be found in the [documentation](https://docs.openforcefield.org/projects/fragmenter/en/stable/index.html)
 
 ## Installation
 
-The package and its dependencies can be installed using the `conda` package manager:
+The package and its dependencies can be installed using the `mamba` package manager:
 
 ```shell
-conda install -c conda-forge openff-fragmenter
+mamba install -c conda-forge openff-fragmenter
 ```
 
 ## Getting Started
 
 *We recommend viewing the getting started example in a Jupyter notebook. [This full example can be found here](
-https://github.com/openforcefield/fragmenter/blob/master/examples/fragment-molecules.ipynb)*. 
+https://github.com/openforcefield/openff-fragmenter/blob/master/examples/fragment-molecules.ipynb)*. 
 
 Here will will show how a drug-like molecule can be fragmented using this framework, and how those fragments can 
 be easily visualised using its built-in helper utilities.
@@ -35,7 +31,7 @@ To begin with we load in the molecule to be fragmented. Here we load Cobimetinib
 representation using the [Open Force Field toolkit](https://github.com/openforcefield/openff-toolkit):
 
 ```python
-from openff.toolkit.topology import Molecule
+from openff.toolkit import Molecule
 
 parent_molecule = Molecule.from_smiles(
     "OC1(CN(C1)C(=O)C1=C(NC2=C(F)C=C(I)C=C2)C(F)=C(F)C=C1)[C@@H]1CCCCN1"

@@ -6,6 +6,13 @@ import logging
 
 import numpy
 import pytest
+from openff.toolkit.topology import Molecule
+from openff.toolkit.utils import (
+    GLOBAL_TOOLKIT_REGISTRY,
+    RDKitToolkitWrapper,
+    ToolkitRegistry,
+)
+
 from openff.fragmenter._tests import does_not_raise
 from openff.fragmenter._tests.utils import (
     key_smarts_to_map_indices,
@@ -23,12 +30,6 @@ from openff.fragmenter.utils import (
     default_functional_groups,
     get_atom_index,
     get_map_index,
-)
-from openff.toolkit.topology import Molecule
-from openff.toolkit.utils import (
-    GLOBAL_TOOLKIT_REGISTRY,
-    RDKitToolkitWrapper,
-    ToolkitRegistry,
 )
 
 
@@ -122,18 +123,12 @@ def test_find_functional_groups(potanib):
         },
         potanib,
     )
-    actual_functional_groups = {
-        name: groups[0] for name, groups in found_groups.items()
-    }
+    actual_functional_groups = {name: groups[0] for name, groups in found_groups.items()}
 
     assert actual_functional_groups == expected_functional_groups
 
     for group in found_groups:
-        assert all(
-            index in expected_functional_groups[group]
-            for bond in found_groups[group][1]
-            for index in bond
-        )
+        assert all(index in expected_functional_groups[group] for bond in found_groups[group][1] for index in bond)
 
 
 def test_find_rotatable_bonds_default(abemaciclib):
@@ -182,9 +177,7 @@ def test_atom_bond_set_to_mol(abemaciclib):
 
     atoms = {
         get_map_index(molecule, atom_index)
-        for match in molecule.chemical_environment_matches(
-            "[C:1][C:2][N:3]1[C:4][C:5][N:6][C:7][C:8]1"
-        )
+        for match in molecule.chemical_environment_matches("[C:1][C:2][N:3]1[C:4][C:5][N:6][C:7][C:8]1")
         for atom_index in match
     }
 
@@ -194,13 +187,10 @@ def test_atom_bond_set_to_mol(abemaciclib):
             get_map_index(molecule, bond.atom2_index),
         )
         for bond in molecule.bonds
-        if get_map_index(molecule, bond.atom1_index) in atoms
-        and get_map_index(molecule, bond.atom2_index) in atoms
+        if get_map_index(molecule, bond.atom1_index) in atoms and get_map_index(molecule, bond.atom2_index) in atoms
     }
 
-    fragment, _ = Fragmenter._atom_bond_set_to_mol(
-        molecule, {}, atoms=atoms, bonds=bonds
-    )
+    fragment, _ = Fragmenter._atom_bond_set_to_mol(molecule, {}, atoms=atoms, bonds=bonds)
 
     for bond in fragment.bonds:
         if bond.atom1.atomic_number == 1 or bond.atom2.atomic_number == 1:
@@ -212,9 +202,7 @@ def test_atom_bond_set_to_mol(abemaciclib):
         assert tuple(sorted((map_index_1, map_index_2))) in bonds
 
 
-@pytest.mark.parametrize(
-    "input_smiles, expected_n_atoms, expected_n_bonds", [("CCCCCCC", 14, 20)]
-)
+@pytest.mark.parametrize("input_smiles, expected_n_atoms, expected_n_bonds", [("CCCCCCC", 14, 20)])
 def test_get_torsion_quartet(input_smiles, expected_n_atoms, expected_n_bonds):
     molecule = smiles_to_molecule(input_smiles, True)
 
@@ -233,20 +221,14 @@ def test_get_torsion_quartet(input_smiles, expected_n_atoms, expected_n_bonds):
     assert len(bonds) == expected_n_bonds
 
 
-@pytest.mark.parametrize(
-    "input_smiles, n_ring_systems", [("CCCC", 0), ("c1ccccc1", 1), ("c1ccccc1C", 1)]
-)
+@pytest.mark.parametrize("input_smiles, n_ring_systems", [("CCCC", 0), ("c1ccccc1", 1), ("c1ccccc1C", 1)])
 def test_find_ring_systems(input_smiles, n_ring_systems):
-    ring_systems = Fragmenter._find_ring_systems(
-        smiles_to_molecule(input_smiles, True), {}
-    )
+    ring_systems = Fragmenter._find_ring_systems(smiles_to_molecule(input_smiles, True), {})
 
     assert len(ring_systems) == n_ring_systems
 
 
-@pytest.mark.parametrize(
-    "keep_non_rotor_ring_substituents, n_output", [(True, 7), (False, 6)]
-)
+@pytest.mark.parametrize("keep_non_rotor_ring_substituents, n_output", [(True, 7), (False, 6)])
 def test_keep_non_rotor(keep_non_rotor_ring_substituents, n_output):
     ring_systems = Fragmenter._find_ring_systems(
         smiles_to_molecule("c1ccccc1C", True),
@@ -272,10 +254,7 @@ def test_get_ring_and_fgroup(input_smiles, bond_smarts, expected):
     # noinspection PyTypeChecker
     atoms, bonds = Fragmenter._get_torsion_quartet(
         molecule,
-        tuple(
-            get_map_index(molecule, i)
-            for i in molecule.chemical_environment_matches(bond_smarts)[0]
-        ),
+        tuple(get_map_index(molecule, i) for i in molecule.chemical_environment_matches(bond_smarts)[0]),
     )
 
     bonds = {tuple(sorted(bond)) for bond in bonds}
@@ -283,9 +262,7 @@ def test_get_ring_and_fgroup(input_smiles, bond_smarts, expected):
     l_atoms = len(atoms)
     l_bonds = len(bonds)
 
-    atoms_2, bonds_2 = Fragmenter._get_ring_and_fgroups(
-        molecule, functional_groups, ring_systems, atoms, bonds
-    )
+    atoms_2, bonds_2 = Fragmenter._get_ring_and_fgroups(molecule, functional_groups, ring_systems, atoms, bonds)
 
     assert (l_atoms == len(atoms_2)) == expected
     assert (l_bonds == len(bonds_2)) == expected
@@ -318,21 +295,14 @@ def test_get_ring_and_fgroup_ortho(input_smiles, bond_smarts, expected_pattern):
         smiles_to_molecule(input_smiles, True), default_functional_groups(), False
     )
 
-    bond = tuple(
-        get_map_index(molecule, i)
-        for i in molecule.chemical_environment_matches(bond_smarts)[0]
-    )
+    bond = tuple(get_map_index(molecule, i) for i in molecule.chemical_environment_matches(bond_smarts)[0])
 
     # noinspection PyTypeChecker
     atoms, bonds = Fragmenter._get_torsion_quartet(molecule, bond)
-    atoms, bonds = Fragmenter._get_ring_and_fgroups(
-        molecule, functional_groups, ring_systems, atoms, bonds
-    )
+    atoms, bonds = Fragmenter._get_ring_and_fgroups(molecule, functional_groups, ring_systems, atoms, bonds)
 
     actual_atoms = {
-        map_index
-        for map_index in atoms
-        if molecule.atoms[get_atom_index(molecule, map_index)].atomic_number != 1
+        map_index for map_index in atoms if molecule.atoms[get_atom_index(molecule, map_index)].atomic_number != 1
     }
     expected_atoms = {
         get_map_index(molecule, atom_index)
@@ -373,14 +343,9 @@ def test_cap_open_valance():
     # noinspection PyTypeChecker
     atoms, bonds = Fragmenter._get_torsion_quartet(
         molecule,
-        tuple(
-            get_map_index(molecule, i)
-            for i in molecule.chemical_environment_matches("[#6a:1]-[#6H2:2]")[0]
-        ),
+        tuple(get_map_index(molecule, i) for i in molecule.chemical_environment_matches("[#6a:1]-[#6H2:2]")[0]),
     )
-    atoms, bonds = Fragmenter._get_ring_and_fgroups(
-        molecule, functional_groups, ring_systems, atoms, bonds
-    )
+    atoms, bonds = Fragmenter._get_ring_and_fgroups(molecule, functional_groups, ring_systems, atoms, bonds)
 
     # Remove the cap atom from the current list to make sure it gets included during
     # capping.
@@ -415,10 +380,7 @@ def test_prepare_molecule():
     [
         (
             None,
-            [
-                toolkit.__class__.__name__
-                for toolkit in GLOBAL_TOOLKIT_REGISTRY.registered_toolkits
-            ],
+            [toolkit.__class__.__name__ for toolkit in GLOBAL_TOOLKIT_REGISTRY.registered_toolkits],
         ),
         (RDKitToolkitWrapper(), ["RDKitToolkitWrapper"]),
         (ToolkitRegistry([RDKitToolkitWrapper]), ["RDKitToolkitWrapper"]),
@@ -426,16 +388,10 @@ def test_prepare_molecule():
 )
 def test_fragmenter_provenance(toolkit_registry, expected_provenance):
     class DummyFragmenter(Fragmenter):
-        def _fragment(
-            self, molecule: Molecule, target_bond_smarts: str
-        ) -> FragmentationResult:
-            return FragmentationResult(
-                parent_smiles="[He:1]", fragments=[], provenance={}
-            )
+        def _fragment(self, molecule: Molecule, target_bond_smarts: str) -> FragmentationResult:
+            return FragmentationResult(parent_smiles="[He:1]", fragments=[], provenance={})
 
-    result = DummyFragmenter().fragment(
-        Molecule.from_smiles("[He]"), ["[*:1]~[*:2]"], toolkit_registry
-    )
+    result = DummyFragmenter().fragment(Molecule.from_smiles("[He]"), ["[*:1]~[*:2]"], toolkit_registry)
 
     assert "toolkits" in result.provenance
     assert [name for name, _ in result.provenance["toolkits"]] == expected_provenance
@@ -456,9 +412,7 @@ def test_wbo_fragment():
 def test_keep_track_of_map():
     result = WBOFragmenter().fragment(Molecule.from_smiles("CCCCC"))
 
-    assert all(
-        "atom_map" in fragment.molecule.properties for fragment in result.fragments
-    )
+    assert all("atom_map" in fragment.molecule.properties for fragment in result.fragments)
 
 
 def test_get_rotor_wbo():
@@ -475,9 +429,7 @@ def test_get_rotor_wbo():
         for match in molecule.chemical_environment_matches("[#6:1]-[#6:2]")
     }
 
-    rotors_wbo = WBOFragmenter._get_rotor_wbo(
-        molecule, WBOFragmenter.find_rotatable_bonds(molecule, None)
-    )
+    rotors_wbo = WBOFragmenter._get_rotor_wbo(molecule, WBOFragmenter.find_rotatable_bonds(molecule, None))
 
     assert len(rotors_wbo) == 1
 
@@ -489,9 +441,7 @@ def test_get_rotor_wbo():
 
 def test_compare_wbo():
     parent = assign_elf10_am1_bond_orders(smiles_to_molecule("CCCC", add_atom_map=True))
-    rotors_wbo = WBOFragmenter._get_rotor_wbo(
-        parent, WBOFragmenter.find_rotatable_bonds(parent, None)
-    )
+    rotors_wbo = WBOFragmenter._get_rotor_wbo(parent, WBOFragmenter.find_rotatable_bonds(parent, None))
 
     fragment = smiles_to_molecule("CCCC", add_atom_map=True)
 
@@ -510,28 +460,18 @@ def test_compare_wbo():
 
 def test_build_fragment():
     parent = assign_elf10_am1_bond_orders(smiles_to_molecule("CCCCCC", True))
-    rotors_wbo = WBOFragmenter._get_rotor_wbo(
-        parent, WBOFragmenter.find_rotatable_bonds(parent, None)
-    )
+    rotors_wbo = WBOFragmenter._get_rotor_wbo(parent, WBOFragmenter.find_rotatable_bonds(parent, None))
 
     fragments = {
-        bond: WBOFragmenter._build_fragment(
-            parent, {}, {}, {}, bond, parent_wbo, threshold=0.05
-        )
+        bond: WBOFragmenter._build_fragment(parent, {}, {}, {}, bond, parent_wbo, threshold=0.05)
         for bond, parent_wbo in rotors_wbo.items()
     }
 
     assert len(fragments) == 3
 
-    assert (
-        fragments[(3, 5)].to_smiles(explicit_hydrogens=False, mapped=False) == "CCCCC"
-    )
-    assert (
-        fragments[(4, 6)].to_smiles(explicit_hydrogens=False, mapped=False) == "CCCCC"
-    )
-    assert (
-        fragments[(5, 6)].to_smiles(explicit_hydrogens=False, mapped=False) == "CCCCCC"
-    )
+    assert fragments[(3, 5)].to_smiles(explicit_hydrogens=False, mapped=False) == "CCCCC"
+    assert fragments[(4, 6)].to_smiles(explicit_hydrogens=False, mapped=False) == "CCCCC"
+    assert fragments[(5, 6)].to_smiles(explicit_hydrogens=False, mapped=False) == "CCCCCC"
 
 
 @pytest.mark.parametrize(
@@ -546,9 +486,7 @@ def test_build_fragment():
 )
 def test_ring_fgroups(input_smiles, n_output):
     parent = smiles_to_molecule(input_smiles, True)
-    parent_groups = Fragmenter._find_functional_groups(
-        parent, default_functional_groups()
-    )
+    parent_groups = Fragmenter._find_functional_groups(parent, default_functional_groups())
 
     parent_rings = Fragmenter._find_ring_systems(parent, parent_groups)
 
@@ -562,11 +500,7 @@ def test_add_substituent():
 
     assert fragment.to_smiles(mapped=False, explicit_hydrogens=False) == "CCCCC"
 
-    atoms = {
-        get_map_index(fragment, i)
-        for i in range(fragment.n_atoms)
-        if fragment.atoms[i].atomic_number != 1
-    }
+    atoms = {get_map_index(fragment, i) for i in range(fragment.n_atoms) if fragment.atoms[i].atomic_number != 1}
 
     bonds = {
         (

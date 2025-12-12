@@ -2,6 +2,10 @@ import os
 import warnings
 
 import pytest
+from openff.toolkit.topology import Molecule
+from openff.toolkit.utils.exceptions import AtomMappingWarning
+from openff.utilities import MissingOptionalDependencyError
+
 from openff.fragmenter.depiction import (
     _oe_render_fragment,
     _oe_render_parent,
@@ -11,9 +15,6 @@ from openff.fragmenter.depiction import (
     depict_fragments,
 )
 from openff.fragmenter.fragment import Fragment, FragmentationResult
-from openff.toolkit.topology import Molecule
-from openff.toolkit.utils.exceptions import AtomMappingWarning
-from openff.utilities import MissingOptionalDependencyError
 
 
 @pytest.mark.parametrize("draw_function", [_oe_render_parent, _rd_render_parent])
@@ -43,9 +44,7 @@ def test_xx_render_fragment(draw_function):
                 Molecule.from_smiles(
                     "[C:1]([H:5])([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])([H:14])"
                 ),
-                Molecule.from_smiles(
-                    "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
-                ),
+                Molecule.from_smiles("[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"),
                 (1, 2),
             )
 
@@ -66,11 +65,7 @@ def test_depict_fragments(tmpdir):
             Molecule.from_smiles(
                 "[C:1]([H:5])([H:6])([H:7])[C:2]([H:8])([H:9])[C:3]([H:10])([H:11])[C:4]([H:12])([H:13])([H:14])"
             ),
-            {
-                (1, 2): Molecule.from_smiles(
-                    "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
-                )
-            },
+            {(1, 2): Molecule.from_smiles("[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])")},
             output_file,
         )
 

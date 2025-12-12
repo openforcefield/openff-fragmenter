@@ -4,6 +4,16 @@ import warnings
 
 import numpy
 import pytest
+from openff.toolkit.topology import Molecule
+from openff.toolkit.utils import (
+    AmberToolsToolkitWrapper,
+    OpenEyeToolkitWrapper,
+    ToolkitRegistry,
+)
+from openff.toolkit.utils.exceptions import AtomMappingWarning
+from openff.units import unit
+from openff.utilities import MissingOptionalDependencyError
+
 from openff.fragmenter import chemi
 from openff.fragmenter._tests.utils import using_openeye
 from openff.fragmenter.chemi import (
@@ -18,15 +28,6 @@ from openff.fragmenter.chemi import (
     smiles_to_molecule,
 )
 from openff.fragmenter.utils import global_toolkit_registry
-from openff.toolkit.topology import Molecule
-from openff.toolkit.utils import (
-    AmberToolsToolkitWrapper,
-    OpenEyeToolkitWrapper,
-    ToolkitRegistry,
-)
-from openff.toolkit.utils.exceptions import AtomMappingWarning
-from openff.units import unit
-from openff.utilities import MissingOptionalDependencyError
 
 
 def test_assign_elf10_am1_bond_orders():
@@ -42,9 +43,7 @@ def test_assign_elf10_am1_bond_orders_simple_parity():
         molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("C"))
         oe_bond_orders = [bond.fractional_bond_order for bond in molecule.bonds]
 
-    with global_toolkit_registry(
-        ToolkitRegistry([AmberToolsToolkitWrapper(), OpenEyeToolkitWrapper()])
-    ):
+    with global_toolkit_registry(ToolkitRegistry([AmberToolsToolkitWrapper(), OpenEyeToolkitWrapper()])):
         molecule = assign_elf10_am1_bond_orders(Molecule.from_smiles("C"))
         at_bond_orders = [bond.fractional_bond_order for bond in molecule.bonds]
 
@@ -53,9 +52,7 @@ def test_assign_elf10_am1_bond_orders_simple_parity():
 
 @pytest.mark.parametrize("smiles, max_confs", [("CCCCCCC", 1), ("CCCCCCC", 3)])
 def test_generate_conformers(smiles, max_confs):
-    returned_molecule = chemi._generate_conformers(
-        Molecule.from_smiles(smiles), max_confs=max_confs
-    )
+    returned_molecule = chemi._generate_conformers(Molecule.from_smiles(smiles), max_confs=max_confs)
 
     assert 0 < returned_molecule.n_conformers <= max_confs
 
@@ -67,9 +64,7 @@ def test_generate_conformers_ordering():
     assert returned_molecule.n_conformers == 1
 
     # Make sure the atom ordering did not change.
-    _, atom_map = Molecule.are_isomorphic(
-        original_molecule, returned_molecule, return_atom_map=True
-    )
+    _, atom_map = Molecule.are_isomorphic(original_molecule, returned_molecule, return_atom_map=True)
 
     assert all(i == j for i, j in atom_map.items())
 
@@ -80,11 +75,10 @@ def test_generate_conformers_canonical_check():
 
     # Generate a conformer using a molecule with permuted atom orderings.
     atom_map = numpy.arange(original_molecule.n_atoms)
-    numpy.random.shuffle(atom_map)
+    rng = numpy.random.default_rng(1337)
+    rng.shuffle(atom_map)
 
-    remapped_molecule = original_molecule.remap(
-        {int(i): int(j) for i, j in enumerate(atom_map)}
-    )
+    remapped_molecule = original_molecule.remap({int(i): int(j) for i, j in enumerate(atom_map)})
     remapped_molecule = chemi._generate_conformers(remapped_molecule, max_confs=1)
 
     original_conformer = original_molecule.conformers[0].m_as(unit.angstrom)
@@ -146,9 +140,7 @@ def test_smiles_to_molecule(add_atom_map):
         ),
     ],
 )
-@pytest.mark.parametrize(
-    "find_method", [_find_oe_stereocenters, _find_rd_stereocenters, find_stereocenters]
-)
+@pytest.mark.parametrize("find_method", [_find_oe_stereocenters, _find_rd_stereocenters, find_stereocenters])
 def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method):
     molecule = Molecule.from_mapped_smiles(smiles, allow_undefined_stereo=True)
 
@@ -167,17 +159,13 @@ def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method)
     "smiles, atoms, bonds, expected",
     [
         (
-            "[C:1]([H:4])([H:5])([H:6])"
-            "[C:2]([H:7])([H:8])"
-            "[C:3]([H:9])([H:10])([H:11])",
+            "[C:1]([H:4])([H:5])([H:6])[C:2]([H:7])([H:8])[C:3]([H:9])([H:10])([H:11])",
             {1, 2},
             {(1, 2)},
             "CC",
         ),
         (
-            "[C:1]([H:4])([H:5])([H:6])"
-            "[C:2]([H:7])([H:8])"
-            "[C:3]([H:9])([H:10])([H:11])",
+            "[C:1]([H:4])([H:5])([H:6])[C:2]([H:7])([H:8])[C:3]([H:9])([H:10])([H:11])",
             {1, 2, 4},
             {(1, 2), (1, 4)},
             "CC",
@@ -196,9 +184,7 @@ def test_find_stereocenters(smiles, expected_atoms, expected_bonds, find_method)
         ),
     ],
 )
-@pytest.mark.parametrize(
-    "extract_method", [_extract_rd_fragment, _extract_oe_fragment, extract_fragment]
-)
+@pytest.mark.parametrize("extract_method", [_extract_rd_fragment, _extract_oe_fragment, extract_fragment])
 def test_extract_fragment(smiles, atoms, bonds, expected, extract_method):
     molecule = Molecule.from_mapped_smiles(smiles)
     molecule.properties["atom_map"] = {i: i + 1 for i in range(molecule.n_atoms)}
@@ -212,9 +198,7 @@ def test_extract_fragment(smiles, atoms, bonds, expected, extract_method):
 
     expected_fragment = Molecule.from_smiles(expected)
 
-    assert Molecule.are_isomorphic(
-        fragment, expected_fragment, bond_stereochemistry_matching=False
-    )[0]
+    assert Molecule.are_isomorphic(fragment, expected_fragment, bond_stereochemistry_matching=False)[0]
 
 
 def test_extract_fragment_bonds_in_atoms():
@@ -235,9 +219,7 @@ def test_extract_fragment_disconnected_fragment_warning():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", AtomMappingWarning)
 
-        molecule = Molecule.from_smiles(
-            "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
-        )
+        molecule = Molecule.from_smiles("[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])")
 
     with pytest.raises(AssertionError, match="An atom that is not bonded"):
         extract_fragment(molecule, {1, 2}, set())

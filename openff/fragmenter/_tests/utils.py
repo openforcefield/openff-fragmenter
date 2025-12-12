@@ -3,9 +3,10 @@ from collections import defaultdict
 from typing import TypeVar
 
 import pytest
+from openff.toolkit.topology import Molecule
+
 from openff.fragmenter.fragment import BondTuple
 from openff.fragmenter.utils import get_map_index
-from openff.toolkit.topology import Molecule
 
 T = TypeVar("T")
 
@@ -19,9 +20,7 @@ except ImportError:
 using_openeye = pytest.mark.skipif(not has_openeye, reason="Cannot run without OpenEye")
 
 
-def smarts_set_to_map_indices(
-    input_set: set[str], molecule: Molecule
-) -> set[int | BondTuple]:
+def smarts_set_to_map_indices(input_set: set[str], molecule: Molecule) -> set[int | BondTuple]:
     """A utility function which maps a set of the form ``{"SMARTS_1", "SMARTS_2", ...}``
     to one of the form ``{map_index_1, map_index_2, ...}`` when the SMARTS defines a
     single atom or ``{(map_index_1_a, map_index_1_b), ...}`` when the SMARTS defines a
@@ -35,12 +34,7 @@ def smarts_set_to_map_indices(
     return_value = set()
 
     for smarts in input_set:
-        matches = list(
-            {
-                tuple(sorted(match))
-                for match in molecule.chemical_environment_matches(smarts)
-            }
-        )
+        matches = list({tuple(sorted(match)) for match in molecule.chemical_environment_matches(smarts)})
         assert len(matches) == 1
 
         match = matches[0]
@@ -54,9 +48,7 @@ def smarts_set_to_map_indices(
     return return_value
 
 
-def key_smarts_to_map_indices(
-    input_dictionary: dict[str, T], molecule: Molecule
-) -> dict[int | BondTuple, T]:
+def key_smarts_to_map_indices(input_dictionary: dict[str, T], molecule: Molecule) -> dict[int | BondTuple, T]:
     """A utility function which maps a dictionary of the form ``value["SMARTS"] = x``
     to one of the form ``value[map_index] = x`` when the SMARTS defines a single atom
     or ``value[(map_index_1, map_index_2)] = x`` when the SMARTS defines a bond.
@@ -69,12 +61,7 @@ def key_smarts_to_map_indices(
     return_value = {}
 
     for smarts, expected in input_dictionary.items():
-        matches = list(
-            {
-                tuple(sorted(match))
-                for match in molecule.chemical_environment_matches(smarts)
-            }
-        )
+        matches = list({tuple(sorted(match)) for match in molecule.chemical_environment_matches(smarts)})
         assert len(matches) == 1
 
         match = matches[0]
@@ -106,12 +93,7 @@ def value_smarts_to_map_indices(
 
     for key, values in input_dictionary.items():
         for smarts in values:
-            matches = list(
-                {
-                    tuple(sorted(match))
-                    for match in molecule.chemical_environment_matches(smarts)
-                }
-            )
+            matches = list({tuple(sorted(match)) for match in molecule.chemical_environment_matches(smarts)})
 
             for match in matches:
                 assert 0 < len(match) <= 2
@@ -119,8 +101,6 @@ def value_smarts_to_map_indices(
                 if len(match) == 1:
                     return_value[key].add(get_map_index(molecule, match[0]))
                 else:
-                    return_value[key].add(
-                        tuple(get_map_index(molecule, i) for i in match)
-                    )
+                    return_value[key].add(tuple(get_map_index(molecule, i) for i in match))
 
     return {**return_value}

@@ -1,6 +1,7 @@
 import pytest
-from openff.fragmenter.states import _enumerate_stereoisomers
 from openff.toolkit.topology import Molecule
+
+from openff.fragmenter.states import _enumerate_stereoisomers
 
 
 @pytest.mark.parametrize(
@@ -43,8 +44,7 @@ def test_enumerate_stereoisomers(smiles, force_flip, expected):
         for stereoisomer in expected
     }
     actual = {
-        stereoisomer.to_smiles(explicit_hydrogens=False, isomeric=True, mapped=False)
-        for stereoisomer in stereoisomers
+        stereoisomer.to_smiles(explicit_hydrogens=False, isomeric=True, mapped=False) for stereoisomer in stereoisomers
     }
 
     assert expected == actual
