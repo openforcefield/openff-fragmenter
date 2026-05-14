@@ -2,7 +2,7 @@ ci:
   autoupdate_schedule: "quarterly"
 repos:
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.15.9
+  rev: v0.15.12
   hooks:
     - id: ruff-format
     - id: ruff-check
@@ -13,6 +13,6 @@ repos:
     - id: blacken-docs
       files: ^docs/.*\.(rst|md)$
 - repo: https://github.com/tox-dev/pyproject-fmt
-  rev: v2.21.0
+  rev: v2.21.1
   hooks:
     - id: pyproject-fmt

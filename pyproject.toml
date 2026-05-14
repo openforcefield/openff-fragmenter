@@ -11,10 +11,9 @@ description = "Fragment molecules for quantum mechanics torsion scans."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [ { name = "Chaya D. Stern", email = "info@openforcefield.org" } ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 classifiers = [
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
@@ -25,6 +24,7 @@ dynamic = [ "version" ]
 packages.find.include = [ "openff.fragmenter*" ]
 
 [tool.ruff]
+target-version = "py312"
 line-length = 119
 lint.select = [ "E", "F", "I", "NPY", "RUF", "UP", "W" ]
 lint.ignore = [ "D105", "D107", "D200", "D203", "D212", "E721", "RUF012" ]

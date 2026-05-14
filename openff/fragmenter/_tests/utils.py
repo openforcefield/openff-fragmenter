@@ -1,14 +1,11 @@
 import importlib
 from collections import defaultdict
-from typing import TypeVar
 
 import pytest
 from openff.toolkit.topology import Molecule
 
 from openff.fragmenter.fragment import BondTuple
 from openff.fragmenter.utils import get_map_index
-
-T = TypeVar("T")
 
 try:
     importlib.import_module("openeye.oechem")
@@ -48,7 +45,7 @@ def smarts_set_to_map_indices(input_set: set[str], molecule: Molecule) -> set[in
     return return_value
 
 
-def key_smarts_to_map_indices(input_dictionary: dict[str, T], molecule: Molecule) -> dict[int | BondTuple, T]:
+def key_smarts_to_map_indices[T](input_dictionary: dict[str, T], molecule: Molecule) -> dict[int | BondTuple, T]:
     """A utility function which maps a dictionary of the form ``value["SMARTS"] = x``
     to one of the form ``value[map_index] = x`` when the SMARTS defines a single atom
     or ``value[(map_index_1, map_index_2)] = x`` when the SMARTS defines a bond.
