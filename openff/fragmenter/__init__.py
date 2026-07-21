@@ -8,5 +8,5 @@ from importlib.metadata import version
 
 from openff.fragmenter import chemi, fragment, utils
 
-__version__ = version("openff.interchange")
+__version__ = version("openff.fragmenter")
 __all__ = [chemi, fragment, utils]
