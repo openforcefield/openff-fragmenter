@@ -8,6 +8,7 @@ dependencies:
   - python =3.12
   - pip
   - setuptools
+  - setuptools-scm
 
   # Sphinx specific
   - sphinx>=4.4,<5
