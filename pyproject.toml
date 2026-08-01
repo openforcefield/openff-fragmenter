@@ -10,7 +10,7 @@ name = "openff-fragmenter"
 description = "Fragment molecules for quantum mechanics torsion scans."
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = [ "LICENSE" ]
 authors = [ { name = "Chaya D. Stern", email = "info@openforcefield.org" } ]
 requires-python = ">=3.12"
 classifiers = [
