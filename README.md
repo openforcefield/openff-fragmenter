@@ -33,9 +33,7 @@ representation using the [Open Force Field toolkit](https://github.com/openforce
 ```python
 from openff.toolkit import Molecule
 
-parent_molecule = Molecule.from_smiles(
-    "OC1(CN(C1)C(=O)C1=C(NC2=C(F)C=C(I)C=C2)C(F)=C(F)C=C1)[C@@H]1CCCCN1"
-)
+parent_molecule = Molecule.from_smiles("OC1(CN(C1)C(=O)C1=C(NC2=C(F)C=C(I)C=C2)C(F)=C(F)C=C1)[C@@H]1CCCCN1")
 ```
 
 Next we create the fragmentation engine which will perform the actual fragmentation. Here we will use the recommended 
